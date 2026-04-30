@@ -58,8 +58,9 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
-  // Normalise tags array→string pour compatibilité avec le reste de l'app
-  if (Array.isArray(r.tags)) r.tags = r.tags.join(", ");
+  // tags reste un array (Supabase retourne array, app utilise .map())
+  if (!Array.isArray(r.tags)) r.tags = r.tags ? String(r.tags).split(",").map(t=>t.trim()).filter(Boolean) : [];
+  if (!Array.isArray(r.points)) r.points = r.points ? String(r.points).split(",").map(t=>t.trim()).filter(Boolean) : [];
   return r;
 }
 
@@ -1486,7 +1487,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
         </div>
         {(item.tags&&item.tags.length>0) && (
           <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-            {item.tags.map((t,i)=>(
+            {(Array.isArray(item.tags)?item.tags:[]).map((t,i)=>(
               <span key={i} style={{background:"rgba(255,255,255,.18)", color:"#fff", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
             ))}
           </div>
@@ -1821,7 +1822,7 @@ function ECGScreen({ deepLinkId }) {
         <div style={{fontSize:12, color:C.sub, marginBottom:8}}>{e.context}</div>
           {(e.tags&&e.tags.length>0) && (
             <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
-              {e.tags.map((t,i)=>(
+              {(Array.isArray(e.tags)?e.tags:[]).map((t,i)=>(
                 <span key={i} style={{background:C.red+"22", color:C.red, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
               ))}
             </div>
@@ -1866,7 +1867,7 @@ function ECGScreen({ deepLinkId }) {
               <Card>
                 <div style={{fontSize:11, fontWeight:800, color:C.navy, marginBottom:8}}>POINTS PEDAGOGIQUES</div>
                 <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                  {e.points.map((p,i) => (
+                  {(Array.isArray(e.points)?e.points:[]).map((p,i) => (
                     <div key={i} style={{display:"flex", gap:8, fontSize:13, color:C.text, lineHeight:1.5}}>
                       <span style={{color:C.blue, flexShrink:0}}>&#8226;</span>{p}
                     </div>
@@ -1964,7 +1965,7 @@ function IconoScreen({ deepLinkId }) {
               <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{c.diag}</div>
             {(c.tags&&c.tags.length>0) && (
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:10}}>
-                {c.tags.map((t,i)=>(
+                {(Array.isArray(c.tags)?c.tags:[]).map((t,i)=>(
                   <span key={i} style={{background:"#9B59B6"+"22", color:"#9B59B6", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
                 ))}
               </div>
@@ -2167,7 +2168,7 @@ function AgendaScreen({ deepLinkId }) {
             {selected.lieu && <div style={{fontSize:12, color:C.sub}}>{"📍"} {selected.lieu}</div>}
             {(selected.tags&&selected.tags.length>0) && (
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-                {selected.tags.map((t,i)=>(
+                {(Array.isArray(selected.tags)?selected.tags:[]).map((t,i)=>(
                   <span key={i} style={{background:C.amber+"22", color:C.amber, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
                 ))}
               </div>
@@ -2434,7 +2435,7 @@ function GestesScreen({ deepLinkId }) {
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{g.title}</div>
                 <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                  {g.tags.slice(0,3).map(t=>(
+                  {(Array.isArray(g.tags)?g.tags:[]).slice(0,3).map(t=>(
                     <span key={t} style={{fontSize:10, fontWeight:700,
                       background:C.blue+"22", color:C.blue,
                       padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -2500,7 +2501,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           <div>
             <div style={{fontSize:16, fontWeight:800, color:C.text, lineHeight:1.3}}>{geste.title}</div>
             <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:5}}>
-              {geste.tags.map(t=>(
+              {(Array.isArray(geste.tags)?geste.tags:[]).map(t=>(
                 <span key={t} style={{fontSize:10, fontWeight:700,
                   background:C.blue+"22", color:C.blue,
                   padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -3010,7 +3011,7 @@ function DilutionScreen({ deepLinkId }) {
         </div>
 
         {/* Schema visuel uploadé */}
-        {selected.schemaData && (
+        {(selected.schemaData || selected.schemaUrl) && (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.blue+"18", borderRadius:10, width:34, height:34,
@@ -3018,7 +3019,7 @@ function DilutionScreen({ deepLinkId }) {
               <span style={{fontSize:12, fontWeight:800, color:C.blue, letterSpacing:.5, textTransform:"uppercase"}}>Schéma visuel</span>
             </div>
             <div style={{background:"#0A1628", borderRadius:14, padding:4, overflow:"hidden"}}>
-              <ClickableImage src={selected.schemaData} alt="Schema de dilution" style={{borderRadius:10}}/>
+              <ClickableImage src={selected.schemaData || selected.schemaUrl} alt="Schema de dilution" style={{borderRadius:10}}/>
             </div>
           </div>
         )}
@@ -3062,14 +3063,14 @@ function DilutionScreen({ deepLinkId }) {
         )}
 
         {/* Photo complémentaire */}
-        {selected.photoData && (
+        {(selected.photoData || selected.photoUrl) && (
           <div style={{marginTop:16, marginBottom:12}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.navy+"18", borderRadius:10, width:34, height:34,
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:17}}>{"📷"}</div>
               <span style={{fontSize:12, fontWeight:800, color:C.navy, letterSpacing:.5, textTransform:"uppercase"}}>Photo</span>
             </div>
-            <ClickableImage src={selected.photoData} alt="Photo" style={{borderRadius:12}}/>
+            <ClickableImage src={selected.photoData || selected.photoUrl} alt="Photo" style={{borderRadius:12}}/>
           </div>
         )}
         {selected.medias?.length > 0 && (
