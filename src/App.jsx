@@ -90,6 +90,7 @@ function itemToRow(table, item) {
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
   if ("videoUrl"         in r) { r.video_url          = r.videoUrl;         delete r.videoUrl; }
+  if ("isVideo"          in r) { r.is_video           = r.isVideo;          delete r.isVideo; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
@@ -3204,7 +3205,10 @@ function AdminScreen({ onNewItem }) {
       await addItem("imagerie","admin_imagerie",item,["image"]);
       setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
       showSaved("Cas ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
+     if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
+      }
+    } catch(e) {
+      alert("Erreur ajout imagerie : " + e.message);
     }
   }
 
