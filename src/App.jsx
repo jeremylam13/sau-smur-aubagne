@@ -2147,7 +2147,7 @@ function AgendaScreen({ deepLinkId }) {
             {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
           </div>
         </Card>
-        {selected.imageData && (
+        {(selected.imageData||selected.imageUrl) && (
           <div style={{borderRadius:12, overflow:"hidden", marginBottom:12}}>
             {selected.imageUrl&&selected.imageUrl.endsWith(".pdf") ? (
               <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
@@ -2222,7 +2222,7 @@ function AgendaScreen({ deepLinkId }) {
                         <div style={{fontSize:11, color:C.sub}}>{"📆"} {(()=>{ const iso=ev.date&&ev.date.match(/^(\d{4})-(\d{2})-(\d{2})$/); return iso?`${iso[3]}/${iso[2]}/${iso[1]}`:ev.date; })()}</div>
                         {ev.heure && <div style={{fontSize:11, color:C.sub}}>{"🕐"} {ev.heure}</div>}
                       </div>
-                      {ev.imageData && <span style={{fontSize:12}}>{"📎"}</span>}
+                      {(ev.imageData||ev.imageUrl) && <span style={{fontSize:12}}>{"📎"}</span>}
                       <span style={{color:C.sub, fontSize:18}}>›</span>
                     </div>
                   </Card>
@@ -2516,7 +2516,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
       )}
 
       {/* Image principale si disponible */}
-      {geste.imageData && (
+      {(geste.imageData||geste.imageUrl) && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
           <ClickableImage src={geste.imageData || geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
         </div>
@@ -2727,7 +2727,7 @@ function DiversScreen({ deepLinkId }) {
             <span style={{fontSize:11, color:C.navy, fontWeight:700}}>{selected.source}</span>
           </div>
         )}
-        {selected.imageData && (
+        {(selected.imageData||selected.imageUrl) && (
           <DiversImageViewer src={selected.imageData||selected.imageUrl} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData||selected.imageUrl}/>
         )}
         {selected.credit && (
