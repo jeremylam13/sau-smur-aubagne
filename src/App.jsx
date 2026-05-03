@@ -3371,7 +3371,7 @@ function AdminScreen({ onNewItem }) {
                 if(!file) return;
                 const reader = new FileReader();
                 reader.onload = ev => {
-                  setEForm(f => ({...f, imageUrl:file.name, imageData:ev.target.result}));
+                  setEForm(f => ({...f, imageUrl:"", imageData:ev.target.result}));
                 };
                 reader.readAsDataURL(file);
               }}/>
@@ -3437,7 +3437,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setIForm(f=>({...f, imageUrl:file.name, imageData:ev.target.result, isVideo:file.type.startsWith("video/")}));
+                reader.onload = ev => setIForm(f=>({...f, imageUrl:"", imageData:ev.target.result, isVideo:file.type.startsWith("video/")}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3625,7 +3625,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setAForm(f=>({...f, imageUrl:file.name, imageData:ev.target.result}));
+                reader.onload = ev => setAForm(f=>({...f, imageUrl:"", imageData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3682,7 +3682,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setDForm(f=>({...f, imageUrl:file.name, imageData:ev.target.result}));
+                reader.onload = ev => setDForm(f=>({...f, imageUrl:"", imageData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3769,7 +3769,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setDilForm(f=>({...f, schemaUrl:file.name, schemaData:ev.target.result}));
+                reader.onload = ev => setDilForm(f=>({...f, schemaUrl:"", schemaData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3809,7 +3809,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setDilForm(f=>({...f, photoUrl:file.name, photoData:ev.target.result}));
+                reader.onload = ev => setDilForm(f=>({...f, photoUrl:"", photoData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
