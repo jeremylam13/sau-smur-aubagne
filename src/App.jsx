@@ -285,7 +285,7 @@ function DataProvider({ children }) {
 
   function retexToRow(item) {
     // Champs autorisés dans la table retex (correspondance exacte avec Supabase)
-    const allowed = ["type","title","author","date","lieu","gravite","categorie","contexte","situation",
+    const allowed = ["type","title","author","date","lieu","gravite","contexte","situation",
                      "bien","difficultes","amelio","recit","takehome","tags","medias","reactions","comments","ts"];
     const row = {};
     for (const k of allowed) {
@@ -299,20 +299,7 @@ function DataProvider({ children }) {
   }
 
   async function addRetexItem(item) {
-    // Upload les médias base64 vers Supabase Storage avant l'insert
-    const mediasUploaded = await Promise.all((item.medias || []).map(async (m) => {
-      if (m.data && m.data.startsWith("data:")) {
-        // Upload direct sans préfixe timestamp (uploadMedia en ajoute déjà un)
-        const uploadedUrl = await uploadMedia(m.name || "media", m.data);
-        return { url: uploadedUrl, name: m.name || "", isVideo: !!m.isVideo };
-      }
-      // Déjà une URL Supabase
-      if (m.url && m.url.startsWith("http")) {
-        return { url: m.url, name: m.name || "", isVideo: !!m.isVideo };
-      }
-      return { url: "", name: m.name || "", isVideo: !!m.isVideo };
-    }));
-    const row = retexToRow({ ...item, medias: mediasUploaded });
+    const row = retexToRow(item);
     const result = await supaFetch("/retex?select=*", "POST", row);
     const newItem = Array.isArray(result) ? rowToItem("retex", result[0]) : rowToItem("retex", result);
     setStore(prev => ({ ...prev, retex: [newItem, ...prev.retex.filter(x => x.id !== newItem.id)] }));
@@ -324,19 +311,9 @@ function DataProvider({ children }) {
   }
 
   async function updateRetex(item) {
-    const patch = {
-      type: item.type, title: item.title, author: item.author,
-      date: item.date, lieu: item.lieu, gravite: item.gravite,
-      categorie: item.categorie, contexte: item.contexte,
-      situation: item.situation, bien: item.bien,
-      difficultes: item.difficultes, amelio: item.amelio,
-      recit: item.recit, takehome: item.takehome,
-      tags: Array.isArray(item.tags) ? item.tags : [],
-      comments: (item.comments || []).map(c => ({ id: c.id, author: c.author || "", text: c.text || "", ts: c.ts || Date.now() })),
-      reactions: item.reactions || {},
-    };
-    await supaFetch("/retex?id=eq." + item.id, "PATCH", patch);
-    setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? { ...x, ...patch } : x) }));
+    const row = retexToRow(item);
+    await supaFetch("/retex?id=eq." + item.id, "PATCH", row);
+    setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? item : x) }));
   }
 
   return (
@@ -814,14 +791,14 @@ function MediaGallery({ medias }) {
   return (
     <div style={{marginBottom:16}}>
       <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {medias.filter(m => m.data || (m.url && m.url.startsWith("http"))).map((m,i)=>(
+        {medias.map((m,i)=>(
           <div key={i} style={{borderRadius:10, overflow:"hidden", background:"#0A1628"}}>
             {/* Aperçu complet */}
             <div onClick={()=>!m.isVideo && setLightbox(m)}
               style={{cursor:m.isVideo?"default":"pointer", position:"relative", display:"flex", alignItems:"center", justifyContent:"center", background:"#0A1628", minHeight:80}}>
               {m.isVideo
-                ? <video src={m.data || m.url} controls style={{width:"100%", display:"block"}}/>
-                : <img src={m.data || m.url} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
+                ? <video src={m.data} controls style={{width:"100%", display:"block"}}/>
+                : <img src={m.data} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
               }
               {!m.isVideo && (
                 <div style={{position:"absolute", bottom:6, right:8, background:"rgba(0,0,0,.55)", borderRadius:6, padding:"3px 8px", fontSize:10, color:"#fff", display:"flex", alignItems:"center", gap:4}}>
@@ -840,7 +817,7 @@ function MediaGallery({ medias }) {
       </div>
 
       {/* Lightbox avec zoom */}
-      {lightbox && <ImageLightbox src={lightbox.data || lightbox.url} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
+      {lightbox && <ImageLightbox src={lightbox.data} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
     </div>
   );
 }
@@ -1281,20 +1258,14 @@ const REACTIONS = [
 ];
 
 // ── Formulaire d'ajout RETEX/Récit ────────────────────────────────────────────
-function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
+function RetexSubmitForm({ onSubmit, onCancel }) {
   const C = useC();
-  const defaultForm = {
+  const [tab, setTab] = useState("retex"); // retex | recit
+  const [form, setForm] = useState({
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
     recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
-  };
-  // Préremplir si édition
-  const initForm = initialValues ? {
-    ...defaultForm, ...initialValues,
-    tags: Array.isArray(initialValues.tags) ? initialValues.tags.join(" ") : (initialValues.tags || ""),
-  } : defaultForm;
-  const [tab, setTab] = useState(initForm.type || "retex");
-  const [form, setForm] = useState(initForm);
+  });
   const [saving, setSaving] = useState(false);
 
   const CATS = ["Réanimation","Cardiologie","Neurologie","Traumatologie","SMUR","Pédiatrie","Toxicologie","Infectiologie","Autre"];
@@ -1315,11 +1286,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
   async function handleSubmit() {
     if(!form.title.trim()) return;
     setSaving(true);
-    try {
-      await onSubmit(form);
-    } catch(e) {
-      alert("Erreur publication : " + e.message);
-    }
+    await onSubmit(form);
     setSaving(false);
   }
 
@@ -1327,7 +1294,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
     <div style={{animation:"fadeIn .2s ease"}}>
       {/* Header */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
-        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>{isEditing ? "✏️ Modifier la publication" : "📝 Nouvelle publication"}</div>
+        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>📝 Nouvelle publication</div>
         <button onClick={onCancel} style={{background:"none", border:"none", color:C.sub, fontSize:22, cursor:"pointer"}}>✕</button>
       </div>
 
@@ -1422,14 +1389,14 @@ function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
         fontWeight:800, color:"#fff", cursor:form.title.trim()?"pointer":"not-allowed",
         marginTop:4,
       }}>
-        {saving?"Enregistrement...":(isEditing?"💾 Enregistrer les modifications":"✅ Publier")}
+        {saving?"Enregistrement...":"✅ Publier"}
       </button>
     </div>
   );
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
   const [commentText, setCommentText] = useState("");
@@ -1593,15 +1560,10 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
         </div>
       </div>
 
-      {/* Actions */}
-      <div style={{display:"flex", gap:8, marginTop:4}}>
-        <button onClick={()=>onEdit(item)} style={{flex:1, background:C.blueLight, border:`1px solid ${C.blue}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:C.blue, cursor:"pointer"}}>
-          ✏️ Modifier
-        </button>
-        <button onClick={()=>{ if(window.confirm("Supprimer cette publication ?")) onDelete(item.id); }} style={{flex:1, background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer"}}>
-          🗑 Supprimer
-        </button>
-      </div>
+      {/* Supprimer */}
+      <button onClick={()=>onDelete(item.id)} style={{width:"100%", background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer", marginTop:4}}>
+        🗑 Supprimer cette publication
+      </button>
     </div>
   );
 }
@@ -1613,7 +1575,6 @@ function RetexScreen({ deepLinkId }) {
   const items = store.retex;
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
   const [filter, setFilter] = useState("tous");
   const [search, setSearch] = useState("");
 
@@ -1645,25 +1606,6 @@ function RetexScreen({ deepLinkId }) {
     setSelected(null);
   }
 
-  async function handleEditSubmit(form) {
-    try {
-      const tags = typeof form.tags === "string"
-        ? form.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t)
-        : (form.tags || []);
-      const updated = {
-        ...editingItem, ...form, tags,
-        // garder commentaires et réactions existants
-        comments: editingItem.comments || [],
-        reactions: editingItem.reactions || {},
-      };
-      await updateRetex(updated);
-      setEditingItem(null);
-      setSelected(null);
-    } catch(e) {
-      alert("Erreur modification : " + e.message);
-    }
-  }
-
   useEffect(()=>{
     if(deepLinkId && items.length){
       const it=items.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId));
@@ -1690,16 +1632,6 @@ function RetexScreen({ deepLinkId }) {
     (x.tags||[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
   );
 
-  // Formulaire d'édition
-  if(editingItem) return (
-    <RetexSubmitForm
-      initialValues={editingItem}
-      onSubmit={handleEditSubmit}
-      onCancel={()=>setEditingItem(null)}
-      isEditing={true}
-    />
-  );
-
   if(showForm) return (
     <RetexSubmitForm
       onSubmit={async (form)=>{ await submit(form); setShowForm(false); }}
@@ -1711,7 +1643,6 @@ function RetexScreen({ deepLinkId }) {
     <RetexDetail
       item={selectedItem}
       onBack={()=>setSelected(null)}
-      onEdit={(item)=>setEditingItem(item)}
       onReaction={toggleReaction}
       onComment={addComment}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
@@ -3207,7 +3138,7 @@ function DilutionScreen({ deepLinkId }) {
 // ─── AdminScreen ───────────────────────────────────────────────────────────────
 function AdminScreen({ onNewItem }) {
   const C = useC();
-const { store, addItem, updateItem, removeItem, addRetexItem, removeRetexItem } = useData();
+  const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("ecg");
   const [saved, setSaved] = useState(null);
   const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" });
@@ -3216,7 +3147,7 @@ const { store, addItem, updateItem, removeItem, addRetexItem, removeRetexItem } 
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
-  useState({ type:"retex", title:"", author:"", date:"", lieu:"", gravite:"", categorie:"Réanimation", contexte:
+  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
