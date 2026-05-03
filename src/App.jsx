@@ -59,6 +59,7 @@ function rowToItem(table, row) {
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
   if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
+  if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
   // tags reste un array (Supabase retourne array, app utilise .map())
   if (!Array.isArray(r.tags)) r.tags = r.tags ? String(r.tags).split(",").map(t=>t.trim()).filter(Boolean) : [];
   if (!Array.isArray(r.points)) r.points = r.points ? String(r.points).split(",").map(t=>t.trim()).filter(Boolean) : [];
@@ -230,7 +231,7 @@ function DataProvider({ children }) {
         for (const f of fileFields) {
           const dataField = f + "Data";
           const urlField = f + "Url";
-          if (item[dataField] && !item[urlField]) {
+          if (item[dataField] && item[dataField].startsWith("data:") && !item[urlField]) {
             const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
             if (url) item = { ...item, [urlField]: url };
           }
@@ -286,7 +287,7 @@ function DataProvider({ children }) {
 
   function retexToRow(item) {
     // Champs autorisés dans la table retex (correspondance exacte avec Supabase)
-    const allowed = ["type","title","author","date","lieu","gravite","contexte","situation",
+    const allowed = ["type","title","author","date","lieu","gravite","categorie","contexte","situation",
                      "bien","difficultes","amelio","recit","takehome","tags","medias","reactions","comments","ts"];
     const row = {};
     for (const k of allowed) {
@@ -300,7 +301,20 @@ function DataProvider({ children }) {
   }
 
   async function addRetexItem(item) {
-    const row = retexToRow(item);
+    // Upload les médias base64 vers Supabase Storage avant l'insert
+    const mediasUploaded = await Promise.all((item.medias || []).map(async (m) => {
+      if (m.data && m.data.startsWith("data:")) {
+        // Upload direct sans préfixe timestamp (uploadMedia en ajoute déjà un)
+        const uploadedUrl = await uploadMedia(m.name || "media", m.data);
+        return { url: uploadedUrl, name: m.name || "", isVideo: !!m.isVideo };
+      }
+      // Déjà une URL Supabase
+      if (m.url && m.url.startsWith("http")) {
+        return { url: m.url, name: m.name || "", isVideo: !!m.isVideo };
+      }
+      return { url: "", name: m.name || "", isVideo: !!m.isVideo };
+    }));
+    const row = retexToRow({ ...item, medias: mediasUploaded });
     const result = await supaFetch("/retex?select=*", "POST", row);
     const newItem = Array.isArray(result) ? rowToItem("retex", result[0]) : rowToItem("retex", result);
     setStore(prev => ({ ...prev, retex: [newItem, ...prev.retex.filter(x => x.id !== newItem.id)] }));
@@ -312,9 +326,19 @@ function DataProvider({ children }) {
   }
 
   async function updateRetex(item) {
-    const row = retexToRow(item);
-    await supaFetch("/retex?id=eq." + item.id, "PATCH", row);
-    setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? item : x) }));
+    const patch = {
+      type: item.type, title: item.title, author: item.author,
+      date: item.date, lieu: item.lieu, gravite: item.gravite,
+      categorie: item.categorie, contexte: item.contexte,
+      situation: item.situation, bien: item.bien,
+      difficultes: item.difficultes, amelio: item.amelio,
+      recit: item.recit, takehome: item.takehome,
+      tags: Array.isArray(item.tags) ? item.tags : [],
+      comments: (item.comments || []).map(c => ({ id: c.id, author: c.author || "", text: c.text || "", ts: c.ts || Date.now() })),
+      reactions: item.reactions || {},
+    };
+    await supaFetch("/retex?id=eq." + item.id, "PATCH", patch);
+    setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? { ...x, ...patch } : x) }));
   }
 
   return (
@@ -792,14 +816,14 @@ function MediaGallery({ medias }) {
   return (
     <div style={{marginBottom:16}}>
       <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {medias.map((m,i)=>(
+        {medias.filter(m => m.data || (m.url && m.url.startsWith("http"))).map((m,i)=>(
           <div key={i} style={{borderRadius:10, overflow:"hidden", background:"#0A1628"}}>
             {/* Aperçu complet */}
             <div onClick={()=>!m.isVideo && setLightbox(m)}
               style={{cursor:m.isVideo?"default":"pointer", position:"relative", display:"flex", alignItems:"center", justifyContent:"center", background:"#0A1628", minHeight:80}}>
               {m.isVideo
-                ? <video src={m.data} controls style={{width:"100%", display:"block"}}/>
-                : <img src={m.data} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
+                ? <video src={m.data || m.url} controls style={{width:"100%", display:"block"}}/>
+                : <img src={m.data || m.url} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
               }
               {!m.isVideo && (
                 <div style={{position:"absolute", bottom:6, right:8, background:"rgba(0,0,0,.55)", borderRadius:6, padding:"3px 8px", fontSize:10, color:"#fff", display:"flex", alignItems:"center", gap:4}}>
@@ -818,7 +842,7 @@ function MediaGallery({ medias }) {
       </div>
 
       {/* Lightbox avec zoom */}
-      {lightbox && <ImageLightbox src={lightbox.data} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
+      {lightbox && <ImageLightbox src={lightbox.data || lightbox.url} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
     </div>
   );
 }
@@ -1259,14 +1283,20 @@ const REACTIONS = [
 ];
 
 // ── Formulaire d'ajout RETEX/Récit ────────────────────────────────────────────
-function RetexSubmitForm({ onSubmit, onCancel }) {
+function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
   const C = useC();
-  const [tab, setTab] = useState("retex"); // retex | recit
-  const [form, setForm] = useState({
+  const defaultForm = {
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
     recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
-  });
+  };
+  // Préremplir si édition
+  const initForm = initialValues ? {
+    ...defaultForm, ...initialValues,
+    tags: Array.isArray(initialValues.tags) ? initialValues.tags.join(" ") : (initialValues.tags || ""),
+  } : defaultForm;
+  const [tab, setTab] = useState(initForm.type || "retex");
+  const [form, setForm] = useState(initForm);
   const [saving, setSaving] = useState(false);
 
   const CATS = ["Réanimation","Cardiologie","Neurologie","Traumatologie","SMUR","Pédiatrie","Toxicologie","Infectiologie","Autre"];
@@ -1287,7 +1317,11 @@ function RetexSubmitForm({ onSubmit, onCancel }) {
   async function handleSubmit() {
     if(!form.title.trim()) return;
     setSaving(true);
-    await onSubmit(form);
+    try {
+      await onSubmit(form);
+    } catch(e) {
+      alert("Erreur publication : " + e.message);
+    }
     setSaving(false);
   }
 
@@ -1295,7 +1329,7 @@ function RetexSubmitForm({ onSubmit, onCancel }) {
     <div style={{animation:"fadeIn .2s ease"}}>
       {/* Header */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
-        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>📝 Nouvelle publication</div>
+        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>{isEditing ? "✏️ Modifier la publication" : "📝 Nouvelle publication"}</div>
         <button onClick={onCancel} style={{background:"none", border:"none", color:C.sub, fontSize:22, cursor:"pointer"}}>✕</button>
       </div>
 
@@ -1390,14 +1424,14 @@ function RetexSubmitForm({ onSubmit, onCancel }) {
         fontWeight:800, color:"#fff", cursor:form.title.trim()?"pointer":"not-allowed",
         marginTop:4,
       }}>
-        {saving?"Enregistrement...":"✅ Publier"}
+        {saving?"Enregistrement...":(isEditing?"💾 Enregistrer les modifications":"✅ Publier")}
       </button>
     </div>
   );
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
   const [commentText, setCommentText] = useState("");
@@ -1561,10 +1595,15 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
         </div>
       </div>
 
-      {/* Supprimer */}
-      <button onClick={()=>onDelete(item.id)} style={{width:"100%", background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer", marginTop:4}}>
-        🗑 Supprimer cette publication
-      </button>
+      {/* Actions */}
+      <div style={{display:"flex", gap:8, marginTop:4}}>
+        <button onClick={()=>onEdit(item)} style={{flex:1, background:C.blueLight, border:`1px solid ${C.blue}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:C.blue, cursor:"pointer"}}>
+          ✏️ Modifier
+        </button>
+        <button onClick={()=>{ if(window.confirm("Supprimer cette publication ?")) onDelete(item.id); }} style={{flex:1, background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer"}}>
+          🗑 Supprimer
+        </button>
+      </div>
     </div>
   );
 }
@@ -1576,6 +1615,7 @@ function RetexScreen({ deepLinkId }) {
   const items = store.retex;
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
   const [filter, setFilter] = useState("tous");
   const [search, setSearch] = useState("");
 
@@ -1607,6 +1647,25 @@ function RetexScreen({ deepLinkId }) {
     setSelected(null);
   }
 
+  async function handleEditSubmit(form) {
+    try {
+      const tags = typeof form.tags === "string"
+        ? form.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t)
+        : (form.tags || []);
+      const updated = {
+        ...editingItem, ...form, tags,
+        // garder commentaires et réactions existants
+        comments: editingItem.comments || [],
+        reactions: editingItem.reactions || {},
+      };
+      await updateRetex(updated);
+      setEditingItem(null);
+      setSelected(null);
+    } catch(e) {
+      alert("Erreur modification : " + e.message);
+    }
+  }
+
   useEffect(()=>{
     if(deepLinkId && items.length){
       const it=items.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId));
@@ -1633,6 +1692,16 @@ function RetexScreen({ deepLinkId }) {
     (x.tags||[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
   );
 
+  // Formulaire d'édition
+  if(editingItem) return (
+    <RetexSubmitForm
+      initialValues={editingItem}
+      onSubmit={handleEditSubmit}
+      onCancel={()=>setEditingItem(null)}
+      isEditing={true}
+    />
+  );
+
   if(showForm) return (
     <RetexSubmitForm
       onSubmit={async (form)=>{ await submit(form); setShowForm(false); }}
@@ -1644,6 +1713,7 @@ function RetexScreen({ deepLinkId }) {
     <RetexDetail
       item={selectedItem}
       onBack={()=>setSelected(null)}
+      onEdit={(item)=>setEditingItem(item)}
       onReaction={toggleReaction}
       onComment={addComment}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
@@ -1910,10 +1980,10 @@ function IconoScreen({ deepLinkId }) {
         <Tag label={c.type} color={c.color}/>
         <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 8px"}}>{c.title}</h2>
         <div style={{fontSize:12, color:C.sub, marginBottom:16}}>{c.context}</div>
-        <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData?4:30, textAlign:"center", marginBottom:16}}>
-          {c.imageData && c.isVideo ? (
+        <div style={{background:"#0A1628", borderRadius:14, padding:(c.imageData||c.imageUrl)?4:30, textAlign:"center", marginBottom:16}}>
+          {(c.imageData||c.imageUrl) && (c.isVideo||c.imageUrl?.includes(".mp4")) ? (
             <video src={c.imageData || c.imageUrl} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
-          ) : c.imageData ? (
+          ) : (c.imageData||c.imageUrl) ? (
             <ClickableImage src={c.imageData || c.imageUrl} alt={c.title} style={{borderRadius:10}}/>
           ) : (
             <div>
@@ -2151,7 +2221,7 @@ function AgendaScreen({ deepLinkId }) {
         {(selected.imageData||selected.imageUrl) && (
           <div style={{borderRadius:12, overflow:"hidden", marginBottom:12}}>
             {selected.imageUrl&&selected.imageUrl.endsWith(".pdf") ? (
-              <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
+              <a href={selected.imageData||selected.imageUrl} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
             ) : (
               <div style={{background:"#f8f9fa", border:"1px solid #e0e0e0", borderRadius:12, overflow:"hidden"}}>
                 <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
@@ -3139,7 +3209,7 @@ function DilutionScreen({ deepLinkId }) {
 // ─── AdminScreen ───────────────────────────────────────────────────────────────
 function AdminScreen({ onNewItem }) {
   const C = useC();
-  const { store, addItem, updateItem, removeItem } = useData();
+  const { store, addItem, updateItem, removeItem, addRetexItem, removeRetexItem } = useData();
   const [tab, setTab] = useState("ecg");
   const [saved, setSaved] = useState(null);
   const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" });
@@ -3148,7 +3218,7 @@ function AdminScreen({ onNewItem }) {
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
-  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
+  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", gravite:"", categorie:"Réanimation", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
@@ -3194,18 +3264,19 @@ function AdminScreen({ onNewItem }) {
 
   async function addImagerie() {
     if(!iForm.title.trim()) return;
-    const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    if(editingI !== null) {
-      const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
-      await updateItem("imagerie","admin_imagerie",item,["image"]);
-      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
-      showSaved("Cas modifié !");
-    } else {
-      const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
-      await addItem("imagerie","admin_imagerie",item,["image"]);
-      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
-      showSaved("Cas ajouté !");
-     if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
+    try {
+      const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+      if(editingI !== null) {
+        const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
+        await updateItem("imagerie","admin_imagerie",item,["image"]);
+        setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+        showSaved("Cas modifié !");
+      } else {
+        const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
+        await addItem("imagerie","admin_imagerie",item,["image"]);
+        setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+        showSaved("Cas ajouté !");
+        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
       }
     } catch(e) {
       alert("Erreur ajout imagerie : " + e.message);
@@ -3253,7 +3324,7 @@ function AdminScreen({ onNewItem }) {
     const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
     try {
       await addRetexItem(item);
-      setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
+      setRForm({type:"retex",title:"",author:"",date:"",lieu:"",gravite:"",categorie:"Réanimation",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
       showSaved("Publication ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
     } catch(e) {
