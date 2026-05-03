@@ -158,42 +158,30 @@ function DataProvider({ children }) {
 
   React.useEffect(() => { loadAll(); }, []);
 
-  async function loadFiles(items, fileFields) {
-    // Les fichiers sont sur Supabase Storage - les URLs suffisent, pas besoin de charger en base64
-    return items;
-  }
+
 
   async function loadAll() {
     const next = { loaded: false };
-
-    const re = await safeGet("admin_ecgs");
-    next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image"]) : [];
-
-    const ri = await safeGet("admin_imagerie");
-    next.imagerie = ri ? await loadFiles(JSON.parse(ri.value), ["image"]) : [];
-
-    const ra = await safeGet("admin_agenda");
-    next.agenda = ra ? await loadFiles(JSON.parse(ra.value), ["image"]) : [];
-
-    const rd = await safeGet("admin_divers");
-    next.divers = rd ? await loadFiles(JSON.parse(rd.value), ["image"]) : [];
-
-    const rdil = await safeGet("admin_dilutions");
-    next.dilutions = rdil ? await loadFiles(JSON.parse(rdil.value), ["schema", "photo"]) : [];
-
-    try {
-      const gestesRows = await supaFetch("/gestes?order=created_at.asc&limit=1000");
-      next.gestes = gestesRows.map(r => rowToItem("gestes", r));
-    } catch(e) { console.error("loadAll gestes:", e); next.gestes = []; }
-
-    try {
-      const retexRows = await supaFetch("/retex?order=created_at.desc&limit=1000");
-      next.retex = retexRows.map(r => rowToItem("retex", r));
-    } catch(e) { console.error("loadAll retex:", e); next.retex = []; }
-
-    const rc = await safeGet("admin_contacts");
-    next.contacts = rc ? JSON.parse(rc.value) : [];
-
+    // Tout charger directement depuis Supabase, en parallèle pour la perf
+    const tables = [
+      ["ecgs", "ecgs", "asc"],
+      ["imagerie", "imagerie", "asc"],
+      ["agenda", "agenda", "asc"],
+      ["divers", "divers", "asc"],
+      ["dilutions", "dilutions", "asc"],
+      ["gestes", "gestes", "asc"],
+      ["retex", "retex", "desc"],
+      ["contacts", "contacts", "asc"],
+    ];
+    await Promise.all(tables.map(async ([key, table, order]) => {
+      try {
+        const rows = await supaFetch("/" + table + "?order=created_at." + order + "&limit=1000");
+        next[key] = rows.map(r => rowToItem(table, r));
+      } catch(e) {
+        console.error("loadAll " + table + ":", e);
+        next[key] = [];
+      }
+    }));
     next.loaded = true;
     setStore(next);
   }
@@ -225,64 +213,71 @@ function DataProvider({ children }) {
 
   async function addItem(storeKey, storageKey, item, fileFields = []) {
     const table = TABLE_MAP[storageKey];
-    if (table) {
-      try {
-        // Upload images vers Storage si nécessaire
-        for (const f of fileFields) {
-          const dataField = f + "Data";
-          const urlField = f + "Url";
-          if (item[dataField] && item[dataField].startsWith("data:") && !item[urlField]) {
-            const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
-            if (url) item = { ...item, [urlField]: url };
-          }
+    if (!table) throw new Error("Table inconnue: " + storageKey);
+    try {
+      // Upload images base64 vers Storage avant insert
+      for (const f of fileFields) {
+        const dataField = f + "Data";
+        const urlField = f + "Url";
+        if (item[dataField] && typeof item[dataField] === "string" && item[dataField].startsWith("data:")) {
+          const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
+          if (url) item = { ...item, [urlField]: url };
         }
-        const row = prepareForSupabase(table, item, fileFields);
-        const result = await supaFetch("/" + table + "?select=*", "POST", row);
-        const newItem = Array.isArray(result) ? rowToItem(table, result[0]) : rowToItem(table, result);
-        setStore(prev => ({ ...prev, [storeKey]: [...prev[storeKey], newItem] }));
-        return;
-      } catch(e) {
-        console.error("addItem Supabase", table, e);
-        throw e; // propager l'erreur au lieu de fallback localStorage
       }
+      // Upload medias array si présent
+      if (item.medias && item.medias.length) {
+        const uploadedMedias = await Promise.all(item.medias.map(async (m) => {
+          if (m.data && typeof m.data === "string" && m.data.startsWith("data:")) {
+            const url = await uploadMedia(m.name || ("media_" + Date.now()), m.data);
+            return { url: url || "", name: m.name || "", isVideo: !!m.isVideo, credit: m.credit || "" };
+          }
+          return { url: m.url || "", name: m.name || "", isVideo: !!m.isVideo, credit: m.credit || "" };
+        }));
+        item = { ...item, medias: uploadedMedias };
+      }
+      const row = prepareForSupabase(table, item, fileFields);
+      const result = await supaFetch("/" + table + "?select=*", "POST", row);
+      const newItem = Array.isArray(result) ? rowToItem(table, result[0]) : rowToItem(table, result);
+      setStore(prev => ({ ...prev, [storeKey]: [...prev[storeKey], newItem] }));
+    } catch(e) {
+      console.error("addItem Supabase", table, e);
+      throw e;
     }
   }
 
   async function removeItem(storeKey, storageKey, id) {
     const table = TABLE_MAP[storageKey];
-    if (table) {
-      try {
-        await supaFetch("/" + table + "?id=eq." + id, "DELETE");
-        setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].filter(x => x.id !== id) }));
-        return;
-      } catch(e) { console.error("removeItem Supabase", table, e); }
+    if (!table) throw new Error("Table inconnue: " + storageKey);
+    try {
+      await supaFetch("/" + table + "?id=eq." + id, "DELETE");
+      setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].filter(x => x.id !== id) }));
+    } catch(e) {
+      console.error("removeItem Supabase", table, e);
+      throw e;
     }
-    const updated = store[storeKey].filter(x => x.id !== id);
-    try { localStorage.setItem("sau_" + storageKey, JSON.stringify(updated)); } catch(e) {}
-    setStore(prev => ({ ...prev, [storeKey]: updated }));
   }
 
   async function updateItem(storeKey, storageKey, item, fileFields = []) {
     const table = TABLE_MAP[storageKey];
-    if (table) {
-      try {
-        for (const f of fileFields) {
-          const dataField = f + "Data";
-          const urlField = f + "Url";
-          if (item[dataField] && item[dataField].startsWith("data:")) {
-            const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
-            if (url) item = { ...item, [urlField]: url };
-          }
+    if (!table) throw new Error("Table inconnue: " + storageKey);
+    try {
+      // Upload files si nécessaire
+      for (const f of fileFields) {
+        const dataField = f + "Data";
+        const urlField = f + "Url";
+        if (item[dataField] && item[dataField].startsWith("data:")) {
+          const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
+          if (url) item = { ...item, [urlField]: url };
         }
-        const row = prepareForSupabase(table, item, fileFields);
-        await supaFetch("/" + table + "?id=eq." + item.id, "PATCH", row);
-        setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].map(x => x.id === item.id ? item : x) }));
-        return;
-      } catch(e) { console.error("updateItem Supabase", table, e); }
+      }
+      const row = prepareForSupabase(table, item, fileFields);
+      delete row.id;
+      await supaFetch("/" + table + "?id=eq." + item.id, "PATCH", row);
+      setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].map(x => x.id === item.id ? item : x) }));
+    } catch(e) {
+      console.error("updateItem Supabase", table, e);
+      throw e;
     }
-    const updated = store[storeKey].map(x => x.id === item.id ? item : x);
-    try { localStorage.setItem("sau_" + storageKey, JSON.stringify(updated)); } catch(e) {}
-    setStore(prev => ({ ...prev, [storeKey]: updated }));
   }
 
   function retexToRow(item) {
@@ -862,13 +857,13 @@ function useGlobalSearch() {
         dilutions: DILUTIONS,
         gestes: GESTES,
       };
-      try { const r=await safeGet("admin_ecgs");     if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
+      try { const rows=await supaFetch("/ecgs?order=created_at.asc&limit=1000"); base.ecgs=rows.map(r=>rowToItem("ecgs",r)); } catch(e){ base.ecgs=[]; }
       try { const rows=await supaFetch("/retex?order=created_at.desc&limit=1000"); base.retex=rows; } catch(e){ base.retex=[]; }
-      try { const r=await safeGet("admin_divers");   if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_agenda");   if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_imagerie");    if(r) base.imagerie=JSON.parse(r.value); } catch(e){}
-      try { const r=await safeGet("admin_dilutions"); if(r) base.dilutions=[...DILUTIONS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_contacts"); if(r) base.annuaire=JSON.parse(r.value); } catch(e){}
+      try { const rows=await supaFetch("/divers?order=created_at.asc&limit=1000"); base.divers=rows.map(r=>rowToItem("divers",r)); } catch(e){ base.divers=[]; }
+      try { const rows=await supaFetch("/agenda?order=created_at.asc&limit=1000"); base.agenda=rows.map(r=>rowToItem("agenda",r)); } catch(e){ base.agenda=[]; }
+      try { const rows=await supaFetch("/imagerie?order=created_at.asc&limit=1000"); base.imagerie=rows.map(r=>rowToItem("imagerie",r)); } catch(e){ base.imagerie=[]; }
+      try { const rows=await supaFetch("/dilutions?order=created_at.asc&limit=1000"); base.dilutions=rows.map(r=>rowToItem("dilutions",r)); } catch(e){ base.dilutions=[]; }
+      try { const rows=await supaFetch("/contacts?order=created_at.asc&limit=1000"); base.annuaire=rows.map(r=>rowToItem("contacts",r)); } catch(e){ base.annuaire=[]; }
       setAllData(base);
     })();
   },[]);
@@ -3246,6 +3241,8 @@ function AdminScreen({ onNewItem }) {
 
   async function addEcg() {
     if(!eForm.title.trim()) return;
+    try {
+    
     const tags = eForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
     if(editingE !== null) {
@@ -3260,6 +3257,7 @@ function AdminScreen({ onNewItem }) {
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
+    } catch(e) { alert("Erreur ECG : " + e.message); }
   }
 
   async function addImagerie() {
@@ -3285,24 +3283,28 @@ function AdminScreen({ onNewItem }) {
 
   async function addAgenda() {
     if(!aForm.title.trim()||!aForm.date.trim()) return;
-    const colors = {formation:C.blue,reunion:C.green,congres:C.navy,soiree:C.amber,autre:"#8B5CF6"};
-    const tags = aForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    if(editingA !== null) {
-      const item = {...aForm, id:editingA, tags, color:colors[aForm.type]||C.blue};
-      await updateItem("agenda","admin_agenda",item,["image"]);
-      setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
-      showSaved("Événement modifié !");
-    } else {
-      const item = {...aForm, id:Date.now(), tags, color:colors[aForm.type]||C.blue};
-      await addItem("agenda","admin_agenda",item,["image"]);
-      setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
-      showSaved("Événement ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
-    }
+    try {
+      const colors = {formation:C.blue,reunion:C.green,congres:C.navy,soiree:C.amber,autre:"#8B5CF6"};
+      const tags = aForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+      if(editingA !== null) {
+        const item = {...aForm, id:editingA, tags, color:colors[aForm.type]||C.blue};
+        await updateItem("agenda","admin_agenda",item,["image"]);
+        setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
+        showSaved("Événement modifié !");
+      } else {
+        const item = {...aForm, id:Date.now(), tags, color:colors[aForm.type]||C.blue};
+        await addItem("agenda","admin_agenda",item,["image"]);
+        setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
+        showSaved("Événement ajouté !");
+        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
+      }
+    } catch(e) { alert("Erreur agenda : " + e.message); }
   }
 
   async function addDivers() {
     if(!dForm.title.trim()) return;
+    try {
+    
     const tags = dForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     if(editingD !== null) {
       const item = {...dForm, id:editingD, tags};
@@ -3316,6 +3318,7 @@ function AdminScreen({ onNewItem }) {
       showSaved("Fiche ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
     }
+    } catch(e) { alert("Erreur divers : " + e.message); }
   }
 
   async function addRetex() {
@@ -3369,6 +3372,8 @@ function AdminScreen({ onNewItem }) {
 
   async function addDilution() {
     if(!dilForm.title.trim()) return;
+    try {
+    
     const tags = dilForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     if(editingDil !== null) {
       const item = {...dilForm, id:editingDil, tags, color:dilForm.color||"#E05260"};
@@ -3382,6 +3387,7 @@ function AdminScreen({ onNewItem }) {
       showSaved("Dilution ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
+    } catch(e) { alert("Erreur dilution : " + e.message); }
   }
 
   async function deleteItem(storeKey, storageKey, id, setter) {
