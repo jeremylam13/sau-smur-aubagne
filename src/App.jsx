@@ -2176,13 +2176,13 @@ function AgendaScreen({ deepLinkId }) {
             {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
           </div>
         </Card>
-        {selected.imageData && (
+       {(selected.imageData || selected.imageUrl) && (
           <div style={{borderRadius:12, overflow:"hidden", marginBottom:12}}>
             {selected.imageUrl&&selected.imageUrl.endsWith(".pdf") ? (
               <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
             ) : (
               <div style={{background:"#f8f9fa", border:"1px solid #e0e0e0", borderRadius:12, overflow:"hidden"}}>
-                <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
+              <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
               </div>
             )}
           </div>
@@ -2545,7 +2545,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
       )}
 
       {/* Image principale si disponible */}
-      {geste.imageData && (
+     {(geste.imageData || geste.imageUrl) && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
           <ClickableImage src={geste.imageData || geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
         </div>
