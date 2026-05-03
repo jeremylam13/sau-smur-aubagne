@@ -58,6 +58,7 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
+  if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
   // tags reste un array (Supabase retourne array, app utilise .map())
   if (!Array.isArray(r.tags)) r.tags = r.tags ? String(r.tags).split(",").map(t=>t.trim()).filter(Boolean) : [];
   if (!Array.isArray(r.points)) r.points = r.points ? String(r.points).split(",").map(t=>t.trim()).filter(Boolean) : [];
@@ -88,6 +89,7 @@ function itemToRow(table, item) {
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
+  if ("videoUrl"         in r) { r.video_url          = r.videoUrl;         delete r.videoUrl; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
@@ -155,22 +157,7 @@ function DataProvider({ children }) {
   React.useEffect(() => { loadAll(); }, []);
 
   async function loadFiles(items, fileFields) {
-    for (const item of items) {
-      for (const field of fileFields) {
-        const urlField = field + "Url";
-        const dataField = field + "Data";
-        if (item[urlField]) {
-          const fd = await safeGet("file_" + item[urlField]);
-          if (fd) item[dataField] = fd.value;
-        }
-      }
-      if (item.medias?.length) {
-        item.medias = await Promise.all(item.medias.map(async m => {
-          const fd = await safeGet("file_" + m.url);
-          return fd ? { ...m, data: fd.value } : m;
-        }));
-      }
-    }
+    // Les fichiers sont sur Supabase Storage - les URLs suffisent, pas besoin de charger en base64
     return items;
   }
 
@@ -192,8 +179,10 @@ function DataProvider({ children }) {
     const rdil = await safeGet("admin_dilutions");
     next.dilutions = rdil ? await loadFiles(JSON.parse(rdil.value), ["schema", "photo"]) : [];
 
-    const rg = await safeGet("admin_gestes");
-    next.gestes = rg ? await loadFiles(JSON.parse(rg.value), ["image"]) : [];
+    try {
+      const gestesRows = await supaFetch("/gestes?order=created_at.asc&limit=1000");
+      next.gestes = gestesRows.map(r => rowToItem("gestes", r));
+    } catch(e) { console.error("loadAll gestes:", e); next.gestes = []; }
 
     const rr = await safeGet("retex_submissions");
     next.retex = rr ? JSON.parse(rr.value) : [];
@@ -2176,13 +2165,13 @@ function AgendaScreen({ deepLinkId }) {
             {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
           </div>
         </Card>
-       {(selected.imageData || selected.imageUrl) && (
+        {selected.imageData && (
           <div style={{borderRadius:12, overflow:"hidden", marginBottom:12}}>
             {selected.imageUrl&&selected.imageUrl.endsWith(".pdf") ? (
               <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
             ) : (
               <div style={{background:"#f8f9fa", border:"1px solid #e0e0e0", borderRadius:12, overflow:"hidden"}}>
-              <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
+                <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
               </div>
             )}
           </div>
@@ -2545,7 +2534,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
       )}
 
       {/* Image principale si disponible */}
-     {(geste.imageData || geste.imageUrl) && (
+      {geste.imageData && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
           <ClickableImage src={geste.imageData || geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
         </div>
@@ -3292,16 +3281,49 @@ function AdminScreen({ onNewItem }) {
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
     };
     if(editingG !== null) {
-      const item = {...gForm, id:editingG, tags, ...parsed};
-      await updateItem("gestes","admin_gestes",item,["image"]);
-      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
-      showSaved("Geste modifié !");
+      try {
+        let itemToSend = {...gForm, id:editingG, tags, ...parsed};
+        delete itemToSend.imageData;
+        if (gForm.imageData && gForm.imageData.startsWith("data:")) {
+          const url = await uploadImageToSupabase(Date.now() + "_image", gForm.imageData);
+          if (url) itemToSend.imageUrl = url;
+        }
+        const row = itemToRow("gestes", {...itemToSend});
+        if ("videoUrl" in itemToSend) { row.video_url = itemToSend.videoUrl; delete row.videoUrl; }
+        delete row.id;
+        await supaFetch("/gestes?id=eq." + editingG, "PATCH", row);
+        setStore(prev => ({ ...prev, gestes: prev.gestes.map(x => x.id === editingG ? {...itemToSend} : x) }));
+        setEditingG(null);
+        setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+        showSaved("Geste modifié !");
+      } catch(e) {
+        console.error("updateGeste Supabase:", e);
+        alert("Erreur modification : " + e.message);
+      }
     } else {
-      const item = {...gForm, id:Date.now(), tags, ...parsed};
-      await addItem("gestes","admin_gestes",item,["image"]);
-      setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
-      showSaved("Geste ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
+      try {
+        // Préparer item sans id (Supabase génère UUID)
+        const itemToSend = {...gForm, tags, ...parsed};
+        delete itemToSend.id;
+        delete itemToSend.imageData;
+        // Upload image si présente
+        if (gForm.imageData && gForm.imageData.startsWith("data:")) {
+          const url = await uploadImageToSupabase(Date.now() + "_image", gForm.imageData);
+          if (url) itemToSend.imageUrl = url;
+        }
+        const row = itemToRow("gestes", itemToSend);
+        // Convertir videoUrl → video_url si présent
+        if ("videoUrl" in itemToSend) { row.video_url = itemToSend.videoUrl; delete row.videoUrl; }
+        const result = await supaFetch("/gestes?select=*", "POST", row);
+        const newItem = rowToItem("gestes", Array.isArray(result) ? result[0] : result);
+        setStore(prev => ({ ...prev, gestes: [...prev.gestes, newItem] }));
+        setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+        showSaved("Geste ajouté !");
+        if(onNewItem) onNewItem({id:newItem.id,title:newItem.title,icon:newItem.icon||"✂️",color:newItem.color||"#C0392B",nav:"gestes"});
+      } catch(e) {
+        console.error("addGeste Supabase:", e);
+        alert("Erreur sauvegarde : " + e.message);
+      }
     }
   }
 
