@@ -237,16 +237,11 @@ function DataProvider({ children }) {
         const newItem = Array.isArray(result) ? rowToItem(table, result[0]) : rowToItem(table, result);
         setStore(prev => ({ ...prev, [storeKey]: [...prev[storeKey], newItem] }));
         return;
-      } catch(e) { console.error("addItem Supabase", table, e); }
+      } catch(e) {
+        console.error("addItem Supabase", table, e);
+        throw e; // propager l'erreur au lieu de fallback localStorage
+      }
     }
-    // Fallback localStorage
-    const newItem = { ...item, id: item.id || Date.now() };
-    const exists = store[storeKey].find(x => x.id === newItem.id);
-    const updated = exists
-      ? store[storeKey].map(x => x.id === newItem.id ? newItem : x)
-      : [...store[storeKey], newItem];
-    try { localStorage.setItem("sau_" + storageKey, JSON.stringify(updated)); } catch(e) {}
-    setStore(prev => ({ ...prev, [storeKey]: updated }));
   }
 
   async function removeItem(storeKey, storageKey, id) {
@@ -3282,46 +3277,24 @@ function AdminScreen({ onNewItem }) {
     };
     if(editingG !== null) {
       try {
-        let itemToSend = {...gForm, id:editingG, tags, ...parsed};
-        delete itemToSend.imageData;
-        if (gForm.imageData && gForm.imageData.startsWith("data:")) {
-          const url = await uploadImageToSupabase(Date.now() + "_image", gForm.imageData);
-          if (url) itemToSend.imageUrl = url;
-        }
-        const row = itemToRow("gestes", {...itemToSend});
-        if ("videoUrl" in itemToSend) { row.video_url = itemToSend.videoUrl; delete row.videoUrl; }
-        delete row.id;
-        await supaFetch("/gestes?id=eq." + editingG, "PATCH", row);
-        setStore(prev => ({ ...prev, gestes: prev.gestes.map(x => x.id === editingG ? {...itemToSend} : x) }));
+        const item = {...gForm, id:editingG, tags, ...parsed};
+        await updateItem("gestes","admin_gestes",item,["image"]);
         setEditingG(null);
         setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
         showSaved("Geste modifié !");
       } catch(e) {
-        console.error("updateGeste Supabase:", e);
+        console.error("updateGeste:", e);
         alert("Erreur modification : " + e.message);
       }
     } else {
       try {
-        // Préparer item sans id (Supabase génère UUID)
-        const itemToSend = {...gForm, tags, ...parsed};
-        delete itemToSend.id;
-        delete itemToSend.imageData;
-        // Upload image si présente
-        if (gForm.imageData && gForm.imageData.startsWith("data:")) {
-          const url = await uploadImageToSupabase(Date.now() + "_image", gForm.imageData);
-          if (url) itemToSend.imageUrl = url;
-        }
-        const row = itemToRow("gestes", itemToSend);
-        // Convertir videoUrl → video_url si présent
-        if ("videoUrl" in itemToSend) { row.video_url = itemToSend.videoUrl; delete row.videoUrl; }
-        const result = await supaFetch("/gestes?select=*", "POST", row);
-        const newItem = rowToItem("gestes", Array.isArray(result) ? result[0] : result);
-        setStore(prev => ({ ...prev, gestes: [...prev.gestes, newItem] }));
+        const item = {...gForm, id:Date.now(), tags, ...parsed};
+        await addItem("gestes","admin_gestes",item,["image"]);
         setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
         showSaved("Geste ajouté !");
-        if(onNewItem) onNewItem({id:newItem.id,title:newItem.title,icon:newItem.icon||"✂️",color:newItem.color||"#C0392B",nav:"gestes"});
+        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
       } catch(e) {
-        console.error("addGeste Supabase:", e);
+        console.error("addGeste:", e);
         alert("Erreur sauvegarde : " + e.message);
       }
     }
