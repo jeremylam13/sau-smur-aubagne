@@ -97,10 +97,32 @@ function itemToRow(table, item) {
   return r;
 }
 
+// Compresser une image base64 (max 1200px, qualité 0.7) pour éviter erreur 413
+function compressImage(base64Data, maxWidth = 1200, quality = 0.7) {
+  return new Promise((resolve) => {
+    // Si ce n'est pas une image, retourner tel quel
+    if (!base64Data.startsWith("data:image")) { resolve(base64Data); return; }
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(base64Data);
+    img.src = base64Data;
+  });
+}
+
 // Upload fichier base64 → Supabase Storage (bucket sau-media)
 async function uploadMedia(fileName, base64Data) {
   if (!base64Data || !fileName) return null;
-  const [header, data] = base64Data.split(",");
+  // Compresser si c'est une image
+  const compressed = await compressImage(base64Data);
+  const [header, data] = compressed.split(",");
   const mime = (header.match(/:(.*?);/) || [])[1] || "application/octet-stream";
   const bytes = atob(data);
   const arr = new Uint8Array(bytes.length);
