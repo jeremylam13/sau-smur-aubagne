@@ -60,8 +60,8 @@ function rowToItem(table, row) {
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
   if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
   if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
-  // Normalise tags array→string pour compatibilité avec le reste de l'app
-  if (Array.isArray(r.tags)) r.tags = r.tags.join(", ");
+  // Tags : laisser en array (les modules de rendu attendent un array, les formulaires admin convertissent eux-mêmes en string)
+  if (!Array.isArray(r.tags)) r.tags = r.tags ? String(r.tags).split(",").map(t=>t.trim()).filter(Boolean) : [];
   return r;
 }
 
