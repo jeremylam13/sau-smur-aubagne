@@ -58,6 +58,8 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
+  if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
+  if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
   // Normalise tags array→string pour compatibilité avec le reste de l'app
   if (Array.isArray(r.tags)) r.tags = r.tags.join(", ");
   return r;
@@ -87,15 +89,38 @@ function itemToRow(table, item) {
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
+  if ("videoUrl"         in r) { r.video_url          = r.videoUrl;         delete r.videoUrl; }
+  if ("isVideo"          in r) { r.is_video           = r.isVideo;          delete r.isVideo; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
 }
 
+// Compresser une image base64 (max 1200px, qualité 0.7) pour éviter erreur 413 Payload Too Large
+function compressImage(base64Data, maxWidth = 1200, quality = 0.7) {
+  return new Promise((resolve) => {
+    if (!base64Data || !base64Data.startsWith("data:image")) { resolve(base64Data); return; }
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(base64Data);
+    img.src = base64Data;
+  });
+}
+
 // Upload fichier base64 → Supabase Storage (bucket sau-media)
 async function uploadMedia(fileName, base64Data) {
   if (!base64Data || !fileName) return null;
-  const [header, data] = base64Data.split(",");
+  // Compresse les images avant upload (les vidéos passent telles quelles)
+  const compressed = await compressImage(base64Data);
+  const [header, data] = compressed.split(",");
   const mime = (header.match(/:(.*?);/) || [])[1] || "application/octet-stream";
   const bytes = atob(data);
   const arr = new Uint8Array(bytes.length);
