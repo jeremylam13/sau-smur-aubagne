@@ -58,11 +58,8 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
-  if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
-  if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
-  // tags reste un array (Supabase retourne array, app utilise .map())
-  if (!Array.isArray(r.tags)) r.tags = r.tags ? String(r.tags).split(",").map(t=>t.trim()).filter(Boolean) : [];
-  if (!Array.isArray(r.points)) r.points = r.points ? String(r.points).split(",").map(t=>t.trim()).filter(Boolean) : [];
+  // Normalise tags array→string pour compatibilité avec le reste de l'app
+  if (Array.isArray(r.tags)) r.tags = r.tags.join(", ");
   return r;
 }
 
@@ -90,39 +87,15 @@ function itemToRow(table, item) {
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
-  if ("videoUrl"         in r) { r.video_url          = r.videoUrl;         delete r.videoUrl; }
-  if ("isVideo"          in r) { r.is_video           = r.isVideo;          delete r.isVideo; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
 }
 
-// Compresser une image base64 (max 1200px, qualité 0.7) pour éviter erreur 413
-function compressImage(base64Data, maxWidth = 1200, quality = 0.7) {
-  return new Promise((resolve) => {
-    // Si ce n'est pas une image, retourner tel quel
-    if (!base64Data.startsWith("data:image")) { resolve(base64Data); return; }
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width, h = img.height;
-      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => resolve(base64Data);
-    img.src = base64Data;
-  });
-}
-
 // Upload fichier base64 → Supabase Storage (bucket sau-media)
 async function uploadMedia(fileName, base64Data) {
   if (!base64Data || !fileName) return null;
-  // Compresser si c'est une image
-  const compressed = await compressImage(base64Data);
-  const [header, data] = compressed.split(",");
+  const [header, data] = base64Data.split(",");
   const mime = (header.match(/:(.*?);/) || [])[1] || "application/octet-stream";
   const bytes = atob(data);
   const arr = new Uint8Array(bytes.length);
@@ -180,182 +153,124 @@ function DataProvider({ children }) {
 
   React.useEffect(() => { loadAll(); }, []);
 
-
+  async function loadFiles(items, fileFields) {
+    for (const item of items) {
+      for (const field of fileFields) {
+        const urlField = field + "Url";
+        const dataField = field + "Data";
+        if (item[urlField]) {
+          const fd = await safeGet("file_" + item[urlField]);
+          if (fd) item[dataField] = fd.value;
+        }
+      }
+      if (item.medias?.length) {
+        item.medias = await Promise.all(item.medias.map(async m => {
+          const fd = await safeGet("file_" + m.url);
+          return fd ? { ...m, data: fd.value } : m;
+        }));
+      }
+    }
+    return items;
+  }
 
   async function loadAll() {
     const next = { loaded: false };
-    // Tout charger directement depuis Supabase, en parallèle pour la perf
-    const tables = [
-      ["ecgs", "ecgs", "asc"],
-      ["imagerie", "imagerie", "asc"],
-      ["agenda", "agenda", "asc"],
-      ["divers", "divers", "asc"],
-      ["dilutions", "dilutions", "asc"],
-      ["gestes", "gestes", "asc"],
-      ["retex", "retex", "desc"],
-      ["contacts", "contacts", "asc"],
-    ];
-    await Promise.all(tables.map(async ([key, table, order]) => {
-      try {
-        const rows = await supaFetch("/" + table + "?order=created_at." + order + "&limit=1000");
-        next[key] = rows.map(r => rowToItem(table, r));
-      } catch(e) {
-        console.error("loadAll " + table + ":", e);
-        next[key] = [];
-      }
-    }));
+
+    const re = await safeGet("admin_ecgs");
+    next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image"]) : [];
+
+    const ri = await safeGet("admin_imagerie");
+    next.imagerie = ri ? await loadFiles(JSON.parse(ri.value), ["image"]) : [];
+
+    const ra = await safeGet("admin_agenda");
+    next.agenda = ra ? await loadFiles(JSON.parse(ra.value), ["image"]) : [];
+
+    const rd = await safeGet("admin_divers");
+    next.divers = rd ? await loadFiles(JSON.parse(rd.value), ["image"]) : [];
+
+    const rdil = await safeGet("admin_dilutions");
+    next.dilutions = rdil ? await loadFiles(JSON.parse(rdil.value), ["schema", "photo"]) : [];
+
+    const rg = await safeGet("admin_gestes");
+    next.gestes = rg ? await loadFiles(JSON.parse(rg.value), ["image"]) : [];
+
+    const rr = await safeGet("retex_submissions");
+    next.retex = rr ? JSON.parse(rr.value) : [];
+
+    const rc = await safeGet("admin_contacts");
+    next.contacts = rc ? JSON.parse(rc.value) : [];
+
     next.loaded = true;
     setStore(next);
   }
 
-  // ── Supabase : écriture directe ──────────────────────────────────────────────
-
-  // Upload image base64 → Supabase Storage
-  async function uploadImageToSupabase(fileName, base64Data) {
-    if (!base64Data || !fileName) return null;
-    try {
-      const url = await uploadMedia(fileName, base64Data);
-      return url;
-    } catch(e) { console.warn("uploadImageToSupabase", e); return null; }
+  async function save(key, storeKey, items, stripFields = []) {
+    const toSave = items.map(item => {
+      const copy = { ...item };
+      for (const f of stripFields) delete copy[f];
+      if (copy.medias) copy.medias = (copy.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo }));
+      return copy;
+    });
+    await safeSet(key, JSON.stringify(toSave));
+    setStore(prev => ({ ...prev, [storeKey]: items }));
   }
 
-  // Prépare l'item pour Supabase (supprime les data binary, convertit les champs)
-  function prepareForSupabase(table, item, fileFields = []) {
-    const copy = { ...item };
-    // Supprimer les champs binaires (déjà uploadés)
-    for (const f of fileFields) { delete copy[f + "Data"]; }
-    // Supprimer id si c'est un Date.now() (Supabase génère son propre UUID)
-    // On garde id seulement si c'est un UUID valide
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (copy.id && !uuidRegex.test(String(copy.id))) delete copy.id;
-    // Convertir medias en array sans data
-    if (copy.medias) copy.medias = (copy.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "" }));
-    return itemToRow(table, copy);
+  async function saveFiles(item, fileFields) {
+    for (const field of fileFields) {
+      const dataField = field + "Data";
+      const urlField = field + "Url";
+      if (item[dataField] && item[urlField]) {
+        await safeSet("file_" + item[urlField], item[dataField]);
+      }
+    }
+    if (item.medias) {
+      for (const m of item.medias) {
+        if (m.data && m.url) await safeSet("file_" + m.url, m.data);
+      }
+    }
   }
 
   async function addItem(storeKey, storageKey, item, fileFields = []) {
-    const table = TABLE_MAP[storageKey];
-    if (!table) throw new Error("Table inconnue: " + storageKey);
-    try {
-      // Upload images base64 vers Storage avant insert
-      for (const f of fileFields) {
-        const dataField = f + "Data";
-        const urlField = f + "Url";
-        if (item[dataField] && typeof item[dataField] === "string" && item[dataField].startsWith("data:")) {
-          const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
-          if (url) item = { ...item, [urlField]: url };
-        }
-      }
-      // Upload medias array si présent
-      if (item.medias && item.medias.length) {
-        const uploadedMedias = await Promise.all(item.medias.map(async (m) => {
-          if (m.data && typeof m.data === "string" && m.data.startsWith("data:")) {
-            const url = await uploadMedia(m.name || ("media_" + Date.now()), m.data);
-            return { url: url || "", name: m.name || "", isVideo: !!m.isVideo, credit: m.credit || "" };
-          }
-          return { url: m.url || "", name: m.name || "", isVideo: !!m.isVideo, credit: m.credit || "" };
-        }));
-        item = { ...item, medias: uploadedMedias };
-      }
-      const row = prepareForSupabase(table, item, fileFields);
-      const result = await supaFetch("/" + table + "?select=*", "POST", row);
-      const newItem = Array.isArray(result) ? rowToItem(table, result[0]) : rowToItem(table, result);
-      setStore(prev => ({ ...prev, [storeKey]: [...prev[storeKey], newItem] }));
-    } catch(e) {
-      console.error("addItem Supabase", table, e);
-      throw e;
-    }
+    await saveFiles(item, fileFields);
+    const newItem = { ...item, id: item.id || Date.now() };
+    const exists = store[storeKey].find(x => x.id === newItem.id);
+    const updated = exists
+      ? store[storeKey].map(x => x.id === newItem.id ? newItem : x)
+      : [...store[storeKey], newItem];
+    await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
   }
 
-  async function removeItem(storeKey, storageKey, id) {
-    const table = TABLE_MAP[storageKey];
-    if (!table) throw new Error("Table inconnue: " + storageKey);
-    try {
-      await supaFetch("/" + table + "?id=eq." + id, "DELETE");
-      setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].filter(x => x.id !== id) }));
-    } catch(e) {
-      console.error("removeItem Supabase", table, e);
-      throw e;
-    }
+  async function removeItem(storeKey, storageKey, id, stripFields = []) {
+    const updated = store[storeKey].filter(x => x.id !== id);
+    await save(storageKey, storeKey, updated, stripFields);
   }
 
   async function updateItem(storeKey, storageKey, item, fileFields = []) {
-    const table = TABLE_MAP[storageKey];
-    if (!table) throw new Error("Table inconnue: " + storageKey);
-    try {
-      // Upload files si nécessaire
-      for (const f of fileFields) {
-        const dataField = f + "Data";
-        const urlField = f + "Url";
-        if (item[dataField] && item[dataField].startsWith("data:")) {
-          const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
-          if (url) item = { ...item, [urlField]: url };
-        }
-      }
-      const row = prepareForSupabase(table, item, fileFields);
-      delete row.id;
-      await supaFetch("/" + table + "?id=eq." + item.id, "PATCH", row);
-      setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].map(x => x.id === item.id ? item : x) }));
-    } catch(e) {
-      console.error("updateItem Supabase", table, e);
-      throw e;
-    }
-  }
-
-  function retexToRow(item) {
-    // Champs autorisés dans la table retex (correspondance exacte avec Supabase)
-    const allowed = ["type","title","author","date","lieu","gravite","categorie","contexte","situation",
-                     "bien","difficultes","amelio","recit","takehome","tags","medias","reactions","comments","ts"];
-    const row = {};
-    for (const k of allowed) {
-      if (item[k] !== undefined) row[k] = item[k];
-    }
-    // tags doit être un array
-    if (typeof row.tags === "string") row.tags = row.tags ? row.tags.split(/[\s,]+/).filter(Boolean) : [];
-    // medias : garder seulement url/name/isVideo
-    if (row.medias) row.medias = (row.medias || []).map(m => ({ url: m.url || "", name: m.name || "", isVideo: !!m.isVideo }));
-    return row;
+    await saveFiles(item, fileFields);
+    const updated = store[storeKey].map(x => x.id === item.id ? item : x);
+    await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
   }
 
   async function addRetexItem(item) {
-    // Upload les médias base64 vers Supabase Storage avant l'insert
-    const mediasUploaded = await Promise.all((item.medias || []).map(async (m) => {
-      if (m.data && m.data.startsWith("data:")) {
-        // Upload direct sans préfixe timestamp (uploadMedia en ajoute déjà un)
-        const uploadedUrl = await uploadMedia(m.name || "media", m.data);
-        return { url: uploadedUrl, name: m.name || "", isVideo: !!m.isVideo };
-      }
-      // Déjà une URL Supabase
-      if (m.url && m.url.startsWith("http")) {
-        return { url: m.url, name: m.name || "", isVideo: !!m.isVideo };
-      }
-      return { url: "", name: m.name || "", isVideo: !!m.isVideo };
-    }));
-    const row = retexToRow({ ...item, medias: mediasUploaded });
-    const result = await supaFetch("/retex?select=*", "POST", row);
-    const newItem = Array.isArray(result) ? rowToItem("retex", result[0]) : rowToItem("retex", result);
-    setStore(prev => ({ ...prev, retex: [newItem, ...prev.retex.filter(x => x.id !== newItem.id)] }));
+    await saveFiles(item, []);
+    const toStore = { ...item, medias: (item.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) };
+    const updated = [toStore, ...store.retex.filter(x => x.id !== toStore.id)];
+    await safeSet("retex_submissions", JSON.stringify(updated));
+    setStore(prev => ({ ...prev, retex: [item, ...prev.retex.filter(x => x.id !== item.id)] }));
   }
 
   async function removeRetexItem(id) {
-    await supaFetch("/retex?id=eq." + id, "DELETE");
-    setStore(prev => ({ ...prev, retex: prev.retex.filter(x => x.id !== id) }));
+    const updated = store.retex.filter(x => x.id !== id);
+    const toStore = updated.map(x => ({ ...x, medias: (x.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) }));
+    await safeSet("retex_submissions", JSON.stringify(toStore));
+    setStore(prev => ({ ...prev, retex: updated }));
   }
 
   async function updateRetex(item) {
-    const patch = {
-      type: item.type, title: item.title, author: item.author,
-      date: item.date, lieu: item.lieu, gravite: item.gravite,
-      categorie: item.categorie, contexte: item.contexte,
-      situation: item.situation, bien: item.bien,
-      difficultes: item.difficultes, amelio: item.amelio,
-      recit: item.recit, takehome: item.takehome,
-      tags: Array.isArray(item.tags) ? item.tags : [],
-      comments: (item.comments || []).map(c => ({ id: c.id, author: c.author || "", text: c.text || "", ts: c.ts || Date.now() })),
-      reactions: item.reactions || {},
-    };
-    await supaFetch("/retex?id=eq." + item.id, "PATCH", patch);
-    setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? { ...x, ...patch } : x) }));
+    const updated = store.retex.map(x => x.id === item.id ? item : x);
+    const toStore = updated.map(x => ({ ...x, medias: (x.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) }));
+    await safeSet("retex_submissions", JSON.stringify(toStore));
+    setStore(prev => ({ ...prev, retex: updated }));
   }
 
   return (
@@ -394,6 +309,9 @@ const ECGS = [
 const ICONO = [];
 
 const AGENDA = [
+  { id:5, type:"reunion",   title:"Reunion de service", date:"Mardi 12 Mai 2026", heure:"A definir", lieu:"Salle de reunion - SAU Aubagne", color:"#2E9E6B" },
+  { id:6, type:"reunion",   title:"Reunion de service", date:"Jeudi 4 Juin 2026",  heure:"A definir", lieu:"Salle de reunion - SAU Aubagne", color:"#2E9E6B" },
+  { id:7, type:"formation", title:"De battre mon coeur s'est arrete : techniques exceptionnelles de prise en charge de l'arret cardiaque extrahospitalier", date:"Jeudi 7 Mai 2026", heure:"A definir", lieu:"Kedge Business School - Marseille", color:"#E05260" },
 ];
 
 const DIVERS = [
@@ -833,14 +751,14 @@ function MediaGallery({ medias }) {
   return (
     <div style={{marginBottom:16}}>
       <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {medias.filter(m => m.data || (m.url && m.url.startsWith("http"))).map((m,i)=>(
+        {medias.map((m,i)=>(
           <div key={i} style={{borderRadius:10, overflow:"hidden", background:"#0A1628"}}>
             {/* Aperçu complet */}
             <div onClick={()=>!m.isVideo && setLightbox(m)}
               style={{cursor:m.isVideo?"default":"pointer", position:"relative", display:"flex", alignItems:"center", justifyContent:"center", background:"#0A1628", minHeight:80}}>
               {m.isVideo
-                ? <video src={m.data || m.url} controls style={{width:"100%", display:"block"}}/>
-                : <img src={m.data || m.url} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
+                ? <video src={m.data} controls style={{width:"100%", display:"block"}}/>
+                : <img src={m.data} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
               }
               {!m.isVideo && (
                 <div style={{position:"absolute", bottom:6, right:8, background:"rgba(0,0,0,.55)", borderRadius:6, padding:"3px 8px", fontSize:10, color:"#fff", display:"flex", alignItems:"center", gap:4}}>
@@ -859,7 +777,7 @@ function MediaGallery({ medias }) {
       </div>
 
       {/* Lightbox avec zoom */}
-      {lightbox && <ImageLightbox src={lightbox.data || lightbox.url} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
+      {lightbox && <ImageLightbox src={lightbox.data} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
     </div>
   );
 }
@@ -879,13 +797,13 @@ function useGlobalSearch() {
         dilutions: DILUTIONS,
         gestes: GESTES,
       };
-      try { const rows=await supaFetch("/ecgs?order=created_at.asc&limit=1000"); base.ecgs=rows.map(r=>rowToItem("ecgs",r)); } catch(e){ base.ecgs=[]; }
-      try { const rows=await supaFetch("/retex?order=created_at.desc&limit=1000"); base.retex=rows; } catch(e){ base.retex=[]; }
-      try { const rows=await supaFetch("/divers?order=created_at.asc&limit=1000"); base.divers=rows.map(r=>rowToItem("divers",r)); } catch(e){ base.divers=[]; }
-      try { const rows=await supaFetch("/agenda?order=created_at.asc&limit=1000"); base.agenda=rows.map(r=>rowToItem("agenda",r)); } catch(e){ base.agenda=[]; }
-      try { const rows=await supaFetch("/imagerie?order=created_at.asc&limit=1000"); base.imagerie=rows.map(r=>rowToItem("imagerie",r)); } catch(e){ base.imagerie=[]; }
-      try { const rows=await supaFetch("/dilutions?order=created_at.asc&limit=1000"); base.dilutions=rows.map(r=>rowToItem("dilutions",r)); } catch(e){ base.dilutions=[]; }
-      try { const rows=await supaFetch("/contacts?order=created_at.asc&limit=1000"); base.annuaire=rows.map(r=>rowToItem("contacts",r)); } catch(e){ base.annuaire=[]; }
+      try { const r=await safeGet("admin_ecgs");     if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("retex_submissions"); if(r) base.retex=JSON.parse(r.value); } catch(e){}
+      try { const r=await safeGet("admin_divers");   if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_agenda");   if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_imagerie");    if(r) base.imagerie=JSON.parse(r.value); } catch(e){}
+      try { const r=await safeGet("admin_dilutions"); if(r) base.dilutions=[...DILUTIONS,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_contacts"); if(r) base.annuaire=JSON.parse(r.value); } catch(e){}
       setAllData(base);
     })();
   },[]);
@@ -1258,11 +1176,13 @@ function SaviezVousWidget({ onNav }) {
   useEffect(()=>{
     (async()=>{
       try {
-        const rows = await supaFetch("/retex?order=created_at.desc&limit=1000");
-        const validated = rows.filter(x=>x.takehome);
-        if(validated.length>0) {
-          const pick = validated[Math.floor(Math.random()*validated.length)];
-          setItem(pick);
+        const r = await safeGet("retex_submissions");
+        if(r) {
+          const validated = JSON.parse(r.value).filter(x=>x.takehome);
+          if(validated.length>0) {
+            const pick = validated[Math.floor(Math.random()*validated.length)];
+            setItem(pick);
+          }
         }
       } catch(e){}
     })();
@@ -1300,20 +1220,14 @@ const REACTIONS = [
 ];
 
 // ── Formulaire d'ajout RETEX/Récit ────────────────────────────────────────────
-function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
+function RetexSubmitForm({ onSubmit, onCancel }) {
   const C = useC();
-  const defaultForm = {
+  const [tab, setTab] = useState("retex"); // retex | recit
+  const [form, setForm] = useState({
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
     recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
-  };
-  // Préremplir si édition
-  const initForm = initialValues ? {
-    ...defaultForm, ...initialValues,
-    tags: Array.isArray(initialValues.tags) ? initialValues.tags.join(" ") : (initialValues.tags || ""),
-  } : defaultForm;
-  const [tab, setTab] = useState(initForm.type || "retex");
-  const [form, setForm] = useState(initForm);
+  });
   const [saving, setSaving] = useState(false);
 
   const CATS = ["Réanimation","Cardiologie","Neurologie","Traumatologie","SMUR","Pédiatrie","Toxicologie","Infectiologie","Autre"];
@@ -1334,11 +1248,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
   async function handleSubmit() {
     if(!form.title.trim()) return;
     setSaving(true);
-    try {
-      await onSubmit(form);
-    } catch(e) {
-      alert("Erreur publication : " + e.message);
-    }
+    await onSubmit(form);
     setSaving(false);
   }
 
@@ -1346,7 +1256,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
     <div style={{animation:"fadeIn .2s ease"}}>
       {/* Header */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
-        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>{isEditing ? "✏️ Modifier la publication" : "📝 Nouvelle publication"}</div>
+        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>📝 Nouvelle publication</div>
         <button onClick={onCancel} style={{background:"none", border:"none", color:C.sub, fontSize:22, cursor:"pointer"}}>✕</button>
       </div>
 
@@ -1441,14 +1351,14 @@ function RetexSubmitForm({ onSubmit, onCancel, initialValues, isEditing }) {
         fontWeight:800, color:"#fff", cursor:form.title.trim()?"pointer":"not-allowed",
         marginTop:4,
       }}>
-        {saving?"Enregistrement...":(isEditing?"💾 Enregistrer les modifications":"✅ Publier")}
+        {saving?"Enregistrement...":"✅ Publier"}
       </button>
     </div>
   );
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
   const [commentText, setCommentText] = useState("");
@@ -1510,7 +1420,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
         </div>
         {(item.tags&&item.tags.length>0) && (
           <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-            {(Array.isArray(item.tags)?item.tags:[]).map((t,i)=>(
+            {item.tags.map((t,i)=>(
               <span key={i} style={{background:"rgba(255,255,255,.18)", color:"#fff", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
             ))}
           </div>
@@ -1612,15 +1522,10 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
         </div>
       </div>
 
-      {/* Actions */}
-      <div style={{display:"flex", gap:8, marginTop:4}}>
-        <button onClick={()=>onEdit(item)} style={{flex:1, background:C.blueLight, border:`1px solid ${C.blue}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:C.blue, cursor:"pointer"}}>
-          ✏️ Modifier
-        </button>
-        <button onClick={()=>{ if(window.confirm("Supprimer cette publication ?")) onDelete(item.id); }} style={{flex:1, background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer"}}>
-          🗑 Supprimer
-        </button>
-      </div>
+      {/* Supprimer */}
+      <button onClick={()=>onDelete(item.id)} style={{width:"100%", background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer", marginTop:4}}>
+        🗑 Supprimer cette publication
+      </button>
     </div>
   );
 }
@@ -1632,7 +1537,6 @@ function RetexScreen({ deepLinkId }) {
   const items = store.retex;
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
   const [filter, setFilter] = useState("tous");
   const [search, setSearch] = useState("");
 
@@ -1664,25 +1568,6 @@ function RetexScreen({ deepLinkId }) {
     setSelected(null);
   }
 
-  async function handleEditSubmit(form) {
-    try {
-      const tags = typeof form.tags === "string"
-        ? form.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t)
-        : (form.tags || []);
-      const updated = {
-        ...editingItem, ...form, tags,
-        // garder commentaires et réactions existants
-        comments: editingItem.comments || [],
-        reactions: editingItem.reactions || {},
-      };
-      await updateRetex(updated);
-      setEditingItem(null);
-      setSelected(null);
-    } catch(e) {
-      alert("Erreur modification : " + e.message);
-    }
-  }
-
   useEffect(()=>{
     if(deepLinkId && items.length){
       const it=items.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId));
@@ -1709,16 +1594,6 @@ function RetexScreen({ deepLinkId }) {
     (x.tags||[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
   );
 
-  // Formulaire d'édition
-  if(editingItem) return (
-    <RetexSubmitForm
-      initialValues={editingItem}
-      onSubmit={handleEditSubmit}
-      onCancel={()=>setEditingItem(null)}
-      isEditing={true}
-    />
-  );
-
   if(showForm) return (
     <RetexSubmitForm
       onSubmit={async (form)=>{ await submit(form); setShowForm(false); }}
@@ -1730,7 +1605,6 @@ function RetexScreen({ deepLinkId }) {
     <RetexDetail
       item={selectedItem}
       onBack={()=>setSelected(null)}
-      onEdit={(item)=>setEditingItem(item)}
       onReaction={toggleReaction}
       onComment={addComment}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
@@ -1881,25 +1755,30 @@ function ECGScreen({ deepLinkId }) {
         <div style={{fontSize:12, color:C.sub, marginBottom:8}}>{e.context}</div>
           {(e.tags&&e.tags.length>0) && (
             <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
-              {(Array.isArray(e.tags)?e.tags:[]).map((t,i)=>(
+              {e.tags.map((t,i)=>(
                 <span key={i} style={{background:C.red+"22", color:C.red, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
               ))}
             </div>
           )}
 
-        <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData||e.imageUrl)?4:16, marginBottom:16}}>
-          {(e.imageUrl || e.imageData) ? (
-            <ClickableImage src={e.imageData || e.imageUrl} alt="ECG" style={{borderRadius:10}}/>
+        <div style={{background:"#0A1628", borderRadius:14, padding:e.imageData?4:16, marginBottom:16}}>
+          {e.imageUrl ? (
+            e.imageData
+              ? <ClickableImage src={e.imageData} alt="ECG" style={{borderRadius:10}}/>
+              : <div style={{color:"rgba(255,255,255,.4)", textAlign:"center", padding:20, fontSize:12}}>Image non disponible</div>
           ) : (
             <SvgEcg color={e.color}/>
           )}
-          {!(e.imageData||e.imageUrl) && <div style={{color:"rgba(255,255,255,.5)", fontSize:10, textAlign:"center", marginTop:8}}>ECG - {e.title}</div>}
+          {!e.imageData && <div style={{color:"rgba(255,255,255,.5)", fontSize:10, textAlign:"center", marginTop:8}}>ECG - {e.title}</div>}
         </div>
 
-        {e.hasSecondEcg && (e.imageUrl2 || e.imageData2) && (
-          <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData2||e.imageUrl2)?4:16, marginBottom:16}}>
+        {e.hasSecondEcg && e.imageUrl2 && (
+          <div style={{background:"#0A1628", borderRadius:14, padding:e.imageData2?4:16, marginBottom:16}}>
             <div style={{color:"rgba(255,255,255,.7)", fontSize:11, fontWeight:700, marginBottom:8, padding:"8px 8px 0"}}>{e.secondTitle}</div>
-            <ClickableImage src={e.imageData2 || e.imageUrl2} alt="ECG 2" style={{borderRadius:10}}/>
+            {e.imageData2
+              ? <ClickableImage src={e.imageData2} alt="ECG 2" style={{borderRadius:10}}/>
+              : <div style={{color:"rgba(255,255,255,.4)", textAlign:"center", padding:20, fontSize:12}}>Image non disponible</div>
+            }
           </div>
         )}
 
@@ -1926,7 +1805,7 @@ function ECGScreen({ deepLinkId }) {
               <Card>
                 <div style={{fontSize:11, fontWeight:800, color:C.navy, marginBottom:8}}>POINTS PEDAGOGIQUES</div>
                 <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                  {(Array.isArray(e.points)?e.points:[]).map((p,i) => (
+                  {e.points.map((p,i) => (
                     <div key={i} style={{display:"flex", gap:8, fontSize:13, color:C.text, lineHeight:1.5}}>
                       <span style={{color:C.blue, flexShrink:0}}>&#8226;</span>{p}
                     </div>
@@ -1954,8 +1833,8 @@ function ECGScreen({ deepLinkId }) {
           <Card key={e.id} onClick={()=>setSelected(e)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
               <div style={{background:C.redLight, borderRadius:12, padding:8, minWidth:56, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
-                {(e.imageUrl || e.imageData)
-                  ? <img src={e.imageData || e.imageUrl} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
+                {e.imageUrl
+                  ? <img src={e.imageData} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
                   : <svg viewBox="0 0 60 30" style={{width:56, height:30}}><polyline points="0,15 8,15 12,5 16,25 20,15 28,15 32,8 36,22 40,15 48,15 52,10 56,20 60,15" fill="none" stroke={e.color||C.red} strokeWidth="1.5"/></svg>
                 }
               </div>
@@ -1997,11 +1876,11 @@ function IconoScreen({ deepLinkId }) {
         <Tag label={c.type} color={c.color}/>
         <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 8px"}}>{c.title}</h2>
         <div style={{fontSize:12, color:C.sub, marginBottom:16}}>{c.context}</div>
-        <div style={{background:"#0A1628", borderRadius:14, padding:(c.imageData||c.imageUrl)?4:30, textAlign:"center", marginBottom:16}}>
-          {(c.imageData||c.imageUrl) && (c.isVideo||c.imageUrl?.includes(".mp4")) ? (
-            <video src={c.imageData || c.imageUrl} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
-          ) : (c.imageData||c.imageUrl) ? (
-            <ClickableImage src={c.imageData || c.imageUrl} alt={c.title} style={{borderRadius:10}}/>
+        <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData?4:30, textAlign:"center", marginBottom:16}}>
+          {c.imageData && c.isVideo ? (
+            <video src={c.imageData} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
+          ) : c.imageData ? (
+            <ClickableImage src={c.imageData} alt={c.title} style={{borderRadius:10}}/>
           ) : (
             <div>
               <div style={{fontSize:60}}>{"🩻"}</div>
@@ -2024,7 +1903,7 @@ function IconoScreen({ deepLinkId }) {
               <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{c.diag}</div>
             {(c.tags&&c.tags.length>0) && (
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:10}}>
-                {(Array.isArray(c.tags)?c.tags:[]).map((t,i)=>(
+                {c.tags.map((t,i)=>(
                   <span key={i} style={{background:"#9B59B6"+"22", color:"#9B59B6", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
                 ))}
               </div>
@@ -2057,7 +1936,7 @@ function IconoScreen({ deepLinkId }) {
           <Card key={c.id} onClick={()=>setSelected(c)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
               <div style={{background:(c.color||C.blue)+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>
-                {(c.imageData||c.imageUrl) ? <img src={c.imageData||c.imageUrl} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
+                {c.imageData ? <img src={c.imageData} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{c.title}</div>
@@ -2227,7 +2106,7 @@ function AgendaScreen({ deepLinkId }) {
             {selected.lieu && <div style={{fontSize:12, color:C.sub}}>{"📍"} {selected.lieu}</div>}
             {(selected.tags&&selected.tags.length>0) && (
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-                {(Array.isArray(selected.tags)?selected.tags:[]).map((t,i)=>(
+                {selected.tags.map((t,i)=>(
                   <span key={i} style={{background:C.amber+"22", color:C.amber, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
                 ))}
               </div>
@@ -2235,13 +2114,13 @@ function AgendaScreen({ deepLinkId }) {
             {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
           </div>
         </Card>
-        {(selected.imageData||selected.imageUrl) && (
+        {selected.imageData && (
           <div style={{borderRadius:12, overflow:"hidden", marginBottom:12}}>
             {selected.imageUrl&&selected.imageUrl.endsWith(".pdf") ? (
-              <a href={selected.imageData||selected.imageUrl} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
+              <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
             ) : (
               <div style={{background:"#f8f9fa", border:"1px solid #e0e0e0", borderRadius:12, overflow:"hidden"}}>
-                <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
+                <ClickableImage src={selected.imageData} alt={selected.title} style={{borderRadius:12}}/>
               </div>
             )}
           </div>
@@ -2310,7 +2189,7 @@ function AgendaScreen({ deepLinkId }) {
                         <div style={{fontSize:11, color:C.sub}}>{"📆"} {(()=>{ const iso=ev.date&&ev.date.match(/^(\d{4})-(\d{2})-(\d{2})$/); return iso?`${iso[3]}/${iso[2]}/${iso[1]}`:ev.date; })()}</div>
                         {ev.heure && <div style={{fontSize:11, color:C.sub}}>{"🕐"} {ev.heure}</div>}
                       </div>
-                      {(ev.imageData||ev.imageUrl) && <span style={{fontSize:12}}>{"📎"}</span>}
+                      {ev.imageData && <span style={{fontSize:12}}>{"📎"}</span>}
                       <span style={{color:C.sub, fontSize:18}}>›</span>
                     </div>
                   </Card>
@@ -2494,7 +2373,7 @@ function GestesScreen({ deepLinkId }) {
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{g.title}</div>
                 <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                  {(Array.isArray(g.tags)?g.tags:[]).slice(0,3).map(t=>(
+                  {g.tags.slice(0,3).map(t=>(
                     <span key={t} style={{fontSize:10, fontWeight:700,
                       background:C.blue+"22", color:C.blue,
                       padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -2560,7 +2439,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           <div>
             <div style={{fontSize:16, fontWeight:800, color:C.text, lineHeight:1.3}}>{geste.title}</div>
             <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:5}}>
-              {(Array.isArray(geste.tags)?geste.tags:[]).map(t=>(
+              {geste.tags.map(t=>(
                 <span key={t} style={{fontSize:10, fontWeight:700,
                   background:C.blue+"22", color:C.blue,
                   padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -2570,43 +2449,10 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
         </div>
       </div>
 
-      {/* Vidéo YouTube — lien direct */}
-      {ytId && (
-        <a
-          href={`https://www.youtube.com/watch?v=${ytId}`}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display:"flex", alignItems:"center", gap:14,
-            background:C.white, border:`1px solid ${C.border}`,
-            borderRadius:14, padding:"14px 16px", marginBottom:16,
-            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
-          }}>
-          <div style={{
-            background:"#FF0000", borderRadius:10,
-            width:46, height:46, flexShrink:0,
-            display:"flex", alignItems:"center", justifyContent:"center",
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
-            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
-      )}
-
       {/* Image principale si disponible */}
-      {(geste.imageData||geste.imageUrl) && (
+      {geste.imageData && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
-          <ClickableImage src={geste.imageData || geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
+          <ClickableImage src={geste.imageData} alt={geste.title} style={{borderRadius:14}}/>
         </div>
       )}
       {geste.credit && (
@@ -2743,6 +2589,39 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           </div>
         )}
       </div>
+
+      {/* Vidéo YouTube — lien direct, en bas du contenu */}
+      {ytId && (
+        <a
+          href={`https://www.youtube.com/watch?v=${ytId}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display:"flex", alignItems:"center", gap:14,
+            background:C.white, border:`1px solid ${C.border}`,
+            borderRadius:14, padding:"14px 16px", marginTop:16,
+            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
+          }}>
+          <div style={{
+            background:"#FF0000", borderRadius:10,
+            width:46, height:46, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
+            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
+      )}
     </div>
   );
 }
@@ -2815,8 +2694,8 @@ function DiversScreen({ deepLinkId }) {
             <span style={{fontSize:11, color:C.navy, fontWeight:700}}>{selected.source}</span>
           </div>
         )}
-        {(selected.imageData||selected.imageUrl) && (
-          <DiversImageViewer src={selected.imageData||selected.imageUrl} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData||selected.imageUrl}/>
+        {selected.imageData && (
+          <DiversImageViewer src={selected.imageData} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData}/>
         )}
         {selected.credit && (
           <div style={{fontSize:10, color:C.sub, fontStyle:"italic", marginBottom:8, paddingLeft:2}}>
@@ -3070,7 +2949,7 @@ function DilutionScreen({ deepLinkId }) {
         </div>
 
         {/* Schema visuel uploadé */}
-        {(selected.schemaData || selected.schemaUrl) && (
+        {selected.schemaData && (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.blue+"18", borderRadius:10, width:34, height:34,
@@ -3078,7 +2957,7 @@ function DilutionScreen({ deepLinkId }) {
               <span style={{fontSize:12, fontWeight:800, color:C.blue, letterSpacing:.5, textTransform:"uppercase"}}>Schéma visuel</span>
             </div>
             <div style={{background:"#0A1628", borderRadius:14, padding:4, overflow:"hidden"}}>
-              <ClickableImage src={selected.schemaData || selected.schemaUrl} alt="Schema de dilution" style={{borderRadius:10}}/>
+              <ClickableImage src={selected.schemaData} alt="Schema de dilution" style={{borderRadius:10}}/>
             </div>
           </div>
         )}
@@ -3122,14 +3001,14 @@ function DilutionScreen({ deepLinkId }) {
         )}
 
         {/* Photo complémentaire */}
-        {(selected.photoData || selected.photoUrl) && (
+        {selected.photoData && (
           <div style={{marginTop:16, marginBottom:12}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.navy+"18", borderRadius:10, width:34, height:34,
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:17}}>{"📷"}</div>
               <span style={{fontSize:12, fontWeight:800, color:C.navy, letterSpacing:.5, textTransform:"uppercase"}}>Photo</span>
             </div>
-            <ClickableImage src={selected.photoData || selected.photoUrl} alt="Photo" style={{borderRadius:12}}/>
+            <ClickableImage src={selected.photoData} alt="Photo" style={{borderRadius:12}}/>
           </div>
         )}
         {selected.medias?.length > 0 && (
@@ -3226,7 +3105,7 @@ function DilutionScreen({ deepLinkId }) {
 // ─── AdminScreen ───────────────────────────────────────────────────────────────
 function AdminScreen({ onNewItem }) {
   const C = useC();
-  const { store, addItem, updateItem, removeItem, addRetexItem, removeRetexItem } = useData();
+  const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("ecg");
   const [saved, setSaved] = useState(null);
   const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" });
@@ -3235,7 +3114,7 @@ function AdminScreen({ onNewItem }) {
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
-  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", gravite:"", categorie:"Réanimation", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
+  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
@@ -3246,7 +3125,6 @@ function AdminScreen({ onNewItem }) {
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
-  const [editingC, setEditingC] = useState(null);
 
   // Les listes viennent du DataStore global
   const customEcgs = store.ecgs;
@@ -3263,8 +3141,6 @@ function AdminScreen({ onNewItem }) {
 
   async function addEcg() {
     if(!eForm.title.trim()) return;
-    try {
-    
     const tags = eForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
     if(editingE !== null) {
@@ -3279,54 +3155,45 @@ function AdminScreen({ onNewItem }) {
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
-    } catch(e) { alert("Erreur ECG : " + e.message); }
   }
 
   async function addImagerie() {
     if(!iForm.title.trim()) return;
-    try {
-      const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-      if(editingI !== null) {
-        const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
-        await updateItem("imagerie","admin_imagerie",item,["image"]);
-        setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
-        showSaved("Cas modifié !");
-      } else {
-        const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
-        await addItem("imagerie","admin_imagerie",item,["image"]);
-        setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
-        showSaved("Cas ajouté !");
-        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
-      }
-    } catch(e) {
-      alert("Erreur ajout imagerie : " + e.message);
+    const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    if(editingI !== null) {
+      const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
+      await updateItem("imagerie","admin_imagerie",item,["image"]);
+      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      showSaved("Cas modifié !");
+    } else {
+      const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
+      await addItem("imagerie","admin_imagerie",item,["image"]);
+      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      showSaved("Cas ajouté !");
+      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
     }
   }
 
   async function addAgenda() {
     if(!aForm.title.trim()||!aForm.date.trim()) return;
-    try {
-      const colors = {formation:C.blue,reunion:C.green,congres:C.navy,soiree:C.amber,autre:"#8B5CF6"};
-      const tags = aForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-      if(editingA !== null) {
-        const item = {...aForm, id:editingA, tags, color:colors[aForm.type]||C.blue};
-        await updateItem("agenda","admin_agenda",item,["image"]);
-        setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
-        showSaved("Événement modifié !");
-      } else {
-        const item = {...aForm, id:Date.now(), tags, color:colors[aForm.type]||C.blue};
-        await addItem("agenda","admin_agenda",item,["image"]);
-        setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
-        showSaved("Événement ajouté !");
-        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
-      }
-    } catch(e) { alert("Erreur agenda : " + e.message); }
+    const colors = {formation:C.blue,reunion:C.green,congres:C.navy,soiree:C.amber,autre:"#8B5CF6"};
+    const tags = aForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    if(editingA !== null) {
+      const item = {...aForm, id:editingA, tags, color:colors[aForm.type]||C.blue};
+      await updateItem("agenda","admin_agenda",item,["image"]);
+      setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      showSaved("Événement modifié !");
+    } else {
+      const item = {...aForm, id:Date.now(), tags, color:colors[aForm.type]||C.blue};
+      await addItem("agenda","admin_agenda",item,["image"]);
+      setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      showSaved("Événement ajouté !");
+      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
+    }
   }
 
   async function addDivers() {
     if(!dForm.title.trim()) return;
-    try {
-    
     const tags = dForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     if(editingD !== null) {
       const item = {...dForm, id:editingD, tags};
@@ -3340,22 +3207,16 @@ function AdminScreen({ onNewItem }) {
       showSaved("Fiche ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
     }
-    } catch(e) { alert("Erreur divers : " + e.message); }
   }
 
   async function addRetex() {
     if(!rForm.title.trim()) return;
     const tags = (rForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
-    try {
-      await addRetexItem(item);
-      setRForm({type:"retex",title:"",author:"",date:"",lieu:"",gravite:"",categorie:"Réanimation",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
-      showSaved("Publication ajoutée !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
-    } catch(e) {
-      console.error("addRetex:", e);
-      alert("Erreur sauvegarde RETEX : " + e.message);
-    }
+    await addRetexItem(item);
+    setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
+    showSaved("Publication ajoutée !");
+    if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
   }
 
   async function addGeste() {
@@ -3368,48 +3229,51 @@ function AdminScreen({ onNewItem }) {
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
     };
     if(editingG !== null) {
-      try {
-        const item = {...gForm, id:editingG, tags, ...parsed};
-        await updateItem("gestes","admin_gestes",item,["image"]);
-        setEditingG(null);
-        setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
-        showSaved("Geste modifié !");
-      } catch(e) {
-        console.error("updateGeste:", e);
-        alert("Erreur modification : " + e.message);
-      }
+      const item = {...gForm, id:editingG, tags, ...parsed};
+      await updateItem("gestes","admin_gestes",item,["image"]);
+      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      showSaved("Geste modifié !");
     } else {
-      try {
-        const item = {...gForm, id:Date.now(), tags, ...parsed};
-        await addItem("gestes","admin_gestes",item,["image"]);
-        setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
-        showSaved("Geste ajouté !");
-        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
-      } catch(e) {
-        console.error("addGeste:", e);
-        alert("Erreur sauvegarde : " + e.message);
-      }
+      const item = {...gForm, id:Date.now(), tags, ...parsed};
+      await addItem("gestes","admin_gestes",item,["image"]);
+      setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      showSaved("Geste ajouté !");
+      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
   }
 
   async function addDilution() {
     if(!dilForm.title.trim()) return;
-    try {
-    
     const tags = dilForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    // Whitelist des champs valides du schéma `dilutions` (évite d'envoyer des champs parasites comme "points" venant d'anciennes données)
+    const cleanFields = {
+      title: dilForm.title,
+      nomCommercial: dilForm.nomCommercial || "",
+      subtitle: dilForm.subtitle || "",
+      color: dilForm.color || "#E05260",
+      tags,
+      presentation: dilForm.presentation || "",
+      indication: dilForm.indication || "",
+      dilutionStandard: dilForm.dilutionStandard || "",
+      administration: dilForm.administration || "",
+      schemaUrl: dilForm.schemaUrl || "",
+      schemaData: dilForm.schemaData || null,
+      photoUrl: dilForm.photoUrl || "",
+      photoData: dilForm.photoData || null,
+      medias: dilForm.medias || [],
+    };
     if(editingDil !== null) {
-      const item = {...dilForm, id:editingDil, tags, color:dilForm.color||"#E05260"};
+      const item = { ...cleanFields, id: editingDil };
       await updateItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setEditingDil(null); setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",indication:"",dilutionStandard:"",administration:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution modifiée !");
     } else {
-      const item = {...dilForm, id:Date.now(), tags, color:dilForm.color||"#E05260"};
+      const item = { ...cleanFields, id: Date.now() };
       await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",indication:"",dilutionStandard:"",administration:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
-    } catch(e) { alert("Erreur dilution : " + e.message); }
   }
 
   async function deleteItem(storeKey, storageKey, id, setter) {
@@ -3474,7 +3338,7 @@ function AdminScreen({ onNewItem }) {
                 if(!file) return;
                 const reader = new FileReader();
                 reader.onload = ev => {
-                  setEForm(f => ({...f, imageUrl:"", imageData:ev.target.result}));
+                  setEForm(f => ({...f, imageUrl:file.name, imageData:ev.target.result}));
                 };
                 reader.readAsDataURL(file);
               }}/>
@@ -3540,7 +3404,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setIForm(f=>({...f, imageUrl:"", imageData:ev.target.result, isVideo:file.type.startsWith("video/")}));
+                reader.onload = ev => setIForm(f=>({...f, imageUrl:file.name, imageData:ev.target.result, isVideo:file.type.startsWith("video/")}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3728,7 +3592,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setAForm(f=>({...f, imageUrl:"", imageData:ev.target.result}));
+                reader.onload = ev => setAForm(f=>({...f, imageUrl:file.name, imageData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3785,7 +3649,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setDForm(f=>({...f, imageUrl:"", imageData:ev.target.result}));
+                reader.onload = ev => setDForm(f=>({...f, imageUrl:file.name, imageData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3872,7 +3736,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setDilForm(f=>({...f, schemaUrl:"", schemaData:ev.target.result}));
+                reader.onload = ev => setDilForm(f=>({...f, schemaUrl:file.name, schemaData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3912,7 +3776,7 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => setDilForm(f=>({...f, photoUrl:"", photoData:ev.target.result}));
+                reader.onload = ev => setDilForm(f=>({...f, photoUrl:file.name, photoData:ev.target.result}));
                 reader.readAsDataURL(file);
               }}/>
             </label>
@@ -3941,7 +3805,22 @@ function AdminScreen({ onNewItem }) {
                     <div style={{fontSize:11, color:C.sub}}>{d.subtitle||""} {Array.isArray(d.tags)?d.tags.join(" "):""}</div>
                   </div>
                   <div style={{display:"flex", gap:6}}>
-                    <button onClick={()=>{ setEditingDil(d.id); setDilForm({...d, tags:Array.isArray(d.tags)?d.tags.join(" "):d.tags||"", nomCommercial:d.nomCommercial||"", indication:d.indication||"", administration:d.administration||"", photoUrl:d.photoUrl||"", photoData:null}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingDil(d.id); setDilForm({
+                      title: d.title||"",
+                      nomCommercial: d.nomCommercial||"",
+                      subtitle: d.subtitle||"",
+                      color: d.color||"#E05260",
+                      tags: Array.isArray(d.tags)?d.tags.join(" "):d.tags||"",
+                      presentation: d.presentation||"",
+                      indication: d.indication||"",
+                      dilutionStandard: d.dilutionStandard||"",
+                      administration: d.administration||"",
+                      schemaUrl: d.schemaUrl||"",
+                      schemaData: d.schemaData||null,
+                      photoUrl: d.photoUrl||"",
+                      photoData: null,
+                      medias: d.medias||[]
+                    }); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("dilutions","admin_dilutions",d.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -4044,11 +3923,9 @@ function AdminScreen({ onNewItem }) {
 
       {tab==="annuaire" && (
         <div>
-          {/* Formulaire ajout / modification contact */}
-          <div style={{background:C.white, border:`1px solid ${editingC!==null ? C.blue : C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
-            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>
-              {editingC!==null ? "✏️ Modifier le contact" : "➕ Ajouter un contact"}
-            </div>
+          {/* Formulaire ajout contact */}
+          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>➕ Ajouter un contact</div>
 
             <div style={{marginBottom:10}}>
               <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:4}}>NOM *</div>
@@ -4092,31 +3969,16 @@ function AdminScreen({ onNewItem }) {
               + Ajouter un numéro
             </button>
 
-            <div style={{display:"flex", gap:8}}>
-              {editingC!==null && (
-                <button onClick={()=>{ setEditingC(null); setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] }); }}
-                  style={{flex:1, background:C.border, color:C.text, border:"none", borderRadius:10, padding:"11px 0", fontSize:13, fontWeight:700, cursor:"pointer"}}>
-                  Annuler
-                </button>
-              )}
-              <button onClick={async()=>{
-                if(!cForm.nom.trim()) return;
-                const tels = cForm.telephones.filter(t=>t.numero.trim());
-                if(editingC!==null) {
-                  const updated = { id:editingC, nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
-                  await updateItem("contacts","admin_contacts",updated,[]);
-                  setEditingC(null);
-                  showSaved("Contact modifié !");
-                } else {
-                  const newContact = { id:Date.now(), nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
-                  await addItem("contacts","admin_contacts",newContact,[]);
-                  showSaved("Contact ajouté !");
-                }
-                setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] });
-              }} style={{flex:1, background:editingC!==null ? C.blue : C.navy, color:"#fff", border:"none", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:800, cursor:"pointer"}}>
-                {editingC!==null ? "✏️ Enregistrer les modifications" : "💾 Enregistrer le contact"}
-              </button>
-            </div>
+            <button onClick={async()=>{
+              if(!cForm.nom.trim()) return;
+              const tels = cForm.telephones.filter(t=>t.numero.trim());
+              const newContact = { id:Date.now(), nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
+              await addItem("contacts","admin_contacts",newContact,[]);
+              setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] });
+              showSaved("Contact ajouté !");
+            }} style={{width:"100%", background:C.navy, color:"#fff", border:"none", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:800, cursor:"pointer"}}>
+              💾 Enregistrer le contact
+            </button>
           </div>
 
           {/* Liste des contacts enregistrés */}
@@ -4130,7 +3992,7 @@ function AdminScreen({ onNewItem }) {
             </div>
           ) : (
             [...customContacts].reverse().map(p=>(
-              <div key={p.id} style={{background:editingC===p.id ? C.blueLight : C.white, borderRadius:10, padding:"12px 14px", marginBottom:8, border:`1.5px solid ${editingC===p.id ? C.blue : C.border}`}}>
+              <div key={p.id} style={{background:C.white, borderRadius:10, padding:"12px 14px", marginBottom:8, border:`1px solid ${C.border}`}}>
                 <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:13, fontWeight:800, color:C.text}}>{p.nom}</div>
@@ -4143,19 +4005,10 @@ function AdminScreen({ onNewItem }) {
                       </div>
                     ))}
                   </div>
-                  <div style={{display:"flex", gap:6, flexShrink:0, marginLeft:8}}>
-                    <button onClick={()=>{
-                      setEditingC(p.id);
-                      setCForm({ nom:p.nom, categorie:p.categorie||"", role:p.role||"", telephones:(p.telephones&&p.telephones.length)?p.telephones:[{label:"",numero:""}] });
-                      window.scrollTo({top:0,behavior:"smooth"});
-                    }} style={{background:C.blueLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.blue, fontSize:12, cursor:"pointer"}}>
-                      ✏️
-                    </button>
-                    <button onClick={async()=>{ await removeItem("contacts","admin_contacts",p.id); if(editingC===p.id){setEditingC(null);setCForm({nom:"",categorie:"",role:"",telephones:[{label:"",numero:""}]});} showSaved("Contact supprimé"); }}
-                      style={{background:C.redLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.red, fontSize:12, cursor:"pointer"}}>
-                      🗑️
-                    </button>
-                  </div>
+                  <button onClick={async()=>{ await removeItem("contacts","admin_contacts",p.id); showSaved("Contact supprimé"); }}
+                    style={{background:C.redLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.red, fontSize:12, cursor:"pointer", flexShrink:0, marginLeft:8}}>
+                    🗑️
+                  </button>
                 </div>
               </div>
             ))
