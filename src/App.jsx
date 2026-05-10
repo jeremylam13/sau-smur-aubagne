@@ -184,12 +184,21 @@ function DataProvider({ children }) {
         const urlField = field + "Url";
         const dataField = field + "Data";
         if (item[urlField]) {
-          const fd = await safeGet("file_" + item[urlField]);
-          if (fd) item[dataField] = fd.value;
+          // URL publique Supabase → on l'utilise directement comme src d'image
+          if (typeof item[urlField] === "string" && item[urlField].startsWith("http")) {
+            item[dataField] = item[urlField];
+          } else {
+            // Anciennes données stockées en localStorage : on tente de les charger
+            const fd = await safeGet("file_" + item[urlField]);
+            if (fd) item[dataField] = fd.value;
+          }
         }
       }
       if (item.medias?.length) {
         item.medias = await Promise.all(item.medias.map(async m => {
+          if (typeof m.url === "string" && m.url.startsWith("http")) {
+            return { ...m, data: m.url };
+          }
           const fd = await safeGet("file_" + m.url);
           return fd ? { ...m, data: fd.value } : m;
         }));
@@ -241,16 +250,28 @@ function DataProvider({ children }) {
   }
 
   async function saveFiles(item, fileFields) {
+    // Pour chaque champ "image/schema/photo" : upload base64 → Supabase Storage,
+    // remplace l'URL locale (ex. "monfichier.jpg") par l'URL publique
     for (const field of fileFields) {
       const dataField = field + "Data";
       const urlField = field + "Url";
       if (item[dataField] && item[urlField]) {
-        await safeSet("file_" + item[urlField], item[dataField]);
+        // Si l'URL est déjà une URL publique Supabase, on saute (déjà uploadé)
+        if (typeof item[urlField] === "string" && item[urlField].startsWith("http")) continue;
+        try {
+          const publicUrl = await uploadMedia(item[urlField], item[dataField]);
+          if (publicUrl) item[urlField] = publicUrl;
+        } catch(e) { console.warn("uploadMedia échec", field, e); }
       }
     }
     if (item.medias) {
       for (const m of item.medias) {
-        if (m.data && m.url) await safeSet("file_" + m.url, m.data);
+        if (m.data && m.url && !(typeof m.url === "string" && m.url.startsWith("http"))) {
+          try {
+            const publicUrl = await uploadMedia(m.url, m.data);
+            if (publicUrl) m.url = publicUrl;
+          } catch(e) { console.warn("uploadMedia média échec", e); }
+        }
       }
     }
   }
