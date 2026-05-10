@@ -521,6 +521,20 @@ function NotifPanel({ notifs, onNav, onClear, onClose, theme }) {
 // Stocké sur window pour survivre aux re-renders du module JSX
 if(!window._fav) window._fav = { cache: null, listeners: new Set() };
 
+// Retire un favori par (type, id) — utilisé après suppression d'une fiche pour éviter les références orphelines
+function removeFavoriById(type, id) {
+  const fav = window._fav;
+  if(!fav || !fav.cache) return;
+  const key = type + "_" + id;
+  const before = fav.cache.length;
+  fav.cache = fav.cache.filter(f => f.key !== key);
+  if(fav.cache.length !== before) {
+    const snap = [...fav.cache];
+    fav.listeners.forEach(fn => fn(snap));
+    safeSet("favoris", JSON.stringify(fav.cache));
+  }
+}
+
 function useFavoris() {
   const [favoris, setFavoris] = useState(window._fav.cache || []);
 
@@ -1132,6 +1146,27 @@ function HomeScreen({onNav}) {
 function FavorisScreen({ onNav }) {
   const C = useC();
   const { favoris, toggleFavori } = useFavoris();
+  const { store } = useData();
+
+  // Purge automatique des favoris pointant vers des fiches qui n'existent plus
+  useEffect(()=>{
+    if(!store.loaded) return;
+    const fav = window._fav;
+    if(!fav || !fav.cache) return;
+    const typeToStore = {ecg:"ecgs", icono:"imagerie", divers:"divers", dilution:"dilutions", geste:"gestes", agenda:"agenda", retex:"retex"};
+    const cleaned = fav.cache.filter(f => {
+      const sk = typeToStore[f.type];
+      if(!sk) return true; // type inconnu : on garde par sécurité
+      const items = store[sk] || [];
+      return items.some(x => String(x.id) === String(f.id));
+    });
+    if(cleaned.length !== fav.cache.length) {
+      fav.cache = cleaned;
+      const snap = [...cleaned];
+      fav.listeners.forEach(fn => fn(snap));
+      safeSet("favoris", JSON.stringify(cleaned));
+    }
+  }, [store.loaded]);
 
   const typeLabels = {
     retex:"RETEX / Cas", ecg:"ECG", icono:"Imagerie",
@@ -1611,6 +1646,7 @@ function RetexScreen({ deepLinkId }) {
 
   async function deleteItem(id) {
     await removeRetexItem(id);
+    removeFavoriById("retex", id);
     setSelected(null);
   }
 
@@ -3328,6 +3364,9 @@ function AdminScreen({ onNewItem }) {
     } else {
       await removeItem(storeKey, storageKey, id);
     }
+    // Nettoyage favoris : retire la référence orpheline si elle existe
+    const favType = {ecgs:"ecg", imagerie:"icono", divers:"divers", dilutions:"dilution", gestes:"geste", agenda:"agenda"}[storeKey];
+    if(favType) removeFavoriById(favType, id);
     showSaved("Supprimé !");
   }
 
