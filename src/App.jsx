@@ -55,6 +55,7 @@ function rowToItem(table, row) {
   if ("nom_commercial" in r) { r.nomCommercial = r.nom_commercial; delete r.nom_commercial; }
   if ("dilution_standard" in r) { r.dilutionStandard = r.dilution_standard; delete r.dilution_standard; }
   if ("has_second_ecg" in r) { r.hasSecondEcg = r.has_second_ecg; delete r.has_second_ecg; }
+  if ("has_second_image" in r) { r.hasSecondImage = r.has_second_image; delete r.has_second_image; }
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
@@ -86,6 +87,7 @@ function itemToRow(table, item) {
   if ("nomCommercial"    in r) { r.nom_commercial     = r.nomCommercial;    delete r.nomCommercial; }
   if ("dilutionStandard" in r) { r.dilution_standard  = r.dilutionStandard; delete r.dilutionStandard; }
   if ("hasSecondEcg"     in r) { r.has_second_ecg     = r.hasSecondEcg;     delete r.hasSecondEcg; }
+  if ("hasSecondImage"   in r) { r.has_second_image   = r.hasSecondImage;   delete r.hasSecondImage; }
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
@@ -179,10 +181,15 @@ function DataProvider({ children }) {
   React.useEffect(() => { loadAll(); }, []);
 
   async function loadFiles(items, fileFields) {
+    const names = (field) => {
+      const m = field.match(/^(\w+?)(\d+)$/);
+      return m
+        ? { urlField: m[1] + "Url" + m[2], dataField: m[1] + "Data" + m[2] }
+        : { urlField: field + "Url", dataField: field + "Data" };
+    };
     for (const item of items) {
       for (const field of fileFields) {
-        const urlField = field + "Url";
-        const dataField = field + "Data";
+        const { urlField, dataField } = names(field);
         if (item[urlField]) {
           // URL publique Supabase → on l'utilise directement comme src d'image
           if (typeof item[urlField] === "string" && item[urlField].startsWith("http")) {
@@ -211,10 +218,10 @@ function DataProvider({ children }) {
     const next = { loaded: false };
 
     const re = await safeGet("admin_ecgs");
-    next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image"]) : [];
+    next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image","image2"]) : [];
 
     const ri = await safeGet("admin_imagerie");
-    next.imagerie = ri ? await loadFiles(JSON.parse(ri.value), ["image"]) : [];
+    next.imagerie = ri ? await loadFiles(JSON.parse(ri.value), ["image","image2"]) : [];
 
     const ra = await safeGet("admin_agenda");
     next.agenda = ra ? await loadFiles(JSON.parse(ra.value), ["image"]) : [];
@@ -253,13 +260,18 @@ function DataProvider({ children }) {
   }
 
   async function saveFiles(item, fileFields) {
-    // Pour chaque champ "image/schema/photo" : upload base64 → Supabase Storage,
-    // remplace l'URL locale (ex. "monfichier.jpg") par l'URL publique
+    // Helper : déduit les noms urlField/dataField selon le champ
+    // - "image"    → imageUrl / imageData
+    // - "image2"   → imageUrl2 / imageData2 (suffixe numérique à la fin)
+    const names = (field) => {
+      const m = field.match(/^(\w+?)(\d+)$/);
+      return m
+        ? { urlField: m[1] + "Url" + m[2], dataField: m[1] + "Data" + m[2] }
+        : { urlField: field + "Url", dataField: field + "Data" };
+    };
     for (const field of fileFields) {
-      const dataField = field + "Data";
-      const urlField = field + "Url";
+      const { urlField, dataField } = names(field);
       if (item[dataField] && item[urlField]) {
-        // Si l'URL est déjà une URL publique Supabase, on saute (déjà uploadé)
         if (typeof item[urlField] === "string" && item[urlField].startsWith("http")) continue;
         try {
           const publicUrl = await uploadMedia(item[urlField], item[dataField]);
@@ -2042,6 +2054,15 @@ function IconoScreen({ deepLinkId }) {
             </div>
           )}
         </div>
+        {c.hasSecondImage && c.imageUrl2 && (
+          <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData2?4:16, marginBottom:16}}>
+            {c.secondTitle && <div style={{color:"rgba(255,255,255,.7)", fontSize:11, fontWeight:700, marginBottom:8, padding:"8px 8px 0"}}>{c.secondTitle}</div>}
+            {c.imageData2
+              ? <ClickableImage src={c.imageData2} alt={c.secondTitle||"Image 2"} style={{borderRadius:10}}/>
+              : <div style={{color:"rgba(255,255,255,.5)", fontSize:11, padding:10}}>Image non chargée</div>
+            }
+          </div>
+        )}
         <div style={{background:C.amberLight, border:`2px solid ${C.amber}`, borderRadius:12, padding:14, marginBottom:16}}>
           <div style={{fontSize:11, fontWeight:800, color:C.amber, marginBottom:4}}>QUESTION</div>
           <div style={{fontSize:14, fontWeight:700, color:C.text}}>{c.question}</div>
@@ -3262,8 +3283,8 @@ function AdminScreen({ onNewItem }) {
   const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("ecg");
   const [saved, setSaved] = useState(null);
-  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" });
-  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" });
+  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" });
+  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, hasSecondImage:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" });
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
@@ -3297,15 +3318,16 @@ function AdminScreen({ onNewItem }) {
     if(!eForm.title.trim()) return;
     const tags = eForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
+    const blank = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null,medias:[],tags:""};
     if(editingE !== null) {
       const item = {...eForm, id:editingE, tags, points, color:"#E05260"};
-      await updateItem("ecgs","admin_ecgs",item,["image"]);
-      setEditingE(null); setEForm({title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await updateItem("ecgs","admin_ecgs",item,["image","image2"]);
+      setEditingE(null); setEForm(blank);
       showSaved("ECG modifié !");
     } else {
       const item = {...eForm, id:Date.now(), tags, points, revealed:false, color:"#E05260"};
-      await addItem("ecgs","admin_ecgs",item,["image"]);
-      setEForm({title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await addItem("ecgs","admin_ecgs",item,["image","image2"]);
+      setEForm(blank);
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
@@ -3314,15 +3336,16 @@ function AdminScreen({ onNewItem }) {
   async function addImagerie() {
     if(!iForm.title.trim()) return;
     const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    const blank = {title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,hasSecondImage:false,secondTitle:"",imageUrl2:"",imageData2:null,medias:[],tags:""};
     if(editingI !== null) {
       const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
-      await updateItem("imagerie","admin_imagerie",item,["image"]);
-      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await updateItem("imagerie","admin_imagerie",item,["image","image2"]);
+      setEditingI(null); setIForm(blank);
       showSaved("Cas modifié !");
     } else {
       const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
-      await addItem("imagerie","admin_imagerie",item,["image"]);
-      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await addItem("imagerie","admin_imagerie",item,["image","image2"]);
+      setIForm(blank);
       showSaved("Cas ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
     }
@@ -3500,6 +3523,32 @@ function AdminScreen({ onNewItem }) {
                 reader.readAsDataURL(file);
               }}/>
             </label>
+
+            {/* Toggle 2e ECG/image avant diagnostic */}
+            <label style={{display:"flex", alignItems:"center", gap:8, fontSize:12, color:C.navy, marginBottom:eForm.hasSecondEcg?6:10, cursor:"pointer"}}>
+              <input type="checkbox" checked={!!eForm.hasSecondEcg} onChange={e=>setEForm({...eForm, hasSecondEcg:e.target.checked})}/>
+              Ajouter un 2e ECG/image avant le diagnostic
+            </label>
+            {eForm.hasSecondEcg && (
+              <div style={{background:"#F8FAFC", border:`1px solid ${C.border}`, borderRadius:10, padding:10, marginBottom:10}}>
+                <label style={lbl}>Titre du 2e ECG (ex: "Après thrombolyse")</label>
+                <input style={inp} placeholder="ECG 2" value={eForm.secondTitle||""} onChange={e=>setEForm({...eForm, secondTitle:e.target.value})}/>
+                <label style={{display:"flex", alignItems:"center", gap:10, background:eForm.imageUrl2?"#E8F7F1":"#F0F4F8", border:`2px dashed ${eForm.imageUrl2?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:0}}>
+                  <span style={{fontSize:22}}>{"📎"}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12, fontWeight:700, color:eForm.imageUrl2?C.green:C.navy}}>{eForm.imageUrl2 ? eForm.imageUrl2 : "Cliquer pour choisir la 2e image"}</div>
+                  </div>
+                  {eForm.imageUrl2 && <span style={{color:C.green, fontWeight:800, fontSize:16}}>{"✓"}</span>}
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => setEForm(f => ({...f, imageUrl2:file.name, imageData2:ev.target.result}));
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+              </div>
+            )}
             <label style={lbl}>Question pedagogique</label>
             <input style={inp} placeholder="Quel est votre diagnostic ?" value={eForm.question} onChange={e=>setEForm({...eForm,question:e.target.value})}/>
             <label style={lbl}>Interpretation</label>
@@ -3516,7 +3565,7 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#SCA #Arythmie #Pediatrie" value={eForm.tags} onChange={e=>setEForm({...eForm,tags:e.target.value})}/>
-            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addEcg} color={C.red} style={{width:"100%"}}>{editingE ? "✅ Enregistrer les modifications" : "Ajouter l'ECG"}</Btn>
           </Card>
           {customEcgs.length>0 && (
@@ -3571,6 +3620,33 @@ function AdminScreen({ onNewItem }) {
             {iForm.imageData && !iForm.isVideo && (
               <img src={iForm.imageData} alt="preview" style={{width:"100%", borderRadius:8, marginBottom:10, maxHeight:200, objectFit:"cover"}} />
             )}
+
+            {/* Toggle 2e image avant diagnostic */}
+            <label style={{display:"flex", alignItems:"center", gap:8, fontSize:12, color:C.navy, marginBottom:iForm.hasSecondImage?6:10, cursor:"pointer"}}>
+              <input type="checkbox" checked={!!iForm.hasSecondImage} onChange={e=>setIForm({...iForm, hasSecondImage:e.target.checked})}/>
+              Ajouter une 2e image avant le diagnostic
+            </label>
+            {iForm.hasSecondImage && (
+              <div style={{background:"#F8FAFC", border:`1px solid ${C.border}`, borderRadius:10, padding:10, marginBottom:10}}>
+                <label style={lbl}>Titre de la 2e image (ex: "Coupe coronale")</label>
+                <input style={inp} placeholder="Image 2" value={iForm.secondTitle||""} onChange={e=>setIForm({...iForm, secondTitle:e.target.value})}/>
+                <label style={{display:"flex", alignItems:"center", gap:10, background:iForm.imageUrl2?"#E8F7F1":"#F0F4F8", border:`2px dashed ${iForm.imageUrl2?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:0}}>
+                  <span style={{fontSize:22}}>{"📎"}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12, fontWeight:700, color:iForm.imageUrl2?C.green:C.navy}}>{iForm.imageUrl2 ? iForm.imageUrl2 : "Cliquer pour choisir la 2e image"}</div>
+                  </div>
+                  {iForm.imageUrl2 && <span style={{color:C.green, fontWeight:800, fontSize:16}}>{"✓"}</span>}
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => setIForm(f => ({...f, imageUrl2:file.name, imageData2:ev.target.result}));
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+              </div>
+            )}
+
             <label style={lbl}>Contexte clinique</label>
             <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Patient X ans, presentation..." value={iForm.context} onChange={e=>setIForm({...iForm,context:e.target.value})}/>
             <label style={lbl}>Question</label>
@@ -3585,7 +3661,7 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#Scanner #Radio #Fracture" value={iForm.tags} onChange={e=>setIForm({...iForm,tags:e.target.value})}/>
-            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, hasSecondImage:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addImagerie} color="#9B59B6" style={{width:"100%"}}>{editingI ? "✅ Enregistrer les modifications" : "Ajouter le cas"}</Btn>
           </Card>
           {customImagerie.length>0 && (
