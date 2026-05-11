@@ -239,6 +239,9 @@ function DataProvider({ children }) {
   }
 
   async function save(key, storeKey, items, stripFields = []) {
+    // Garde uniquement pour localStorage (clés hors TABLE_MAP). Pour les tables Supabase,
+    // les écritures se font item-par-item via addItem/updateItem/removeItem.
+    if (TABLE_MAP[key]) { setStore(prev => ({ ...prev, [storeKey]: items })); return; }
     const toSave = items.map(item => {
       const copy = { ...item };
       for (const f of stripFields) delete copy[f];
@@ -278,45 +281,114 @@ function DataProvider({ children }) {
 
   async function addItem(storeKey, storageKey, item, fileFields = []) {
     await saveFiles(item, fileFields);
-    const newItem = { ...item, id: item.id || Date.now() };
-    const exists = store[storeKey].find(x => x.id === newItem.id);
+    const table = TABLE_MAP[storageKey];
+    let savedItem = { ...item, id: item.id || Date.now() };
+    if (table) {
+      try {
+        const row = itemToRow(table, item);
+        const rows = await supaFetch("/" + table, "POST", row);
+        const created = Array.isArray(rows) && rows[0] ? rowToItem(table, rows[0]) : null;
+        if (created) {
+          // On garde les *Data en mémoire pour affichage immédiat
+          savedItem = {
+            ...item, ...created,
+            imageData: item.imageData || created.imageData,
+            schemaData: item.schemaData || created.schemaData,
+            photoData: item.photoData || created.photoData,
+          };
+        }
+      } catch (e) {
+        alert("Erreur sauvegarde : " + e.message);
+        console.error("addItem", storeKey, e);
+        return;
+      }
+    }
+    const exists = store[storeKey].find(x => x.id === savedItem.id);
     const updated = exists
-      ? store[storeKey].map(x => x.id === newItem.id ? newItem : x)
-      : [...store[storeKey], newItem];
-    await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
+      ? store[storeKey].map(x => x.id === savedItem.id ? savedItem : x)
+      : [...store[storeKey], savedItem];
+    setStore(prev => ({ ...prev, [storeKey]: updated }));
+    if (!table) {
+      await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
+    }
   }
 
   async function removeItem(storeKey, storageKey, id, stripFields = []) {
+    const table = TABLE_MAP[storageKey];
+    if (table) {
+      try {
+        await supaFetch("/" + table + "?id=eq." + id, "DELETE");
+      } catch (e) {
+        alert("Erreur suppression : " + e.message);
+        console.error("removeItem", storeKey, e);
+        return;
+      }
+    }
     const updated = store[storeKey].filter(x => x.id !== id);
-    await save(storageKey, storeKey, updated, stripFields);
+    setStore(prev => ({ ...prev, [storeKey]: updated }));
+    if (!table) {
+      await save(storageKey, storeKey, updated, stripFields);
+    }
   }
 
   async function updateItem(storeKey, storageKey, item, fileFields = []) {
     await saveFiles(item, fileFields);
+    const table = TABLE_MAP[storageKey];
+    if (table) {
+      try {
+        const row = itemToRow(table, item);
+        await supaFetch("/" + table + "?id=eq." + item.id, "PATCH", row);
+      } catch (e) {
+        alert("Erreur modification : " + e.message);
+        console.error("updateItem", storeKey, e);
+        return;
+      }
+    }
     const updated = store[storeKey].map(x => x.id === item.id ? item : x);
-    await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
+    setStore(prev => ({ ...prev, [storeKey]: updated }));
+    if (!table) {
+      await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
+    }
   }
 
   async function addRetexItem(item) {
     await saveFiles(item, []);
-    const toStore = { ...item, medias: (item.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) };
-    const updated = [toStore, ...store.retex.filter(x => x.id !== toStore.id)];
-    await safeSet("retex_submissions", JSON.stringify(updated));
-    setStore(prev => ({ ...prev, retex: [item, ...prev.retex.filter(x => x.id !== item.id)] }));
+    let savedItem = item;
+    try {
+      const row = itemToRow("retex", item);
+      const rows = await supaFetch("/retex", "POST", row);
+      const created = Array.isArray(rows) && rows[0] ? rowToItem("retex", rows[0]) : null;
+      if (created) savedItem = { ...item, ...created };
+    } catch (e) {
+      alert("Erreur publication RETEX : " + e.message);
+      console.error("addRetexItem", e);
+      return;
+    }
+    setStore(prev => ({ ...prev, retex: [savedItem, ...prev.retex.filter(x => x.id !== savedItem.id)] }));
   }
 
   async function removeRetexItem(id) {
-    const updated = store.retex.filter(x => x.id !== id);
-    const toStore = updated.map(x => ({ ...x, medias: (x.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) }));
-    await safeSet("retex_submissions", JSON.stringify(toStore));
-    setStore(prev => ({ ...prev, retex: updated }));
+    try {
+      await supaFetch("/retex?id=eq." + id, "DELETE");
+    } catch (e) {
+      alert("Erreur suppression RETEX : " + e.message);
+      console.error("removeRetexItem", e);
+      return;
+    }
+    setStore(prev => ({ ...prev, retex: prev.retex.filter(x => x.id !== id) }));
   }
 
   async function updateRetex(item) {
-    const updated = store.retex.map(x => x.id === item.id ? item : x);
-    const toStore = updated.map(x => ({ ...x, medias: (x.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) }));
-    await safeSet("retex_submissions", JSON.stringify(toStore));
-    setStore(prev => ({ ...prev, retex: updated }));
+    await saveFiles(item, []);
+    try {
+      const row = itemToRow("retex", item);
+      await supaFetch("/retex?id=eq." + item.id, "PATCH", row);
+    } catch (e) {
+      alert("Erreur modification RETEX : " + e.message);
+      console.error("updateRetex", e);
+      return;
+    }
+    setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? item : x) }));
   }
 
   return (
