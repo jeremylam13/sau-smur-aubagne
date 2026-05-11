@@ -301,13 +301,9 @@ function DataProvider({ children }) {
         const rows = await supaFetch("/" + table, "POST", row);
         const created = Array.isArray(rows) && rows[0] ? rowToItem(table, rows[0]) : null;
         if (created) {
-          // On garde les *Data en mémoire pour affichage immédiat
-          savedItem = {
-            ...item, ...created,
-            imageData: item.imageData || created.imageData,
-            schemaData: item.schemaData || created.schemaData,
-            photoData: item.photoData || created.photoData,
-          };
+          // On garde tout l'item local (qui contient les *Data base64 + medias[].data pour
+          // l'affichage immédiat), mais on récupère l'UUID Supabase et les timestamps.
+          savedItem = { ...item, id: created.id, created_at: created.created_at, updated_at: created.updated_at };
         }
       } catch (e) {
         alert("Erreur sauvegarde : " + e.message);
@@ -370,7 +366,10 @@ function DataProvider({ children }) {
       const row = itemToRow("retex", item);
       const rows = await supaFetch("/retex", "POST", row);
       const created = Array.isArray(rows) && rows[0] ? rowToItem("retex", rows[0]) : null;
-      if (created) savedItem = { ...item, ...created };
+      if (created) {
+        // Garde tout l'item local (pour les medias[].data en mémoire), juste récupère l'UUID
+        savedItem = { ...item, id: created.id, created_at: created.created_at, updated_at: created.updated_at };
+      }
     } catch (e) {
       alert("Erreur publication RETEX : " + e.message);
       console.error("addRetexItem", e);
