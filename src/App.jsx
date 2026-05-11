@@ -236,7 +236,7 @@ function DataProvider({ children }) {
     next.gestes = rg ? await loadFiles(JSON.parse(rg.value), ["image"]) : [];
 
     const rr = await safeGet("retex_submissions");
-    next.retex = rr ? JSON.parse(rr.value) : [];
+    next.retex = rr ? await loadFiles(JSON.parse(rr.value), []) : [];
 
     const rc = await safeGet("admin_contacts");
     next.contacts = rc ? JSON.parse(rc.value) : [];
