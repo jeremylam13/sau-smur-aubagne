@@ -55,13 +55,14 @@ function rowToItem(table, row) {
   if ("nom_commercial" in r) { r.nomCommercial = r.nom_commercial; delete r.nom_commercial; }
   if ("dilution_standard" in r) { r.dilutionStandard = r.dilution_standard; delete r.dilution_standard; }
   if ("has_second_ecg" in r) { r.hasSecondEcg = r.has_second_ecg; delete r.has_second_ecg; }
+  if ("has_second_image" in r) { r.hasSecondImage = r.has_second_image; delete r.has_second_image; }
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
   if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
-  // tags reste un array (Supabase retourne array, app utilise .map())
+  if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
+  // Tags : laisser en array (les modules de rendu attendent un array, les formulaires admin convertissent eux-mêmes en string)
   if (!Array.isArray(r.tags)) r.tags = r.tags ? String(r.tags).split(",").map(t=>t.trim()).filter(Boolean) : [];
-  if (!Array.isArray(r.points)) r.points = r.points ? String(r.points).split(",").map(t=>t.trim()).filter(Boolean) : [];
   return r;
 }
 
@@ -86,19 +87,42 @@ function itemToRow(table, item) {
   if ("nomCommercial"    in r) { r.nom_commercial     = r.nomCommercial;    delete r.nomCommercial; }
   if ("dilutionStandard" in r) { r.dilution_standard  = r.dilutionStandard; delete r.dilutionStandard; }
   if ("hasSecondEcg"     in r) { r.has_second_ecg     = r.hasSecondEcg;     delete r.hasSecondEcg; }
+  if ("hasSecondImage"   in r) { r.has_second_image   = r.hasSecondImage;   delete r.hasSecondImage; }
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
   if ("videoUrl"         in r) { r.video_url          = r.videoUrl;         delete r.videoUrl; }
+  if ("isVideo"          in r) { r.is_video           = r.isVideo;          delete r.isVideo; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
 }
 
+// Compresser une image base64 (max 1200px, qualité 0.7) pour éviter erreur 413 Payload Too Large
+function compressImage(base64Data, maxWidth = 1200, quality = 0.7) {
+  return new Promise((resolve) => {
+    if (!base64Data || !base64Data.startsWith("data:image")) { resolve(base64Data); return; }
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(base64Data);
+    img.src = base64Data;
+  });
+}
+
 // Upload fichier base64 → Supabase Storage (bucket sau-media)
 async function uploadMedia(fileName, base64Data) {
   if (!base64Data || !fileName) return null;
-  const [header, data] = base64Data.split(",");
+  // Compresse les images avant upload (les vidéos passent telles quelles)
+  const compressed = await compressImage(base64Data);
+  const [header, data] = compressed.split(",");
   const mime = (header.match(/:(.*?);/) || [])[1] || "application/octet-stream";
   const bytes = atob(data);
   const arr = new Uint8Array(bytes.length);
@@ -157,7 +181,36 @@ function DataProvider({ children }) {
   React.useEffect(() => { loadAll(); }, []);
 
   async function loadFiles(items, fileFields) {
-    // Les fichiers sont sur Supabase Storage - les URLs suffisent, pas besoin de charger en base64
+    const names = (field) => {
+      const m = field.match(/^(\w+?)(\d+)$/);
+      return m
+        ? { urlField: m[1] + "Url" + m[2], dataField: m[1] + "Data" + m[2] }
+        : { urlField: field + "Url", dataField: field + "Data" };
+    };
+    for (const item of items) {
+      for (const field of fileFields) {
+        const { urlField, dataField } = names(field);
+        if (item[urlField]) {
+          // URL publique Supabase → on l'utilise directement comme src d'image
+          if (typeof item[urlField] === "string" && item[urlField].startsWith("http")) {
+            item[dataField] = item[urlField];
+          } else {
+            // Anciennes données stockées en localStorage : on tente de les charger
+            const fd = await safeGet("file_" + item[urlField]);
+            if (fd) item[dataField] = fd.value;
+          }
+        }
+      }
+      if (item.medias?.length) {
+        item.medias = await Promise.all(item.medias.map(async m => {
+          if (typeof m.url === "string" && m.url.startsWith("http")) {
+            return { ...m, data: m.url };
+          }
+          const fd = await safeGet("file_" + m.url);
+          return fd ? { ...m, data: fd.value } : m;
+        }));
+      }
+    }
     return items;
   }
 
@@ -165,10 +218,10 @@ function DataProvider({ children }) {
     const next = { loaded: false };
 
     const re = await safeGet("admin_ecgs");
-    next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image"]) : [];
+    next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image","image2"]) : [];
 
     const ri = await safeGet("admin_imagerie");
-    next.imagerie = ri ? await loadFiles(JSON.parse(ri.value), ["image"]) : [];
+    next.imagerie = ri ? await loadFiles(JSON.parse(ri.value), ["image","image2"]) : [];
 
     const ra = await safeGet("admin_agenda");
     next.agenda = ra ? await loadFiles(JSON.parse(ra.value), ["image"]) : [];
@@ -179,15 +232,11 @@ function DataProvider({ children }) {
     const rdil = await safeGet("admin_dilutions");
     next.dilutions = rdil ? await loadFiles(JSON.parse(rdil.value), ["schema", "photo"]) : [];
 
-    try {
-      const gestesRows = await supaFetch("/gestes?order=created_at.asc&limit=1000");
-      next.gestes = gestesRows.map(r => rowToItem("gestes", r));
-    } catch(e) { console.error("loadAll gestes:", e); next.gestes = []; }
+    const rg = await safeGet("admin_gestes");
+    next.gestes = rg ? await loadFiles(JSON.parse(rg.value), ["image"]) : [];
 
-    try {
-      const retexRows = await supaFetch("/retex?order=created_at.desc&limit=1000");
-      next.retex = retexRows.map(r => rowToItem("retex", r));
-    } catch(e) { console.error("loadAll retex:", e); next.retex = []; }
+    const rr = await safeGet("retex_submissions");
+    next.retex = rr ? await loadFiles(JSON.parse(rr.value), []) : [];
 
     const rc = await safeGet("admin_contacts");
     next.contacts = rc ? JSON.parse(rc.value) : [];
@@ -196,123 +245,160 @@ function DataProvider({ children }) {
     setStore(next);
   }
 
-  // ── Supabase : écriture directe ──────────────────────────────────────────────
-
-  // Upload image base64 → Supabase Storage
-  async function uploadImageToSupabase(fileName, base64Data) {
-    if (!base64Data || !fileName) return null;
-    try {
-      const url = await uploadMedia(fileName, base64Data);
-      return url;
-    } catch(e) { console.warn("uploadImageToSupabase", e); return null; }
+  async function save(key, storeKey, items, stripFields = []) {
+    // Garde uniquement pour localStorage (clés hors TABLE_MAP). Pour les tables Supabase,
+    // les écritures se font item-par-item via addItem/updateItem/removeItem.
+    if (TABLE_MAP[key]) { setStore(prev => ({ ...prev, [storeKey]: items })); return; }
+    const toSave = items.map(item => {
+      const copy = { ...item };
+      for (const f of stripFields) delete copy[f];
+      if (copy.medias) copy.medias = (copy.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo }));
+      return copy;
+    });
+    await safeSet(key, JSON.stringify(toSave));
+    setStore(prev => ({ ...prev, [storeKey]: items }));
   }
 
-  // Prépare l'item pour Supabase (supprime les data binary, convertit les champs)
-  function prepareForSupabase(table, item, fileFields = []) {
-    const copy = { ...item };
-    // Supprimer les champs binaires (déjà uploadés)
-    for (const f of fileFields) { delete copy[f + "Data"]; }
-    // Supprimer id si c'est un Date.now() (Supabase génère son propre UUID)
-    // On garde id seulement si c'est un UUID valide
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (copy.id && !uuidRegex.test(String(copy.id))) delete copy.id;
-    // Convertir medias en array sans data
-    if (copy.medias) copy.medias = (copy.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "" }));
-    return itemToRow(table, copy);
-  }
-
-  async function addItem(storeKey, storageKey, item, fileFields = []) {
-    const table = TABLE_MAP[storageKey];
-    if (table) {
-      try {
-        // Upload images vers Storage si nécessaire
-        for (const f of fileFields) {
-          const dataField = f + "Data";
-          const urlField = f + "Url";
-          if (item[dataField] && !item[urlField]) {
-            const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
-            if (url) item = { ...item, [urlField]: url };
-          }
+  async function saveFiles(item, fileFields) {
+    // Helper : déduit les noms urlField/dataField selon le champ
+    // - "image"    → imageUrl / imageData
+    // - "image2"   → imageUrl2 / imageData2 (suffixe numérique à la fin)
+    const names = (field) => {
+      const m = field.match(/^(\w+?)(\d+)$/);
+      return m
+        ? { urlField: m[1] + "Url" + m[2], dataField: m[1] + "Data" + m[2] }
+        : { urlField: field + "Url", dataField: field + "Data" };
+    };
+    for (const field of fileFields) {
+      const { urlField, dataField } = names(field);
+      if (item[dataField] && item[urlField]) {
+        if (typeof item[urlField] === "string" && item[urlField].startsWith("http")) continue;
+        try {
+          const publicUrl = await uploadMedia(item[urlField], item[dataField]);
+          if (publicUrl) item[urlField] = publicUrl;
+        } catch(e) { console.warn("uploadMedia échec", field, e); }
+      }
+    }
+    if (item.medias) {
+      for (const m of item.medias) {
+        if (m.data && m.url && !(typeof m.url === "string" && m.url.startsWith("http"))) {
+          try {
+            const publicUrl = await uploadMedia(m.url, m.data);
+            if (publicUrl) m.url = publicUrl;
+          } catch(e) { console.warn("uploadMedia média échec", e); }
         }
-        const row = prepareForSupabase(table, item, fileFields);
-        const result = await supaFetch("/" + table + "?select=*", "POST", row);
-        const newItem = Array.isArray(result) ? rowToItem(table, result[0]) : rowToItem(table, result);
-        setStore(prev => ({ ...prev, [storeKey]: [...prev[storeKey], newItem] }));
-        return;
-      } catch(e) {
-        console.error("addItem Supabase", table, e);
-        throw e; // propager l'erreur au lieu de fallback localStorage
       }
     }
   }
 
-  async function removeItem(storeKey, storageKey, id) {
+  async function addItem(storeKey, storageKey, item, fileFields = []) {
+    await saveFiles(item, fileFields);
+    const table = TABLE_MAP[storageKey];
+    let savedItem = { ...item, id: item.id || Date.now() };
+    if (table) {
+      try {
+        const row = itemToRow(table, item);
+        const rows = await supaFetch("/" + table, "POST", row);
+        const created = Array.isArray(rows) && rows[0] ? rowToItem(table, rows[0]) : null;
+        if (created) {
+          // On garde tout l'item local (qui contient les *Data base64 + medias[].data pour
+          // l'affichage immédiat), mais on récupère l'UUID Supabase et les timestamps.
+          savedItem = { ...item, id: created.id, created_at: created.created_at, updated_at: created.updated_at };
+        }
+      } catch (e) {
+        alert("Erreur sauvegarde : " + e.message);
+        console.error("addItem", storeKey, e);
+        return;
+      }
+    }
+    const exists = store[storeKey].find(x => x.id === savedItem.id);
+    const updated = exists
+      ? store[storeKey].map(x => x.id === savedItem.id ? savedItem : x)
+      : [...store[storeKey], savedItem];
+    setStore(prev => ({ ...prev, [storeKey]: updated }));
+    if (!table) {
+      await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
+    }
+  }
+
+  async function removeItem(storeKey, storageKey, id, stripFields = []) {
     const table = TABLE_MAP[storageKey];
     if (table) {
       try {
         await supaFetch("/" + table + "?id=eq." + id, "DELETE");
-        setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].filter(x => x.id !== id) }));
+      } catch (e) {
+        alert("Erreur suppression : " + e.message);
+        console.error("removeItem", storeKey, e);
         return;
-      } catch(e) { console.error("removeItem Supabase", table, e); }
+      }
     }
     const updated = store[storeKey].filter(x => x.id !== id);
-    try { localStorage.setItem("sau_" + storageKey, JSON.stringify(updated)); } catch(e) {}
     setStore(prev => ({ ...prev, [storeKey]: updated }));
+    if (!table) {
+      await save(storageKey, storeKey, updated, stripFields);
+    }
   }
 
   async function updateItem(storeKey, storageKey, item, fileFields = []) {
+    await saveFiles(item, fileFields);
     const table = TABLE_MAP[storageKey];
     if (table) {
       try {
-        for (const f of fileFields) {
-          const dataField = f + "Data";
-          const urlField = f + "Url";
-          if (item[dataField] && item[dataField].startsWith("data:")) {
-            const url = await uploadImageToSupabase(Date.now() + "_" + f, item[dataField]);
-            if (url) item = { ...item, [urlField]: url };
-          }
-        }
-        const row = prepareForSupabase(table, item, fileFields);
+        const row = itemToRow(table, item);
         await supaFetch("/" + table + "?id=eq." + item.id, "PATCH", row);
-        setStore(prev => ({ ...prev, [storeKey]: prev[storeKey].map(x => x.id === item.id ? item : x) }));
+      } catch (e) {
+        alert("Erreur modification : " + e.message);
+        console.error("updateItem", storeKey, e);
         return;
-      } catch(e) { console.error("updateItem Supabase", table, e); }
+      }
     }
     const updated = store[storeKey].map(x => x.id === item.id ? item : x);
-    try { localStorage.setItem("sau_" + storageKey, JSON.stringify(updated)); } catch(e) {}
     setStore(prev => ({ ...prev, [storeKey]: updated }));
-  }
-
-  function retexToRow(item) {
-    // Champs autorisés dans la table retex (correspondance exacte avec Supabase)
-    const allowed = ["type","title","author","date","lieu","gravite","contexte","situation",
-                     "bien","difficultes","amelio","recit","takehome","tags","medias","reactions","comments","ts"];
-    const row = {};
-    for (const k of allowed) {
-      if (item[k] !== undefined) row[k] = item[k];
+    if (!table) {
+      await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
     }
-    // tags doit être un array
-    if (typeof row.tags === "string") row.tags = row.tags ? row.tags.split(/[\s,]+/).filter(Boolean) : [];
-    // medias : garder seulement url/name/isVideo
-    if (row.medias) row.medias = (row.medias || []).map(m => ({ url: m.url || "", name: m.name || "", isVideo: !!m.isVideo }));
-    return row;
   }
 
   async function addRetexItem(item) {
-    const row = retexToRow(item);
-    const result = await supaFetch("/retex?select=*", "POST", row);
-    const newItem = Array.isArray(result) ? rowToItem("retex", result[0]) : rowToItem("retex", result);
-    setStore(prev => ({ ...prev, retex: [newItem, ...prev.retex.filter(x => x.id !== newItem.id)] }));
+    await saveFiles(item, []);
+    let savedItem = item;
+    try {
+      const row = itemToRow("retex", item);
+      const rows = await supaFetch("/retex", "POST", row);
+      const created = Array.isArray(rows) && rows[0] ? rowToItem("retex", rows[0]) : null;
+      if (created) {
+        // Garde tout l'item local (pour les medias[].data en mémoire), juste récupère l'UUID
+        savedItem = { ...item, id: created.id, created_at: created.created_at, updated_at: created.updated_at };
+      }
+    } catch (e) {
+      alert("Erreur publication RETEX : " + e.message);
+      console.error("addRetexItem", e);
+      return;
+    }
+    setStore(prev => ({ ...prev, retex: [savedItem, ...prev.retex.filter(x => x.id !== savedItem.id)] }));
   }
 
   async function removeRetexItem(id) {
-    await supaFetch("/retex?id=eq." + id, "DELETE");
+    try {
+      await supaFetch("/retex?id=eq." + id, "DELETE");
+    } catch (e) {
+      alert("Erreur suppression RETEX : " + e.message);
+      console.error("removeRetexItem", e);
+      return;
+    }
     setStore(prev => ({ ...prev, retex: prev.retex.filter(x => x.id !== id) }));
   }
 
   async function updateRetex(item) {
-    const row = retexToRow(item);
-    await supaFetch("/retex?id=eq." + item.id, "PATCH", row);
+    await saveFiles(item, []);
+    try {
+      const row = itemToRow("retex", item);
+      await supaFetch("/retex?id=eq." + item.id, "PATCH", row);
+    } catch (e) {
+      alert("Erreur modification RETEX : " + e.message);
+      console.error("updateRetex", e);
+      return;
+    }
     setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? item : x) }));
   }
 
@@ -352,6 +438,9 @@ const ECGS = [
 const ICONO = [];
 
 const AGENDA = [
+  { id:5, type:"reunion",   title:"Reunion de service", date:"Mardi 12 Mai 2026", heure:"A definir", lieu:"Salle de reunion - SAU Aubagne", color:"#2E9E6B" },
+  { id:6, type:"reunion",   title:"Reunion de service", date:"Jeudi 4 Juin 2026",  heure:"A definir", lieu:"Salle de reunion - SAU Aubagne", color:"#2E9E6B" },
+  { id:7, type:"formation", title:"De battre mon coeur s'est arrete : techniques exceptionnelles de prise en charge de l'arret cardiaque extrahospitalier", date:"Jeudi 7 Mai 2026", heure:"A definir", lieu:"Kedge Business School - Marseille", color:"#E05260" },
 ];
 
 const DIVERS = [
@@ -514,6 +603,20 @@ function NotifPanel({ notifs, onNav, onClear, onClose, theme }) {
 // ── Store favoris global ──────────────────────────────────────────────────────
 // Stocké sur window pour survivre aux re-renders du module JSX
 if(!window._fav) window._fav = { cache: null, listeners: new Set() };
+
+// Retire un favori par (type, id) — utilisé après suppression d'une fiche pour éviter les références orphelines
+function removeFavoriById(type, id) {
+  const fav = window._fav;
+  if(!fav || !fav.cache) return;
+  const key = type + "_" + id;
+  const before = fav.cache.length;
+  fav.cache = fav.cache.filter(f => f.key !== key);
+  if(fav.cache.length !== before) {
+    const snap = [...fav.cache];
+    fav.listeners.forEach(fn => fn(snap));
+    safeSet("favoris", JSON.stringify(fav.cache));
+  }
+}
 
 function useFavoris() {
   const [favoris, setFavoris] = useState(window._fav.cache || []);
@@ -838,7 +941,7 @@ function useGlobalSearch() {
         gestes: GESTES,
       };
       try { const r=await safeGet("admin_ecgs");     if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
-      try { const rows=await supaFetch("/retex?order=created_at.desc&limit=1000"); base.retex=rows; } catch(e){ base.retex=[]; }
+      try { const r=await safeGet("retex_submissions"); if(r) base.retex=JSON.parse(r.value); } catch(e){}
       try { const r=await safeGet("admin_divers");   if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
       try { const r=await safeGet("admin_agenda");   if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
       try { const r=await safeGet("admin_imagerie");    if(r) base.imagerie=JSON.parse(r.value); } catch(e){}
@@ -1126,6 +1229,27 @@ function HomeScreen({onNav}) {
 function FavorisScreen({ onNav }) {
   const C = useC();
   const { favoris, toggleFavori } = useFavoris();
+  const { store } = useData();
+
+  // Purge automatique des favoris pointant vers des fiches qui n'existent plus
+  useEffect(()=>{
+    if(!store.loaded) return;
+    const fav = window._fav;
+    if(!fav || !fav.cache) return;
+    const typeToStore = {ecg:"ecgs", icono:"imagerie", divers:"divers", dilution:"dilutions", geste:"gestes", agenda:"agenda", retex:"retex"};
+    const cleaned = fav.cache.filter(f => {
+      const sk = typeToStore[f.type];
+      if(!sk) return true; // type inconnu : on garde par sécurité
+      const items = store[sk] || [];
+      return items.some(x => String(x.id) === String(f.id));
+    });
+    if(cleaned.length !== fav.cache.length) {
+      fav.cache = cleaned;
+      const snap = [...cleaned];
+      fav.listeners.forEach(fn => fn(snap));
+      safeSet("favoris", JSON.stringify(cleaned));
+    }
+  }, [store.loaded]);
 
   const typeLabels = {
     retex:"RETEX / Cas", ecg:"ECG", icono:"Imagerie",
@@ -1216,11 +1340,13 @@ function SaviezVousWidget({ onNav }) {
   useEffect(()=>{
     (async()=>{
       try {
-        const rows = await supaFetch("/retex?order=created_at.desc&limit=1000");
-        const validated = rows.filter(x=>x.takehome);
-        if(validated.length>0) {
-          const pick = validated[Math.floor(Math.random()*validated.length)];
-          setItem(pick);
+        const r = await safeGet("retex_submissions");
+        if(r) {
+          const validated = JSON.parse(r.value).filter(x=>x.takehome);
+          if(validated.length>0) {
+            const pick = validated[Math.floor(Math.random()*validated.length)];
+            setItem(pick);
+          }
         }
       } catch(e){}
     })();
@@ -1458,7 +1584,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
         </div>
         {(item.tags&&item.tags.length>0) && (
           <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-            {(Array.isArray(item.tags)?item.tags:[]).map((t,i)=>(
+            {item.tags.map((t,i)=>(
               <span key={i} style={{background:"rgba(255,255,255,.18)", color:"#fff", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
             ))}
           </div>
@@ -1603,6 +1729,7 @@ function RetexScreen({ deepLinkId }) {
 
   async function deleteItem(id) {
     await removeRetexItem(id);
+    removeFavoriById("retex", id);
     setSelected(null);
   }
 
@@ -1793,25 +1920,30 @@ function ECGScreen({ deepLinkId }) {
         <div style={{fontSize:12, color:C.sub, marginBottom:8}}>{e.context}</div>
           {(e.tags&&e.tags.length>0) && (
             <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
-              {(Array.isArray(e.tags)?e.tags:[]).map((t,i)=>(
+              {e.tags.map((t,i)=>(
                 <span key={i} style={{background:C.red+"22", color:C.red, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
               ))}
             </div>
           )}
 
-        <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData||e.imageUrl)?4:16, marginBottom:16}}>
-          {(e.imageUrl || e.imageData) ? (
-            <ClickableImage src={e.imageData || e.imageUrl} alt="ECG" style={{borderRadius:10}}/>
+        <div style={{background:"#0A1628", borderRadius:14, padding:e.imageData?4:16, marginBottom:16}}>
+          {e.imageUrl ? (
+            e.imageData
+              ? <ClickableImage src={e.imageData} alt="ECG" style={{borderRadius:10}}/>
+              : <div style={{color:"rgba(255,255,255,.4)", textAlign:"center", padding:20, fontSize:12}}>Image non disponible</div>
           ) : (
             <SvgEcg color={e.color}/>
           )}
-          {!(e.imageData||e.imageUrl) && <div style={{color:"rgba(255,255,255,.5)", fontSize:10, textAlign:"center", marginTop:8}}>ECG - {e.title}</div>}
+          {!e.imageData && <div style={{color:"rgba(255,255,255,.5)", fontSize:10, textAlign:"center", marginTop:8}}>ECG - {e.title}</div>}
         </div>
 
-        {e.hasSecondEcg && (e.imageUrl2 || e.imageData2) && (
-          <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData2||e.imageUrl2)?4:16, marginBottom:16}}>
+        {e.hasSecondEcg && e.imageUrl2 && (
+          <div style={{background:"#0A1628", borderRadius:14, padding:e.imageData2?4:16, marginBottom:16}}>
             <div style={{color:"rgba(255,255,255,.7)", fontSize:11, fontWeight:700, marginBottom:8, padding:"8px 8px 0"}}>{e.secondTitle}</div>
-            <ClickableImage src={e.imageData2 || e.imageUrl2} alt="ECG 2" style={{borderRadius:10}}/>
+            {e.imageData2
+              ? <ClickableImage src={e.imageData2} alt="ECG 2" style={{borderRadius:10}}/>
+              : <div style={{color:"rgba(255,255,255,.4)", textAlign:"center", padding:20, fontSize:12}}>Image non disponible</div>
+            }
           </div>
         )}
 
@@ -1838,7 +1970,7 @@ function ECGScreen({ deepLinkId }) {
               <Card>
                 <div style={{fontSize:11, fontWeight:800, color:C.navy, marginBottom:8}}>POINTS PEDAGOGIQUES</div>
                 <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                  {(Array.isArray(e.points)?e.points:[]).map((p,i) => (
+                  {e.points.map((p,i) => (
                     <div key={i} style={{display:"flex", gap:8, fontSize:13, color:C.text, lineHeight:1.5}}>
                       <span style={{color:C.blue, flexShrink:0}}>&#8226;</span>{p}
                     </div>
@@ -1866,8 +1998,8 @@ function ECGScreen({ deepLinkId }) {
           <Card key={e.id} onClick={()=>setSelected(e)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
               <div style={{background:C.redLight, borderRadius:12, padding:8, minWidth:56, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
-                {(e.imageUrl || e.imageData)
-                  ? <img src={e.imageData || e.imageUrl} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
+                {e.imageUrl
+                  ? <img src={e.imageData} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
                   : <svg viewBox="0 0 60 30" style={{width:56, height:30}}><polyline points="0,15 8,15 12,5 16,25 20,15 28,15 32,8 36,22 40,15 48,15 52,10 56,20 60,15" fill="none" stroke={e.color||C.red} strokeWidth="1.5"/></svg>
                 }
               </div>
@@ -1911,9 +2043,9 @@ function IconoScreen({ deepLinkId }) {
         <div style={{fontSize:12, color:C.sub, marginBottom:16}}>{c.context}</div>
         <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData?4:30, textAlign:"center", marginBottom:16}}>
           {c.imageData && c.isVideo ? (
-            <video src={c.imageData || c.imageUrl} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
+            <video src={c.imageData} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
           ) : c.imageData ? (
-            <ClickableImage src={c.imageData || c.imageUrl} alt={c.title} style={{borderRadius:10}}/>
+            <ClickableImage src={c.imageData} alt={c.title} style={{borderRadius:10}}/>
           ) : (
             <div>
               <div style={{fontSize:60}}>{"🩻"}</div>
@@ -1921,6 +2053,15 @@ function IconoScreen({ deepLinkId }) {
             </div>
           )}
         </div>
+        {c.hasSecondImage && c.imageUrl2 && (
+          <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData2?4:16, marginBottom:16}}>
+            {c.secondTitle && <div style={{color:"rgba(255,255,255,.7)", fontSize:11, fontWeight:700, marginBottom:8, padding:"8px 8px 0"}}>{c.secondTitle}</div>}
+            {c.imageData2
+              ? <ClickableImage src={c.imageData2} alt={c.secondTitle||"Image 2"} style={{borderRadius:10}}/>
+              : <div style={{color:"rgba(255,255,255,.5)", fontSize:11, padding:10}}>Image non chargée</div>
+            }
+          </div>
+        )}
         <div style={{background:C.amberLight, border:`2px solid ${C.amber}`, borderRadius:12, padding:14, marginBottom:16}}>
           <div style={{fontSize:11, fontWeight:800, color:C.amber, marginBottom:4}}>QUESTION</div>
           <div style={{fontSize:14, fontWeight:700, color:C.text}}>{c.question}</div>
@@ -1936,7 +2077,7 @@ function IconoScreen({ deepLinkId }) {
               <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{c.diag}</div>
             {(c.tags&&c.tags.length>0) && (
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:10}}>
-                {(Array.isArray(c.tags)?c.tags:[]).map((t,i)=>(
+                {c.tags.map((t,i)=>(
                   <span key={i} style={{background:"#9B59B6"+"22", color:"#9B59B6", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
                 ))}
               </div>
@@ -1969,7 +2110,7 @@ function IconoScreen({ deepLinkId }) {
           <Card key={c.id} onClick={()=>setSelected(c)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
               <div style={{background:(c.color||C.blue)+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>
-                {(c.imageData||c.imageUrl) ? <img src={c.imageData||c.imageUrl} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
+                {c.imageData ? <img src={c.imageData} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{c.title}</div>
@@ -2139,7 +2280,7 @@ function AgendaScreen({ deepLinkId }) {
             {selected.lieu && <div style={{fontSize:12, color:C.sub}}>{"📍"} {selected.lieu}</div>}
             {(selected.tags&&selected.tags.length>0) && (
               <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-                {(Array.isArray(selected.tags)?selected.tags:[]).map((t,i)=>(
+                {selected.tags.map((t,i)=>(
                   <span key={i} style={{background:C.amber+"22", color:C.amber, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
                 ))}
               </div>
@@ -2153,7 +2294,7 @@ function AgendaScreen({ deepLinkId }) {
               <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
             ) : (
               <div style={{background:"#f8f9fa", border:"1px solid #e0e0e0", borderRadius:12, overflow:"hidden"}}>
-                <ClickableImage src={selected.imageData || selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
+                <ClickableImage src={selected.imageData} alt={selected.title} style={{borderRadius:12}}/>
               </div>
             )}
           </div>
@@ -2389,14 +2530,20 @@ function GestesScreen({ deepLinkId }) {
         )}
       </div>
 
-      {/* Liste */}
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {filtered.map(g => (
+      {/* Liste — groupée par catégorie quand pas de recherche */}
+      {(() => {
+        const sections = [
+          { key:"hemodynamique", label:"Hémodynamique", icon:"🫀", color:"#E05260" },
+          { key:"respiratoire",  label:"Respiratoire",  icon:"🫁", color:"#3498DB" },
+          { key:"traumatique",   label:"Traumatique",   icon:"🦴", color:"#E67E22" },
+          { key:"autres",        label:"Autres",        icon:"✂️", color:C.sub  },
+        ];
+        const renderCard = (g) => (
           <button key={g.id} onClick={()=>setSelected(g)}
             style={{background:C.white, border:`1px solid ${C.border}`,
               borderRadius:16, padding:"16px", cursor:"pointer", textAlign:"left",
               borderLeft:`4px solid ${g.color||C.blue}`,
-              transition:"transform .1s"}}>
+              transition:"transform .1s", width:"100%"}}>
             <div style={{display:"flex", alignItems:"center", gap:12}}>
               <div style={{background:(g.color||C.blue)+"22", borderRadius:12,
                 width:48, height:48, display:"flex", alignItems:"center",
@@ -2416,14 +2563,62 @@ function GestesScreen({ deepLinkId }) {
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </div>
           </button>
-        ))}
-        {filtered.length===0 && (
-          <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
-            <div style={{fontSize:36, marginBottom:10}}>🔍</div>
-            <div style={{fontSize:14}}>Aucun geste pour "{search}"</div>
+        );
+
+        // Pendant une recherche : liste plate
+        if(search.trim()) {
+          return (
+            <div style={{display:"flex", flexDirection:"column", gap:10}}>
+              {filtered.map(renderCard)}
+              {filtered.length===0 && (
+                <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+                  <div style={{fontSize:36, marginBottom:10}}>🔍</div>
+                  <div style={{fontSize:14}}>Aucun geste pour "{search}"</div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // Sans recherche : grouper par catégorie
+        const sorted = [...filtered].sort((a,b)=>(a.title||"").localeCompare(b.title||"", "fr"));
+        const groups = { hemodynamique:[], respiratoire:[], traumatique:[], autres:[] };
+        sorted.forEach(g => {
+          const cat = g.category && groups[g.category] ? g.category : "autres";
+          groups[cat].push(g);
+        });
+
+        return (
+          <div style={{display:"flex", flexDirection:"column", gap:20}}>
+            {sections.map(s => {
+              const list = groups[s.key];
+              if(list.length === 0) return null;
+              return (
+                <div key={s.key}>
+                  <div style={{
+                    display:"flex", alignItems:"center", gap:10,
+                    marginBottom:10, paddingBottom:6,
+                    borderBottom:`2px solid ${s.color}33`,
+                  }}>
+                    <span style={{fontSize:18}}>{s.icon}</span>
+                    <div style={{
+                      fontSize:13, fontWeight:800, color:s.color,
+                      letterSpacing:.5, textTransform:"uppercase", flex:1,
+                    }}>{s.label}</div>
+                    <div style={{
+                      fontSize:11, fontWeight:700, color:C.sub,
+                      background:C.bg, padding:"2px 8px", borderRadius:10,
+                    }}>{list.length}</div>
+                  </div>
+                  <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                    {list.map(renderCard)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2472,7 +2667,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           <div>
             <div style={{fontSize:16, fontWeight:800, color:C.text, lineHeight:1.3}}>{geste.title}</div>
             <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:5}}>
-              {(Array.isArray(geste.tags)?geste.tags:[]).map(t=>(
+              {geste.tags.map(t=>(
                 <span key={t} style={{fontSize:10, fontWeight:700,
                   background:C.blue+"22", color:C.blue,
                   padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -2482,43 +2677,10 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
         </div>
       </div>
 
-      {/* Vidéo YouTube — lien direct */}
-      {ytId && (
-        <a
-          href={`https://www.youtube.com/watch?v=${ytId}`}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display:"flex", alignItems:"center", gap:14,
-            background:C.white, border:`1px solid ${C.border}`,
-            borderRadius:14, padding:"14px 16px", marginBottom:16,
-            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
-          }}>
-          <div style={{
-            background:"#FF0000", borderRadius:10,
-            width:46, height:46, flexShrink:0,
-            display:"flex", alignItems:"center", justifyContent:"center",
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
-            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
-      )}
-
       {/* Image principale si disponible */}
       {geste.imageData && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
-          <ClickableImage src={geste.imageData || geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
+          <ClickableImage src={geste.imageData} alt={geste.title} style={{borderRadius:14}}/>
         </div>
       )}
       {geste.credit && (
@@ -2655,6 +2817,39 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           </div>
         )}
       </div>
+
+      {/* Vidéo YouTube — lien direct, en bas du contenu */}
+      {ytId && (
+        <a
+          href={`https://www.youtube.com/watch?v=${ytId}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display:"flex", alignItems:"center", gap:14,
+            background:C.white, border:`1px solid ${C.border}`,
+            borderRadius:14, padding:"14px 16px", marginTop:16,
+            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
+          }}>
+          <div style={{
+            background:"#FF0000", borderRadius:10,
+            width:46, height:46, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
+            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
+      )}
     </div>
   );
 }
@@ -2728,7 +2923,7 @@ function DiversScreen({ deepLinkId }) {
           </div>
         )}
         {selected.imageData && (
-          <DiversImageViewer src={selected.imageData||selected.imageUrl} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData||selected.imageUrl}/>
+          <DiversImageViewer src={selected.imageData} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData}/>
         )}
         {selected.credit && (
           <div style={{fontSize:10, color:C.sub, fontStyle:"italic", marginBottom:8, paddingLeft:2}}>
@@ -2982,7 +3177,7 @@ function DilutionScreen({ deepLinkId }) {
         </div>
 
         {/* Schema visuel uploadé */}
-        {(selected.schemaData || selected.schemaUrl) && (
+        {selected.schemaData && (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.blue+"18", borderRadius:10, width:34, height:34,
@@ -2990,7 +3185,7 @@ function DilutionScreen({ deepLinkId }) {
               <span style={{fontSize:12, fontWeight:800, color:C.blue, letterSpacing:.5, textTransform:"uppercase"}}>Schéma visuel</span>
             </div>
             <div style={{background:"#0A1628", borderRadius:14, padding:4, overflow:"hidden"}}>
-              <ClickableImage src={selected.schemaData || selected.schemaUrl} alt="Schema de dilution" style={{borderRadius:10}}/>
+              <ClickableImage src={selected.schemaData} alt="Schema de dilution" style={{borderRadius:10}}/>
             </div>
           </div>
         )}
@@ -3034,14 +3229,14 @@ function DilutionScreen({ deepLinkId }) {
         )}
 
         {/* Photo complémentaire */}
-        {(selected.photoData || selected.photoUrl) && (
+        {selected.photoData && (
           <div style={{marginTop:16, marginBottom:12}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.navy+"18", borderRadius:10, width:34, height:34,
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:17}}>{"📷"}</div>
               <span style={{fontSize:12, fontWeight:800, color:C.navy, letterSpacing:.5, textTransform:"uppercase"}}>Photo</span>
             </div>
-            <ClickableImage src={selected.photoData || selected.photoUrl} alt="Photo" style={{borderRadius:12}}/>
+            <ClickableImage src={selected.photoData} alt="Photo" style={{borderRadius:12}}/>
           </div>
         )}
         {selected.medias?.length > 0 && (
@@ -3141,12 +3336,12 @@ function AdminScreen({ onNewItem }) {
   const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("ecg");
   const [saved, setSaved] = useState(null);
-  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" });
-  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" });
+  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" });
+  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, hasSecondImage:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" });
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
-  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
+  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
 
   const [editingE, setEditingE] = useState(null);
@@ -3158,7 +3353,6 @@ function AdminScreen({ onNewItem }) {
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
-  const [editingC, setEditingC] = useState(null);
 
   // Les listes viennent du DataStore global
   const customEcgs = store.ecgs;
@@ -3177,15 +3371,16 @@ function AdminScreen({ onNewItem }) {
     if(!eForm.title.trim()) return;
     const tags = eForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
+    const blank = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null,medias:[],tags:""};
     if(editingE !== null) {
       const item = {...eForm, id:editingE, tags, points, color:"#E05260"};
-      await updateItem("ecgs","admin_ecgs",item,["image"]);
-      setEditingE(null); setEForm({title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await updateItem("ecgs","admin_ecgs",item,["image","image2"]);
+      setEditingE(null); setEForm(blank);
       showSaved("ECG modifié !");
     } else {
       const item = {...eForm, id:Date.now(), tags, points, revealed:false, color:"#E05260"};
-      await addItem("ecgs","admin_ecgs",item,["image"]);
-      setEForm({title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await addItem("ecgs","admin_ecgs",item,["image","image2"]);
+      setEForm(blank);
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
@@ -3194,15 +3389,16 @@ function AdminScreen({ onNewItem }) {
   async function addImagerie() {
     if(!iForm.title.trim()) return;
     const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    const blank = {title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,hasSecondImage:false,secondTitle:"",imageUrl2:"",imageData2:null,medias:[],tags:""};
     if(editingI !== null) {
       const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
-      await updateItem("imagerie","admin_imagerie",item,["image"]);
-      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await updateItem("imagerie","admin_imagerie",item,["image","image2"]);
+      setEditingI(null); setIForm(blank);
       showSaved("Cas modifié !");
     } else {
       const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
-      await addItem("imagerie","admin_imagerie",item,["image"]);
-      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await addItem("imagerie","admin_imagerie",item,["image","image2"]);
+      setIForm(blank);
       showSaved("Cas ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
     }
@@ -3247,15 +3443,10 @@ function AdminScreen({ onNewItem }) {
     if(!rForm.title.trim()) return;
     const tags = (rForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
-    try {
-      await addRetexItem(item);
-      setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
-      showSaved("Publication ajoutée !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
-    } catch(e) {
-      console.error("addRetex:", e);
-      alert("Erreur sauvegarde RETEX : " + e.message);
-    }
+    await addRetexItem(item);
+    setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
+    showSaved("Publication ajoutée !");
+    if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
   }
 
   async function addGeste() {
@@ -3267,41 +3458,48 @@ function AdminScreen({ onNewItem }) {
       pieges:   typeof gForm.pieges==="string"?gForm.pieges.split("\n").filter(Boolean):gForm.pieges,
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
     };
+    const blank = {title:"",icon:"✂️",color:"#C0392B",category:"",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]};
     if(editingG !== null) {
-      try {
-        const item = {...gForm, id:editingG, tags, ...parsed};
-        await updateItem("gestes","admin_gestes",item,["image"]);
-        setEditingG(null);
-        setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
-        showSaved("Geste modifié !");
-      } catch(e) {
-        console.error("updateGeste:", e);
-        alert("Erreur modification : " + e.message);
-      }
+      const item = {...gForm, id:editingG, tags, ...parsed};
+      await updateItem("gestes","admin_gestes",item,["image"]);
+      setEditingG(null); setGForm(blank);
+      showSaved("Geste modifié !");
     } else {
-      try {
-        const item = {...gForm, id:Date.now(), tags, ...parsed};
-        await addItem("gestes","admin_gestes",item,["image"]);
-        setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
-        showSaved("Geste ajouté !");
-        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
-      } catch(e) {
-        console.error("addGeste:", e);
-        alert("Erreur sauvegarde : " + e.message);
-      }
+      const item = {...gForm, id:Date.now(), tags, ...parsed};
+      await addItem("gestes","admin_gestes",item,["image"]);
+      setGForm(blank);
+      showSaved("Geste ajouté !");
+      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
   }
 
   async function addDilution() {
     if(!dilForm.title.trim()) return;
     const tags = dilForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    // Whitelist des champs valides du schéma `dilutions` (évite d'envoyer des champs parasites comme "points" venant d'anciennes données)
+    const cleanFields = {
+      title: dilForm.title,
+      nomCommercial: dilForm.nomCommercial || "",
+      subtitle: dilForm.subtitle || "",
+      color: dilForm.color || "#E05260",
+      tags,
+      presentation: dilForm.presentation || "",
+      indication: dilForm.indication || "",
+      dilutionStandard: dilForm.dilutionStandard || "",
+      administration: dilForm.administration || "",
+      schemaUrl: dilForm.schemaUrl || "",
+      schemaData: dilForm.schemaData || null,
+      photoUrl: dilForm.photoUrl || "",
+      photoData: dilForm.photoData || null,
+      medias: dilForm.medias || [],
+    };
     if(editingDil !== null) {
-      const item = {...dilForm, id:editingDil, tags, color:dilForm.color||"#E05260"};
+      const item = { ...cleanFields, id: editingDil };
       await updateItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setEditingDil(null); setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",indication:"",dilutionStandard:"",administration:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution modifiée !");
     } else {
-      const item = {...dilForm, id:Date.now(), tags, color:dilForm.color||"#E05260"};
+      const item = { ...cleanFields, id: Date.now() };
       await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",indication:"",dilutionStandard:"",administration:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution ajoutée !");
@@ -3315,6 +3513,9 @@ function AdminScreen({ onNewItem }) {
     } else {
       await removeItem(storeKey, storageKey, id);
     }
+    // Nettoyage favoris : retire la référence orpheline si elle existe
+    const favType = {ecgs:"ecg", imagerie:"icono", divers:"divers", dilutions:"dilution", gestes:"geste", agenda:"agenda"}[storeKey];
+    if(favType) removeFavoriById(favType, id);
     showSaved("Supprimé !");
   }
 
@@ -3376,6 +3577,32 @@ function AdminScreen({ onNewItem }) {
                 reader.readAsDataURL(file);
               }}/>
             </label>
+
+            {/* Toggle 2e ECG/image avant diagnostic */}
+            <label style={{display:"flex", alignItems:"center", gap:8, fontSize:12, color:C.navy, marginBottom:eForm.hasSecondEcg?6:10, cursor:"pointer"}}>
+              <input type="checkbox" checked={!!eForm.hasSecondEcg} onChange={e=>setEForm({...eForm, hasSecondEcg:e.target.checked})}/>
+              Ajouter un 2e ECG/image avant le diagnostic
+            </label>
+            {eForm.hasSecondEcg && (
+              <div style={{background:"#F8FAFC", border:`1px solid ${C.border}`, borderRadius:10, padding:10, marginBottom:10}}>
+                <label style={lbl}>Titre du 2e ECG (ex: "Après thrombolyse")</label>
+                <input style={inp} placeholder="ECG 2" value={eForm.secondTitle||""} onChange={e=>setEForm({...eForm, secondTitle:e.target.value})}/>
+                <label style={{display:"flex", alignItems:"center", gap:10, background:eForm.imageUrl2?"#E8F7F1":"#F0F4F8", border:`2px dashed ${eForm.imageUrl2?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:0}}>
+                  <span style={{fontSize:22}}>{"📎"}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12, fontWeight:700, color:eForm.imageUrl2?C.green:C.navy}}>{eForm.imageUrl2 ? eForm.imageUrl2 : "Cliquer pour choisir la 2e image"}</div>
+                  </div>
+                  {eForm.imageUrl2 && <span style={{color:C.green, fontWeight:800, fontSize:16}}>{"✓"}</span>}
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => setEForm(f => ({...f, imageUrl2:file.name, imageData2:ev.target.result}));
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+              </div>
+            )}
             <label style={lbl}>Question pedagogique</label>
             <input style={inp} placeholder="Quel est votre diagnostic ?" value={eForm.question} onChange={e=>setEForm({...eForm,question:e.target.value})}/>
             <label style={lbl}>Interpretation</label>
@@ -3392,7 +3619,7 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#SCA #Arythmie #Pediatrie" value={eForm.tags} onChange={e=>setEForm({...eForm,tags:e.target.value})}/>
-            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addEcg} color={C.red} style={{width:"100%"}}>{editingE ? "✅ Enregistrer les modifications" : "Ajouter l'ECG"}</Btn>
           </Card>
           {customEcgs.length>0 && (
@@ -3447,6 +3674,33 @@ function AdminScreen({ onNewItem }) {
             {iForm.imageData && !iForm.isVideo && (
               <img src={iForm.imageData} alt="preview" style={{width:"100%", borderRadius:8, marginBottom:10, maxHeight:200, objectFit:"cover"}} />
             )}
+
+            {/* Toggle 2e image avant diagnostic */}
+            <label style={{display:"flex", alignItems:"center", gap:8, fontSize:12, color:C.navy, marginBottom:iForm.hasSecondImage?6:10, cursor:"pointer"}}>
+              <input type="checkbox" checked={!!iForm.hasSecondImage} onChange={e=>setIForm({...iForm, hasSecondImage:e.target.checked})}/>
+              Ajouter une 2e image avant le diagnostic
+            </label>
+            {iForm.hasSecondImage && (
+              <div style={{background:"#F8FAFC", border:`1px solid ${C.border}`, borderRadius:10, padding:10, marginBottom:10}}>
+                <label style={lbl}>Titre de la 2e image (ex: "Coupe coronale")</label>
+                <input style={inp} placeholder="Image 2" value={iForm.secondTitle||""} onChange={e=>setIForm({...iForm, secondTitle:e.target.value})}/>
+                <label style={{display:"flex", alignItems:"center", gap:10, background:iForm.imageUrl2?"#E8F7F1":"#F0F4F8", border:`2px dashed ${iForm.imageUrl2?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:0}}>
+                  <span style={{fontSize:22}}>{"📎"}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12, fontWeight:700, color:iForm.imageUrl2?C.green:C.navy}}>{iForm.imageUrl2 ? iForm.imageUrl2 : "Cliquer pour choisir la 2e image"}</div>
+                  </div>
+                  {iForm.imageUrl2 && <span style={{color:C.green, fontWeight:800, fontSize:16}}>{"✓"}</span>}
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => setIForm(f => ({...f, imageUrl2:file.name, imageData2:ev.target.result}));
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+              </div>
+            )}
+
             <label style={lbl}>Contexte clinique</label>
             <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Patient X ans, presentation..." value={iForm.context} onChange={e=>setIForm({...iForm,context:e.target.value})}/>
             <label style={lbl}>Question</label>
@@ -3461,7 +3715,7 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#Scanner #Radio #Fracture" value={iForm.tags} onChange={e=>setIForm({...iForm,tags:e.target.value})}/>
-            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, hasSecondImage:false, secondTitle:"", imageUrl2:"", imageData2:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addImagerie} color="#9B59B6" style={{width:"100%"}}>{editingI ? "✅ Enregistrer les modifications" : "Ajouter le cas"}</Btn>
           </Card>
           {customImagerie.length>0 && (
@@ -3838,7 +4092,22 @@ function AdminScreen({ onNewItem }) {
                     <div style={{fontSize:11, color:C.sub}}>{d.subtitle||""} {Array.isArray(d.tags)?d.tags.join(" "):""}</div>
                   </div>
                   <div style={{display:"flex", gap:6}}>
-                    <button onClick={()=>{ setEditingDil(d.id); setDilForm({...d, tags:Array.isArray(d.tags)?d.tags.join(" "):d.tags||"", nomCommercial:d.nomCommercial||"", indication:d.indication||"", administration:d.administration||"", photoUrl:d.photoUrl||"", photoData:null}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingDil(d.id); setDilForm({
+                      title: d.title||"",
+                      nomCommercial: d.nomCommercial||"",
+                      subtitle: d.subtitle||"",
+                      color: d.color||"#E05260",
+                      tags: Array.isArray(d.tags)?d.tags.join(" "):d.tags||"",
+                      presentation: d.presentation||"",
+                      indication: d.indication||"",
+                      dilutionStandard: d.dilutionStandard||"",
+                      administration: d.administration||"",
+                      schemaUrl: d.schemaUrl||"",
+                      schemaData: d.schemaData||null,
+                      photoUrl: d.photoUrl||"",
+                      photoData: null,
+                      medias: d.medias||[]
+                    }); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("dilutions","admin_dilutions",d.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -3879,6 +4148,18 @@ function AdminScreen({ onNewItem }) {
               ))}
             </div>
 
+            <label style={lbl}>Catégorie</label>
+            <select
+              style={inp}
+              value={gForm.category||""}
+              onChange={e=>setGForm({...gForm, category:e.target.value})}
+            >
+              <option value="">— Non classé —</option>
+              <option value="hemodynamique">🫀 Hémodynamique</option>
+              <option value="respiratoire">🫁 Respiratoire</option>
+              <option value="traumatique">🦴 Traumatique</option>
+            </select>
+
             <label style={lbl}>Tags (separes par virgule)</label>
             <input style={inp} placeholder="airway, IOT, urgence" value={gForm.tags} onChange={e=>setGForm({...gForm,tags:e.target.value})}/>
 
@@ -3910,7 +4191,7 @@ function AdminScreen({ onNewItem }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
@@ -3941,11 +4222,9 @@ function AdminScreen({ onNewItem }) {
 
       {tab==="annuaire" && (
         <div>
-          {/* Formulaire ajout / modification contact */}
-          <div style={{background:C.white, border:`1px solid ${editingC!==null ? C.blue : C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
-            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>
-              {editingC!==null ? "✏️ Modifier le contact" : "➕ Ajouter un contact"}
-            </div>
+          {/* Formulaire ajout contact */}
+          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>➕ Ajouter un contact</div>
 
             <div style={{marginBottom:10}}>
               <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:4}}>NOM *</div>
@@ -3989,31 +4268,16 @@ function AdminScreen({ onNewItem }) {
               + Ajouter un numéro
             </button>
 
-            <div style={{display:"flex", gap:8}}>
-              {editingC!==null && (
-                <button onClick={()=>{ setEditingC(null); setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] }); }}
-                  style={{flex:1, background:C.border, color:C.text, border:"none", borderRadius:10, padding:"11px 0", fontSize:13, fontWeight:700, cursor:"pointer"}}>
-                  Annuler
-                </button>
-              )}
-              <button onClick={async()=>{
-                if(!cForm.nom.trim()) return;
-                const tels = cForm.telephones.filter(t=>t.numero.trim());
-                if(editingC!==null) {
-                  const updated = { id:editingC, nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
-                  await updateItem("contacts","admin_contacts",updated,[]);
-                  setEditingC(null);
-                  showSaved("Contact modifié !");
-                } else {
-                  const newContact = { id:Date.now(), nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
-                  await addItem("contacts","admin_contacts",newContact,[]);
-                  showSaved("Contact ajouté !");
-                }
-                setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] });
-              }} style={{flex:1, background:editingC!==null ? C.blue : C.navy, color:"#fff", border:"none", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:800, cursor:"pointer"}}>
-                {editingC!==null ? "✏️ Enregistrer les modifications" : "💾 Enregistrer le contact"}
-              </button>
-            </div>
+            <button onClick={async()=>{
+              if(!cForm.nom.trim()) return;
+              const tels = cForm.telephones.filter(t=>t.numero.trim());
+              const newContact = { id:Date.now(), nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
+              await addItem("contacts","admin_contacts",newContact,[]);
+              setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] });
+              showSaved("Contact ajouté !");
+            }} style={{width:"100%", background:C.navy, color:"#fff", border:"none", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:800, cursor:"pointer"}}>
+              💾 Enregistrer le contact
+            </button>
           </div>
 
           {/* Liste des contacts enregistrés */}
@@ -4027,7 +4291,7 @@ function AdminScreen({ onNewItem }) {
             </div>
           ) : (
             [...customContacts].reverse().map(p=>(
-              <div key={p.id} style={{background:editingC===p.id ? C.blueLight : C.white, borderRadius:10, padding:"12px 14px", marginBottom:8, border:`1.5px solid ${editingC===p.id ? C.blue : C.border}`}}>
+              <div key={p.id} style={{background:C.white, borderRadius:10, padding:"12px 14px", marginBottom:8, border:`1px solid ${C.border}`}}>
                 <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
                   <div style={{flex:1}}>
                     <div style={{fontSize:13, fontWeight:800, color:C.text}}>{p.nom}</div>
@@ -4040,19 +4304,10 @@ function AdminScreen({ onNewItem }) {
                       </div>
                     ))}
                   </div>
-                  <div style={{display:"flex", gap:6, flexShrink:0, marginLeft:8}}>
-                    <button onClick={()=>{
-                      setEditingC(p.id);
-                      setCForm({ nom:p.nom, categorie:p.categorie||"", role:p.role||"", telephones:(p.telephones&&p.telephones.length)?p.telephones:[{label:"",numero:""}] });
-                      window.scrollTo({top:0,behavior:"smooth"});
-                    }} style={{background:C.blueLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.blue, fontSize:12, cursor:"pointer"}}>
-                      ✏️
-                    </button>
-                    <button onClick={async()=>{ await removeItem("contacts","admin_contacts",p.id); if(editingC===p.id){setEditingC(null);setCForm({nom:"",categorie:"",role:"",telephones:[{label:"",numero:""}]});} showSaved("Contact supprimé"); }}
-                      style={{background:C.redLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.red, fontSize:12, cursor:"pointer"}}>
-                      🗑️
-                    </button>
-                  </div>
+                  <button onClick={async()=>{ await removeItem("contacts","admin_contacts",p.id); showSaved("Contact supprimé"); }}
+                    style={{background:C.redLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.red, fontSize:12, cursor:"pointer", flexShrink:0, marginLeft:8}}>
+                    🗑️
+                  </button>
                 </div>
               </div>
             ))
