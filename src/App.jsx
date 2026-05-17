@@ -15,6 +15,7 @@ const TABLE_MAP = {
   admin_gestes:       "gestes",
   retex_submissions:  "retex",
   admin_contacts:     "contacts",
+  admin_reco_flash:   "reco_flash",
 };
 
 // Requête REST Supabase générique
@@ -58,6 +59,8 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
+  if ("date_publication" in r) { r.datePublication = r.date_publication; delete r.date_publication; }
+  if ("url_pdf"    in r) { r.urlPdf     = r.url_pdf;     delete r.url_pdf; }
   // Normalise tags array→string pour compatibilité avec le reste de l'app
   if (Array.isArray(r.tags)) r.tags = r.tags.join(", ");
   return r;
@@ -87,6 +90,8 @@ function itemToRow(table, item) {
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
+  if ("datePublication"  in r) { r.date_publication   = r.datePublication;  delete r.datePublication; }
+  if ("urlPdf"           in r) { r.url_pdf            = r.urlPdf;           delete r.urlPdf; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
@@ -148,7 +153,7 @@ function DataProvider({ children }) {
   const [store, setStore] = React.useState({
     ecgs: [], imagerie: [], agenda: [],
     divers: [], dilutions: [], gestes: [], retex: [],
-    contacts: [], loaded: false
+    contacts: [], recoFlash: [], loaded: false
   });
 
   React.useEffect(() => { loadAll(); }, []);
@@ -199,6 +204,9 @@ function DataProvider({ children }) {
 
     const rc = await safeGet("admin_contacts");
     next.contacts = rc ? JSON.parse(rc.value) : [];
+
+    const rrf = await safeGet("admin_reco_flash");
+    next.recoFlash = rrf ? JSON.parse(rrf.value) : [];
 
     next.loaded = true;
     setStore(next);
@@ -949,10 +957,10 @@ function HomeScreen({onNav}) {
     {id:"imagerie",   icon:"🖼️", label:"Imagerie",          color:"#9B59B6", bg:"#F3E8FF"},
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
-    {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
-    
+    {id:"recoflash",  icon:"📋", label:"Reco Flash",        color:"#0891B2", bg:"#ECFEFF"},
+    {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#F0FDFA"},
     {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9"},
@@ -3105,3159 +3113,479 @@ function DilutionScreen({ deepLinkId }) {
 
 // ─── ScoresScreen ──────────────────────────────────────────────────────────────
 const SCORES_LIST = [
-  {
-    id:"glasgow",
-    category:"neuro",
-    title:"Score de Glasgow",
-    subtitle:"Évaluation du coma (GCS)",
-    icon:"🧠",
-    color:"#9B59B6",
-    tags:["#neuro","#coma","#TC","#urgence"],
-  },
-  {
-    id:"shock-index",
-    category:"urg",
-    title:"Shock Index",
-    subtitle:"Indice de choc (FC / PAS)",
-    icon:"🫀",
-    color:"#DC2626",
-    tags:["#hémodynamique","#choc","#hypovolémie","#trauma"],
-  },
-  {
-    id:"apgar",
-    category:"pedia",
-    title:"Score d'Apgar",
-    subtitle:"Adaptation néonatale (à 1', 5', 10')",
-    icon:"👶",
-    color:"#EC4899",
-    tags:["#néonatal","#nouveau-né","#naissance","#réanimation"],
-  },
-  {
-    id:"nihss",
-    category:"neuro",
-    title:"NIHSS",
-    subtitle:"Évaluation AVC (Stroke Scale)",
-    icon:"🧠",
-    color:"#7C3AED",
-    tags:["#AVC","#stroke","#neuro","#thrombolyse"],
-  },
-  {
-    id:"qsofa",
-    category:"infect",
-    title:"qSOFA",
-    subtitle:"Dépistage sepsis (quick SOFA)",
-    icon:"🦠",
-    color:"#EA580C",
-    tags:["#sepsis","#infection","#choc-septique","#urgence"],
-  },
-  {
-    id:"chadsvasc",
-    category:"cardio",
-    title:"CHA₂DS₂-VASc",
-    subtitle:"Risque thrombo-embolique dans la FA",
-    icon:"💓",
-    color:"#2563EB",
-    tags:["#FA","#fibrillation","#anticoagulation","#cardio"],
-  },
-  {
-    id:"hasbled",
-    category:"cardio",
-    title:"HAS-BLED",
-    subtitle:"Risque hémorragique sous AC dans la FA",
-    icon:"🩸",
-    color:"#BE123C",
-    tags:["#FA","#anticoagulation","#hémorragie","#saignement"],
-  },
-  {
-    id:"parkland",
-    category:"urg",
-    title:"Parkland (brûlé grave)",
-    subtitle:"Remplissage adulte > 40 kg, SCB > 10 %",
-    icon:"🔥",
-    color:"#C2410C",
-    tags:["#brûlure","#remplissage","#parkland","#réa"],
-  },
-  {
-    id:"cushman",
-    category:"autres",
-    title:"Score de Cushman",
-    subtitle:"Sevrage alcoolique – titration BZD",
-    icon:"🍷",
-    color:"#0891B2",
-    tags:["#sevrage","#alcool","#addictologie","#BZD"],
-  },
-  {
-    id:"heart",
-    category:"cardio",
-    title:"Score HEART",
-    subtitle:"Douleur thoracique – risque SCA",
-    icon:"❤️",
-    color:"#4338CA",
-    tags:["#DT","#douleur-thoracique","#SCA","#cardio"],
-  },
-  {
-    id:"wells-tvp",
-    category:"cardio",
-    title:"Wells TVP (simplifié)",
-    subtitle:"Probabilité clinique de thrombose veineuse profonde",
-    icon:"🦵",
-    color:"#0F766E",
-    tags:["#TVP","#thrombose","#phlébite","#dimères"],
-  },
-  {
-    id:"geneva-ep",
-    category:"cardio",
-    title:"Score de Genève révisé",
-    subtitle:"Probabilité clinique d'embolie pulmonaire",
-    icon:"🫁",
-    color:"#0284C7",
-    tags:["#EP","#embolie","#pulmonaire","#dimères"],
-  },
-];
-
-const SCORES_CATEGORIES = [
-  { id:"all",    label:"Tous",         icon:"📋", color:"#0D9488" },
-  { id:"urg",    label:"Urg. vitales", icon:"🚨", color:"#DC2626" },
-  { id:"cardio", label:"Cardio",       icon:"❤️", color:"#4338CA" },
-  { id:"respi",  label:"Respi",        icon:"🫁", color:"#0284C7" },
-  { id:"neuro",  label:"Neuro",        icon:"🧠", color:"#7C3AED" },
-  { id:"infect", label:"Infectieux",   icon:"🦠", color:"#EA580C" },
-  { id:"pedia",  label:"Pédiatrie",    icon:"👶", color:"#EC4899" },
-  { id:"autres", label:"Autres",       icon:"⋯",  color:"#64748B" },
+  { id:"glasgow",  title:"Score de Glasgow (GCS)", subtitle:"Évaluation du coma", icon:"🧠", color:"#9B59B6", tags:["#neuro","#coma","#TC","#urgence"] },
+  { id:"gbs",      title:"Glasgow-Blatchford (GBS)", subtitle:"Hémorragie digestive haute", icon:"🩸", color:"#DC2626", tags:["#hémato","#digestif","#hémorragie"] },
 ];
 
 function ScoresScreen({ deepLinkId }) {
   const C = useC();
   const [selected, setSelected] = useState(null);
-  const [filter, setFilter] = useState("all");
+  useEffect(()=>{ if(deepLinkId){ const it=SCORES_LIST.find(s=>s.id===deepLinkId); if(it) setSelected(it.id); } },[deepLinkId]);
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
 
-  useEffect(()=>{
-    if(deepLinkId){
-      const it = SCORES_LIST.find(s => s.id===deepLinkId || String(s.id)===String(deepLinkId));
-      if(it) setSelected(it.id);
-    }
-  },[deepLinkId]);
-
-  useEffect(()=>{
-    const el = document.querySelector('[data-content-scroll]');
-    if(el) el.scrollTop = 0;
-  },[selected]);
-
-  if(selected === "glasgow") {
-    return <GlasgowCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "shock-index") {
-    return <ShockIndexCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "apgar") {
-    return <ApgarCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "nihss") {
-    return <NihssCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "qsofa") {
-    return <QsofaCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "chadsvasc") {
-    return <ChadsvascCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "hasbled") {
-    return <HasbledCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "parkland") {
-    return <ParklandCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "cushman") {
-    return <CushmanCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "heart") {
-    return <HeartCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "wells-tvp") {
-    return <WellsTvpCalculator onBack={()=>setSelected(null)}/>;
-  }
-  if(selected === "geneva-ep") {
-    return <GenevaEpCalculator onBack={()=>setSelected(null)}/>;
-  }
-
-  // Comptage par catégorie
-  function countFor(catId) {
-    if(catId === "all") return SCORES_LIST.length;
-    return SCORES_LIST.filter(s => s.category === catId).length;
-  }
-  const filtered = filter === "all"
-    ? SCORES_LIST
-    : SCORES_LIST.filter(s => s.category === filter);
-  const activeCat = SCORES_CATEGORIES.find(c => c.id === filter) || SCORES_CATEGORIES[0];
+  if(selected==="glasgow") return <GlasgowCalculator onBack={()=>setSelected(null)}/>;
+  if(selected==="gbs")     return <GBSCalculator onBack={()=>setSelected(null)}/>;
 
   return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{marginBottom:14}}>
-        <h2 style={{color:C.navy, fontWeight:900, fontSize:18, margin:0}}>🧮 Scores cliniques</h2>
-        <div style={{fontSize:11, color:C.sub, marginTop:2}}>
-          {filtered.length} score{filtered.length>1?"s":""}
-          {filter !== "all" && <> · <span style={{color:activeCat.color, fontWeight:700}}>{activeCat.label}</span></>}
+    <div>
+      <h2 style={{color:C.navy,fontWeight:900,fontSize:18,marginBottom:4}}>🧮 Scores cliniques</h2>
+      <div style={{fontSize:11,color:C.sub,marginBottom:16}}>{SCORES_LIST.length} scores disponibles</div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {SCORES_LIST.map(s=>(
+          <Card key={s.id} onClick={()=>setSelected(s.id)}>
+            <div style={{display:"flex",gap:12,alignItems:"center"}}>
+              <div style={{width:44,height:44,borderRadius:12,background:s.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{s.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:800,fontSize:14,color:C.navy}}>{s.title}</div>
+                <div style={{fontSize:11,color:C.sub,marginTop:2}}>{s.subtitle}</div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:6}}>
+                  {s.tags.map(t=><Tag key={t} label={t} color={s.color}/>)}
+                </div>
+              </div>
+              <span style={{fontSize:18,color:C.sub,flexShrink:0}}>›</span>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Glasgow Calculator
+const GCS_DATA = [
+  { cat:"Ouverture des yeux (E)", items:[
+    {score:4,label:"Spontanée",desc:"Ouvre les yeux spontanément"},
+    {score:3,label:"À la voix",desc:"Ouvre les yeux à la demande verbale"},
+    {score:2,label:"À la douleur",desc:"Ouvre les yeux à la stimulation douloureuse"},
+    {score:1,label:"Aucune",desc:"Pas d'ouverture des yeux"},
+  ]},
+  { cat:"Réponse verbale (V)", items:[
+    {score:5,label:"Orientée",desc:"Répond de manière cohérente et orientée"},
+    {score:4,label:"Confuse",desc:"Répond mais conversation confuse"},
+    {score:3,label:"Inappropriée",desc:"Mots compréhensibles mais incohérents"},
+    {score:2,label:"Incompréhensible",desc:"Gémissements, sons non articulés"},
+    {score:1,label:"Aucune",desc:"Aucune réponse verbale"},
+  ]},
+  { cat:"Réponse motrice (M)", items:[
+    {score:6,label:"Obéit",desc:"Exécute les ordres simples"},
+    {score:5,label:"Orientée",desc:"Localise la douleur"},
+    {score:4,label:"Évitement",desc:"Retrait en flexion à la douleur"},
+    {score:3,label:"Flexion anormale",desc:"Flexion stéréotypée (décortication)"},
+    {score:2,label:"Extension",desc:"Extension stéréotypée (décérébration)"},
+    {score:1,label:"Aucune",desc:"Aucune réponse motrice"},
+  ]},
+];
+
+function getGCSSeverity(total) {
+  if(total>=14) return {label:"Traumatisme crânien léger",color:"#10B981",bg:"#D1FAE5"};
+  if(total>=9) return {label:"Traumatisme crânien modéré",color:"#F59E0B",bg:"#FEF3C7"};
+  if(total>=4) return {label:"Traumatisme crânien sévère",color:"#EF4444",bg:"#FEE2E2"};
+  return {label:"État critique",color:"#991B1B",bg:"#FEE2E2"};
+}
+
+function GlasgowCalculator({onBack}) {
+  const C = useC();
+  const [sel, setSel] = useState({0:null,1:null,2:null});
+  const total = (sel[0]||0)+(sel[1]||0)+(sel[2]||0);
+  const allSelected = sel[0]!==null&&sel[1]!==null&&sel[2]!==null;
+  const sev = getGCSSeverity(total);
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,marginTop:8}}>
+        <div style={{width:44,height:44,borderRadius:12,background:"#9B59B618",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🧠</div>
+        <div>
+          <div style={{fontWeight:900,fontSize:17,color:C.navy}}>Score de Glasgow</div>
+          <div style={{fontSize:11,color:C.sub}}>Évaluation du coma (GCS) — 3 à 15</div>
         </div>
       </div>
 
-      {/* Barre de filtre par catégorie */}
-      <div
-        data-scores-filter
-        style={{
-          display:"flex", gap:8, overflowX:"auto",
-          paddingBottom:10, marginBottom:14,
-          marginLeft:-16, marginRight:-16, paddingLeft:16, paddingRight:16,
-          scrollbarWidth:"none",
-          msOverflowStyle:"none",
-          WebkitOverflowScrolling:"touch",
-        }}
-      >
-        {SCORES_CATEGORIES.map(cat => {
-          const active = filter === cat.id;
-          const count = countFor(cat.id);
-          if(count === 0 && cat.id !== "all") return null; // masque les catégories vides
+      {/* Score display */}
+      {allSelected && (
+        <div style={{background:sev.bg,border:`2px solid ${sev.color}`,borderRadius:16,padding:16,marginBottom:16,textAlign:"center"}}>
+          <div style={{fontSize:36,fontWeight:900,color:sev.color}}>{total}/15</div>
+          <div style={{fontSize:13,fontWeight:800,color:sev.color,marginTop:4}}>{sev.label}</div>
+          <div style={{fontSize:11,color:C.sub,marginTop:6}}>
+            E{sel[0]} + V{sel[1]} + M{sel[2]}
+          </div>
+          {total<=8 && <div style={{fontSize:11,fontWeight:800,color:"#991B1B",marginTop:8,padding:"4px 10px",background:"#FEE2E2",borderRadius:8,display:"inline-block"}}>⚠️ Indication d'intubation</div>}
+        </div>
+      )}
+
+      {GCS_DATA.map((cat,ci)=>(
+        <div key={ci} style={{marginBottom:14}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.navy,marginBottom:8,borderLeft:"3px solid #9B59B6",paddingLeft:8}}>{cat.cat}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {cat.items.map(it=>{
+              const active=sel[ci]===it.score;
+              return (
+                <button key={it.score} onClick={()=>setSel(p=>({...p,[ci]:it.score}))} style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:12,cursor:"pointer",
+                  border:`2px solid ${active?"#9B59B6":C.border}`,
+                  background:active?"#F5F3FF":C.white,transition:"all .15s",textAlign:"left",width:"100%"
+                }}>
+                  <div style={{width:30,height:30,borderRadius:8,background:active?"#9B59B6":"#F1F5F9",color:active?"#fff":C.sub,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,flexShrink:0}}>{it.score}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:13,color:active?"#9B59B6":C.text}}>{it.label}</div>
+                    <div style={{fontSize:10,color:C.sub,marginTop:1}}>{it.desc}</div>
+                  </div>
+                  {active && <span style={{color:"#9B59B6",fontWeight:900,fontSize:16}}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <button onClick={()=>setSel({0:null,1:null,2:null})} style={{
+        width:"100%",padding:12,borderRadius:12,border:`1.5px solid ${C.border}`,
+        background:C.white,color:C.sub,fontWeight:700,fontSize:13,cursor:"pointer",marginTop:4
+      }}>🔄 Réinitialiser</button>
+    </div>
+  );
+}
+
+// Glasgow-Blatchford Score (GBS) Calculator
+const GBS_FIELDS = [
+  { id:"urea", label:"Urée sanguine (mmol/L)", type:"select", options:[
+    {v:0,l:"< 6.5"},{v:2,l:"6.5 – 7.9"},{v:3,l:"8.0 – 9.9"},{v:4,l:"10.0 – 24.9"},{v:6,l:"≥ 25.0"}
+  ]},
+  { id:"hb_m", label:"Hémoglobine – Homme (g/dL)", type:"select", options:[
+    {v:0,l:"≥ 13.0"},{v:1,l:"12.0 – 12.9"},{v:3,l:"10.0 – 11.9"},{v:6,l:"< 10.0"}
+  ]},
+  { id:"hb_f", label:"Hémoglobine – Femme (g/dL)", type:"select", options:[
+    {v:0,l:"≥ 12.0"},{v:1,l:"10.0 – 11.9"},{v:6,l:"< 10.0"}
+  ]},
+  { id:"pas", label:"Pression artérielle systolique (mmHg)", type:"select", options:[
+    {v:0,l:"≥ 110"},{v:1,l:"100 – 109"},{v:2,l:"90 – 99"},{v:3,l:"< 90"}
+  ]},
+  { id:"fc", label:"Fréquence cardiaque", type:"select", options:[
+    {v:0,l:"< 100 bpm"},{v:1,l:"≥ 100 bpm"}
+  ]},
+  { id:"melena", label:"Méléna", type:"select", options:[{v:0,l:"Non"},{v:1,l:"Oui"}] },
+  { id:"syncope", label:"Syncope", type:"select", options:[{v:0,l:"Non"},{v:2,l:"Oui"}] },
+  { id:"hepato", label:"Maladie hépatique", type:"select", options:[{v:0,l:"Non"},{v:2,l:"Oui"}] },
+  { id:"cardiac", label:"Insuffisance cardiaque", type:"select", options:[{v:0,l:"Non"},{v:2,l:"Oui"}] },
+];
+
+function getGBSSeverity(total) {
+  if(total===0) return {label:"Très faible risque — sortie envisageable",color:"#10B981",bg:"#D1FAE5"};
+  if(total<=4) return {label:"Risque faible",color:"#F59E0B",bg:"#FEF3C7"};
+  if(total<=8) return {label:"Risque intermédiaire",color:"#EA580C",bg:"#FFF7ED"};
+  return {label:"Risque élevé — endoscopie urgente",color:"#EF4444",bg:"#FEE2E2"};
+}
+
+function GBSCalculator({onBack}) {
+  const C = useC();
+  const [vals, setVals] = useState({});
+  const [sexe, setSexe] = useState("M");
+
+  const fields = GBS_FIELDS.filter(f=>{
+    if(sexe==="M" && f.id==="hb_f") return false;
+    if(sexe==="F" && f.id==="hb_m") return false;
+    return true;
+  });
+
+  const allFilled = fields.every(f=>vals[f.id]!==undefined);
+  const total = fields.reduce((acc,f)=>{
+    const v=vals[f.id]; return acc+(typeof v==="number"?v:0);
+  },0);
+  const sev = getGBSSeverity(total);
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,marginTop:8}}>
+        <div style={{width:44,height:44,borderRadius:12,background:"#DC262618",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🩸</div>
+        <div>
+          <div style={{fontWeight:900,fontSize:17,color:C.navy}}>Glasgow-Blatchford</div>
+          <div style={{fontSize:11,color:C.sub}}>Risque hémorragie digestive haute — 0 à 23</div>
+        </div>
+      </div>
+
+      {/* Sexe selector */}
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        {[{v:"M",l:"♂ Homme"},{v:"F",l:"♀ Femme"}].map(s=>(
+          <button key={s.v} onClick={()=>{setSexe(s.v);setVals(p=>{const n={...p};delete n.hb_m;delete n.hb_f;return n;});}} style={{
+            flex:1,padding:"10px 0",borderRadius:12,fontWeight:800,fontSize:13,cursor:"pointer",
+            border:`2px solid ${sexe===s.v?"#DC2626":C.border}`,
+            background:sexe===s.v?"#FEF2F2":C.white,color:sexe===s.v?"#DC2626":C.sub
+          }}>{s.l}</button>
+        ))}
+      </div>
+
+      {/* Score display */}
+      {allFilled && (
+        <div style={{background:sev.bg,border:`2px solid ${sev.color}`,borderRadius:16,padding:16,marginBottom:16,textAlign:"center"}}>
+          <div style={{fontSize:36,fontWeight:900,color:sev.color}}>{total}</div>
+          <div style={{fontSize:13,fontWeight:800,color:sev.color,marginTop:4}}>{sev.label}</div>
+          {total===0 && <div style={{fontSize:11,fontWeight:700,color:"#059669",marginTop:8,padding:"4px 10px",background:"#ECFDF5",borderRadius:8,display:"inline-block"}}>✅ Patient éligible à la prise en charge ambulatoire</div>}
+        </div>
+      )}
+
+      {/* Fields */}
+      {fields.map(f=>(
+        <div key={f.id} style={{marginBottom:12}}>
+          <div style={{fontSize:12,fontWeight:800,color:C.navy,marginBottom:6,borderLeft:"3px solid #DC2626",paddingLeft:8}}>{f.label}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {f.options.map((o,oi)=>{
+              const active=vals[f.id]===o.v&&vals[f.id]!==undefined;
+              return (
+                <button key={oi} onClick={()=>setVals(p=>({...p,[f.id]:o.v}))} style={{
+                  display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:10,cursor:"pointer",
+                  border:`2px solid ${active?"#DC2626":C.border}`,
+                  background:active?"#FEF2F2":C.white,transition:"all .15s",textAlign:"left",width:"100%"
+                }}>
+                  <div style={{width:26,height:26,borderRadius:7,background:active?"#DC2626":"#F1F5F9",color:active?"#fff":C.sub,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:12,flexShrink:0}}>{o.v}</div>
+                  <div style={{fontWeight:700,fontSize:13,color:active?"#DC2626":C.text}}>{o.l}</div>
+                  {active && <span style={{marginLeft:"auto",color:"#DC2626",fontWeight:900}}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <button onClick={()=>setVals({})} style={{
+        width:"100%",padding:12,borderRadius:12,border:`1.5px solid ${C.border}`,
+        background:C.white,color:C.sub,fontWeight:700,fontSize:13,cursor:"pointer",marginTop:4
+      }}>🔄 Réinitialiser</button>
+    </div>
+  );
+}
+
+// ─── RecoFlashScreen ─────────────────────────────────────────────────────────
+const RF_SOCIETES_COLORS = {HAS:{c:"#2563EB",bg:"#EFF6FF"},SFMU:{c:"#DC2626",bg:"#FEF2F2"},SFAR:{c:"#7C3AED",bg:"#F5F3FF"},ERC:{c:"#059669",bg:"#ECFDF5"},ANSM:{c:"#D97706",bg:"#FFFBEB"},ESC:{c:"#0891B2",bg:"#ECFEFF"},SRLF:{c:"#BE185D",bg:"#FFF1F2"},Autre:{c:"#475569",bg:"#F1F5F9"}};
+const RF_SPECS = [
+  {v:"Cardiologie",icon:"❤️",color:"#DC2626",bg:"#FEF2F2"},{v:"Neurologie",icon:"🧠",color:"#7C3AED",bg:"#F5F3FF"},
+  {v:"Traumatologie",icon:"🦴",color:"#EA580C",bg:"#FFF7ED"},{v:"Réanimation",icon:"🫁",color:"#0891B2",bg:"#ECFEFF"},
+  {v:"Infectiologie",icon:"🦠",color:"#059669",bg:"#ECFDF5"},{v:"Pédiatrie",icon:"👶",color:"#D946EF",bg:"#FDF4FF"},
+  {v:"Toxicologie",icon:"☠️",color:"#854D0E",bg:"#FEFCE8"},{v:"Pneumologie",icon:"💨",color:"#2563EB",bg:"#EFF6FF"},
+  {v:"Urgences",icon:"🚨",color:"#E11D48",bg:"#FFF1F2"},{v:"Respiratoire",icon:"🌬️",color:"#0284C7",bg:"#F0F9FF"},
+  {v:"Douleur/Analgésie",icon:"💊",color:"#BE185D",bg:"#FFF1F2"},{v:"Autre",icon:"📋",color:"#475569",bg:"#F1F5F9"},
+];
+function rfGetSpec(s) { return RF_SPECS.find(x=>x.v===s)||{icon:"📋",color:"#475569",bg:"#F1F5F9"}; }
+function rfGetSoc(s) { return RF_SOCIETES_COLORS[s]||{c:"#475569",bg:"#F1F5F9"}; }
+function rfFormatDate(d) { if(!d) return ""; try { return new Date(d+"T00:00:00").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}); } catch(e){ return d; } }
+
+function RecoResumeContent({text,expanded}) {
+  const C = useC();
+  if(!text||!expanded) return null;
+  const lines = text.split("\n").filter(l=>l.trim());
+  return (
+    <div style={{marginTop:12,animation:"fadeIn .25s ease"}}>
+      {lines.map((line,i)=>{
+        const t=line.trim();
+        if(t.startsWith("**")&&t.endsWith("**")) return <div key={i} style={{fontSize:12,fontWeight:800,color:C.navy,marginTop:i>0?14:4,marginBottom:6,borderLeft:`3px solid ${C.blue}`,paddingLeft:8,letterSpacing:.3}}>{t.replace(/\*\*/g,"")}</div>;
+        if(t.startsWith("•")) return <div key={i} style={{fontSize:12,color:"#334155",lineHeight:1.6,paddingLeft:14,position:"relative",marginBottom:3}}><span style={{position:"absolute",left:0,color:C.blue,fontWeight:700}}>•</span>{t.slice(1).trim()}</div>;
+        return <div key={i} style={{fontSize:12,color:"#475569",lineHeight:1.6,marginBottom:2}}>{t}</div>;
+      })}
+    </div>
+  );
+}
+
+function RecoFlashScreen({ deepLinkId }) {
+  const C = useC();
+  const { store, addItem, updateItem, removeItem } = useData();
+  const [search, setSearch] = useState("");
+  const [filterSpec, setFilterSpec] = useState("Toutes");
+  const [expanded, setExpanded] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [rfForm, setRfForm] = useState({titre:"",societe:"HAS",datePublication:"",specialite:"Cardiologie",urlPdf:"",resume:"",tags:""});
+  const [editingId, setEditingId] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const { toggleFavori, isFavori } = useFavoris();
+
+  const allRecos = store.recoFlash||[];
+
+  useEffect(()=>{ if(deepLinkId && allRecos.length){ const it=allRecos.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setExpanded(it.id); } },[deepLinkId, store.recoFlash]);
+
+  function showSavedMsg(msg) { setSaved(msg); setTimeout(()=>setSaved(null),2500); }
+
+  async function saveReco() {
+    if(!rfForm.titre.trim()||!rfForm.datePublication) return;
+    const tags = (rfForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    if(editingId!==null) {
+      await updateItem("recoFlash","admin_reco_flash",{...rfForm,id:editingId,tags},[]);
+      setEditingId(null);
+      showSavedMsg("Recommandation modifiée !");
+    } else {
+      await addItem("recoFlash","admin_reco_flash",{...rfForm,id:Date.now(),tags},[]);
+      showSavedMsg("Recommandation ajoutée !");
+    }
+    setRfForm({titre:"",societe:"HAS",datePublication:"",specialite:"Cardiologie",urlPdf:"",resume:"",tags:""});
+    setShowForm(false);
+  }
+
+  const filtered = allRecos
+    .filter(r=>{
+      if(filterSpec!=="Toutes"&&r.specialite!==filterSpec) return false;
+      if(search.trim()){
+        const q=search.toLowerCase();
+        return (r.titre||"").toLowerCase().includes(q)||(r.societe||"").toLowerCase().includes(q)||(r.specialite||"").toLowerCase().includes(q)||(Array.isArray(r.tags)?r.tags:[]).some(t=>t.toLowerCase().includes(q))||(r.resume||"").toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .sort((a,b)=>new Date(b.datePublication||0)-new Date(a.datePublication||0));
+
+  const specFilters = ["Toutes",...RF_SPECS.map(s=>s.v)];
+  const isRecent = (d)=>{ try{ return (Date.now()-new Date(d))/(1e3*3600*24)<90; }catch(e){ return false; } };
+
+  const inp = {width:"100%",border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",fontSize:13,color:C.text,background:C.white,boxSizing:"border-box",marginBottom:10,outline:"none"};
+  const lbl = {fontSize:11,fontWeight:700,color:C.sub,marginBottom:4,display:"block"};
+
+  return (
+    <div>
+      <h2 style={{color:C.navy,fontWeight:800,fontSize:18,marginBottom:16}}>{"📋"} Reco Flash</h2>
+
+      {saved && <div style={{background:C.greenLight,border:`1px solid ${C.green}`,borderRadius:10,padding:"10px 16px",marginBottom:12,fontSize:13,fontWeight:700,color:C.green,textAlign:"center"}}>{saved}</div>}
+
+      {/* Search */}
+      <div style={{display:"flex",alignItems:"center",gap:10,background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:"10px 14px",marginBottom:12}}>
+        <span style={{fontSize:14,opacity:.5}}>{"🔍"}</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher une reco, tag, spécialité..." style={{flex:1,border:"none",outline:"none",fontSize:13,color:C.text,background:"transparent",fontFamily:"inherit"}}/>
+        {search && <button onClick={()=>setSearch("")} style={{background:"none",border:"none",cursor:"pointer",color:C.sub,fontSize:16,lineHeight:1,padding:0,flexShrink:0}}>✕</button>}
+      </div>
+
+      {/* Filters by speciality */}
+      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:10,marginBottom:8,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+        {specFilters.map(s=>{
+          const active=filterSpec===s;
+          const spec=s!=="Toutes"?rfGetSpec(s):null;
           return (
-            <button key={cat.id} onClick={()=>setFilter(cat.id)} style={{
-              flexShrink:0,
-              padding:"7px 13px 7px 11px",
-              borderRadius:999,
-              background: active ? cat.color : C.card,
-              color: active ? "#fff" : C.text,
-              border: active ? `1px solid ${cat.color}` : `1px solid ${C.border}`,
-              fontSize:13, fontWeight:700,
-              cursor:"pointer",
-              WebkitTapHighlightColor:"transparent",
-              display:"flex", alignItems:"center", gap:6,
-              whiteSpace:"nowrap",
-              transition:"background .15s, color .15s",
-              boxShadow: active ? `0 2px 8px ${cat.color}44` : "none",
+            <button key={s} onClick={()=>setFilterSpec(s)} style={{
+              padding:"5px 10px",borderRadius:20,whiteSpace:"nowrap",
+              border:`1.5px solid ${active?(spec?.color||C.navy):C.border}`,
+              background:active?(spec?.bg||C.blueLight):"transparent",
+              color:active?(spec?.color||C.navy):C.sub,
+              fontSize:11,fontWeight:700,cursor:"pointer",flexShrink:0,transition:"all .15s",
+              display:"flex",alignItems:"center",gap:4
             }}>
-              <span style={{fontSize:14, lineHeight:1}}>{cat.icon}</span>
-              <span>{cat.label}</span>
-              <span style={{
-                fontSize:10, fontWeight:800,
-                padding:"1px 7px", borderRadius:10,
-                background: active ? "rgba(255,255,255,.28)" : C.bg,
-                color: active ? "#fff" : C.sub,
-                fontVariantNumeric:"tabular-nums",
-                minWidth:18, textAlign:"center",
-              }}>{count}</span>
+              {spec && <span style={{fontSize:11}}>{spec.icon}</span>}{s}
             </button>
           );
         })}
       </div>
-      <style>{`[data-scores-filter]::-webkit-scrollbar { display: none; }`}</style>
 
-      {/* Liste filtrée */}
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {filtered.map(s => (
-          <Card key={s.id} onClick={()=>setSelected(s.id)} style={{
-            borderLeft:`4px solid ${s.color}`,
-            display:"flex", alignItems:"center", gap:14, padding:"14px 16px",
-          }}>
-            <div style={{
-              background:s.color+"22", borderRadius:12,
-              width:48, height:48, display:"flex",
-              alignItems:"center", justifyContent:"center",
-              fontSize:24, flexShrink:0,
-            }}>{s.icon}</div>
-            <div style={{flex:1, minWidth:0}}>
-              <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:3}}>{s.title}</div>
-              <div style={{fontSize:12, color:C.sub, marginBottom:6}}>{s.subtitle}</div>
-              <div style={{display:"flex", gap:5, flexWrap:"wrap"}}>
-                {s.tags.map((t,i)=>(
-                  <span key={i} style={{
-                    fontSize:10, color:s.color, background:s.color+"18",
-                    padding:"1px 7px", borderRadius:5, fontWeight:700,
-                  }}>{t}</span>
-                ))}
+      <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:12,letterSpacing:.3}}>
+        {filtered.length} recommandation{filtered.length>1?"s":""} · triées par date
+      </div>
+
+      {/* Cards */}
+      {filtered.length===0 ? (
+        <div style={{textAlign:"center",padding:"40px 20px",background:C.white,borderRadius:16,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:40,marginBottom:12}}>📋</div>
+          <div style={{fontSize:15,fontWeight:800,color:C.navy,marginBottom:4}}>Aucune recommandation</div>
+          <div style={{fontSize:12,color:C.sub}}>Ajoutez une reco avec le bouton + en bas</div>
+        </div>
+      ) : filtered.map(r=>{
+        const soc=rfGetSoc(r.societe);
+        const sp=rfGetSpec(r.specialite);
+        const isExp=expanded===r.id;
+        return (
+          <div key={r.id} style={{background:C.white,borderRadius:16,border:`1px solid ${C.border}`,boxShadow:isExp?"0 8px 30px rgba(26,58,92,.12)":"0 2px 8px rgba(26,58,92,.04)",marginBottom:12,overflow:"hidden",transition:"box-shadow .2s"}}>
+            <div onClick={()=>setExpanded(isExp?null:r.id)} style={{padding:"14px 16px",cursor:"pointer",borderBottom:isExp?`1px solid ${C.border}`:"none"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+                    <span style={{background:soc.bg,color:soc.c,padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:800,letterSpacing:.5}}>{r.societe}</span>
+                    <span style={{background:sp.bg,color:sp.color,padding:"2px 8px",borderRadius:6,fontSize:10,fontWeight:600,display:"flex",alignItems:"center",gap:3}}>
+                      <span style={{fontSize:10}}>{sp.icon}</span>{r.specialite}
+                    </span>
+                    {isRecent(r.datePublication) && <span style={{background:"#DCFCE7",color:"#15803D",padding:"2px 6px",borderRadius:6,fontSize:9,fontWeight:800,letterSpacing:.3}}>NOUVEAU</span>}
+                  </div>
+                  <div style={{fontSize:14,fontWeight:800,color:C.navy,lineHeight:1.35,marginBottom:4}}>{r.titre}</div>
+                  <div style={{fontSize:11,color:C.sub}}>📅 {rfFormatDate(r.datePublication)}</div>
+                </div>
+                <div style={{fontSize:18,color:C.sub,flexShrink:0,transition:"transform .2s",transform:isExp?"rotate(180deg)":"rotate(0deg)"}}>▾</div>
               </div>
-            </div>
-            <div style={{color:C.sub, fontSize:20, flexShrink:0}}>›</div>
-          </Card>
-        ))}
-        {filtered.length === 0 && (
-          <div style={{
-            textAlign:"center", padding:"32px 16px",
-            color:C.sub, fontSize:13,
-          }}>
-            Aucun score dans cette catégorie pour le moment.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Calculateur Glasgow (GCS) ────────────────────────────────────────────────
-function GlasgowCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const [e, setE] = useState(4);
-  const [v, setV] = useState(5);
-  const [m, setM] = useState(6);
-  const total = e + v + m;
-  const accent = "#9B59B6";
-
-  let sev, sevColor, sevBg, interpText;
-  if(total >= 13) {
-    sev = "Léger (13–15)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Atteinte légère. Vigilance globalement conservée — surveillance neurologique standard.";
-  } else if(total >= 9) {
-    sev = "Modéré (9–12)";
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "Atteinte modérée. Surveillance rapprochée, imagerie cérébrale, anticiper aggravation.";
-  } else {
-    sev = "Sévère (≤ 8)";
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Coma. Indication d'intubation pour protection des voies aériennes (GCS ≤ 8).";
-  }
-
-  const eOpts = [
-    {v:4, label:"Spontanée"},
-    {v:3, label:"À la demande verbale"},
-    {v:2, label:"À la douleur"},
-    {v:1, label:"Aucune"},
-  ];
-  const vOpts = [
-    {v:5, label:"Orientée"},
-    {v:4, label:"Confuse"},
-    {v:3, label:"Inappropriée"},
-    {v:2, label:"Incompréhensible"},
-    {v:1, label:"Aucune"},
-  ];
-  const mOpts = [
-    {v:6, label:"Obéit aux ordres"},
-    {v:5, label:"Orientée à la douleur"},
-    {v:4, label:"Évitement (retrait)"},
-    {v:3, label:"Flexion stéréotypée (décortication)"},
-    {v:2, label:"Extension stéréotypée (décérébration)"},
-    {v:1, label:"Aucune"},
-  ];
-
-  function renderSection(title, letter, max, score, options, onSelect) {
-    return (
-      <div style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-        }}>
-          <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-            <span style={{fontSize:13, fontWeight:800, color:C.navy}}>{title}</span>
-            <span style={{fontSize:10, fontWeight:700, color:C.sub, letterSpacing:.5}}>
-              {letter} / {max}
-            </span>
-          </div>
-          <div style={{fontSize:17, fontWeight:900, color:accent, fontVariantNumeric:"tabular-nums"}}>
-            {score}
-          </div>
-        </div>
-        {options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>onSelect(o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","glasgow")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"glasgow", type:"score", title:"Score de Glasgow",
-            icon:"🧠", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Neuro / Coma" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 16px"}}>
-        Score de Glasgow (GCS)
-      </h2>
-
-      {renderSection("Ouverture des yeux", "Y", 4, e, eOpts, setE)}
-      {renderSection("Réponse verbale",    "V", 5, v, vOpts, setV)}
-      {renderSection("Réponse motrice",    "M", 6, m, mOpts, setM)}
-
-      {/* Bandeau total */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-        display:"flex", alignItems:"center", justifyContent:"space-between", gap:12,
-      }}>
-        <div>
-          <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-            <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-            <span style={{fontSize:16, color:C.sub}}>/ 15</span>
-          </div>
-          <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5, fontVariantNumeric:"tabular-nums"}}>
-            Y{e}  V{v}  M{m}
-          </div>
-        </div>
-        <div style={{
-          fontSize:12, fontWeight:800,
-          padding:"6px 12px", borderRadius:20,
-          background:sevBg, color:sevColor,
-          whiteSpace:"nowrap",
-        }}>{sev}</div>
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={()=>{ setE(4); setV(5); setM(6); }}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-// ── Calculateur Indice de choc (Shock Index) ──────────────────────────────────
-function ShockIndexCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const [fc, setFc]   = useState(80);
-  const [pas, setPas] = useState(130);
-  const accent = "#DC2626";
-
-  const si = (pas > 0 && fc > 0) ? fc / pas : 0;
-  const siDisplay = si > 0 ? si.toFixed(2) : "—";
-
-  let sev, sevColor, sevBg, interpText;
-  if(si === 0) {
-    sev = "—";
-    sevColor = C.sub; sevBg = C.bg;
-    interpText = "Saisissez la FC et la PAS pour calculer l'indice de choc.";
-  } else if(si < 0.7) {
-    sev = "Normal (< 0.7)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Hémodynamique normale. Pas de signe d'hypovolémie.";
-  } else if(si < 0.9) {
-    sev = "Pré-choc (0.7–0.9)";
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "Hypovolémie compensée. Surveillance rapprochée, remplissage à envisager, rechercher étiologie.";
-  } else if(si < 1.3) {
-    sev = "Choc (≥ 0.9)";
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Choc avéré. Remplissage vasculaire, recherche étiologie (hémorragique, septique, cardiogénique...).";
-  } else {
-    sev = "Choc sévère (≥ 1.3)";
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Choc sévère. Réanimation immédiate, voies d'abord large, remplissage massif, transfusion à anticiper.";
-  }
-
-  // Jauge : échelle 0 → 1.5
-  const gaugeMax = 1.5;
-  const gaugePos = si > 0 ? Math.min(100, (si / gaugeMax) * 100) : 0;
-  // Position des seuils sur la jauge (en %)
-  const pos07 = (0.7 / gaugeMax) * 100; // 46.67%
-  const pos09 = (0.9 / gaugeMax) * 100; // 60%
-
-  function renderInput(label, value, setValue, unit, min, max, step) {
-    function adjust(delta) {
-      const next = value + delta;
-      if(next < min) setValue(min);
-      else if(next > max) setValue(max);
-      else setValue(next);
-    }
-    return (
-      <div style={{
-        background:C.card, borderRadius:14, padding:"12px 14px",
-        border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-        marginBottom:12,
-      }}>
-        <div style={{fontSize:11, fontWeight:800, color:C.sub, letterSpacing:.5, marginBottom:10}}>
-          {label}
-        </div>
-        <div style={{display:"flex", alignItems:"center", gap:10}}>
-          <button onClick={()=>adjust(-step)} style={{
-            width:42, height:42, borderRadius:12,
-            background:C.bg, border:`1px solid ${C.border}`,
-            fontSize:22, fontWeight:800, color:C.navy,
-            cursor:"pointer", flexShrink:0,
-            WebkitTapHighlightColor:"transparent",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            lineHeight:1,
-          }}>−</button>
-          <input
-            type="number"
-            value={value || ""}
-            onChange={e=>{
-              const v = e.target.value;
-              if(v === "") { setValue(0); return; }
-              const n = parseInt(v, 10);
-              if(!isNaN(n)) setValue(Math.min(max, Math.max(min, n)));
-            }}
-            inputMode="numeric"
-            pattern="[0-9]*"
-            style={{
-              flex:1, textAlign:"center",
-              fontSize:28, fontWeight:900, color:C.navy,
-              background:C.bg, border:`1px solid ${C.border}`, borderRadius:12,
-              padding:"6px 0", outline:"none",
-              fontFamily:"inherit",
-              MozAppearance:"textfield",
-              WebkitAppearance:"none",
-              minWidth:0,
-            }}
-          />
-          <button onClick={()=>adjust(step)} style={{
-            width:42, height:42, borderRadius:12,
-            background:C.bg, border:`1px solid ${C.border}`,
-            fontSize:22, fontWeight:800, color:C.navy,
-            cursor:"pointer", flexShrink:0,
-            WebkitTapHighlightColor:"transparent",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            lineHeight:1,
-          }}>+</button>
-        </div>
-        <div style={{fontSize:11, color:C.sub, textAlign:"center", marginTop:6}}>{unit}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","shock-index")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"shock-index", type:"score", title:"Shock Index",
-            icon:"🫀", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Hémodynamique" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Shock Index
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Indice de choc</div>
-
-      {renderInput("FRÉQUENCE CARDIAQUE", fc, setFc, "battements / min (bpm)", 0, 300, 1)}
-      {renderInput("PRESSION ARTÉRIELLE SYSTOLIQUE", pas, setPas, "mmHg", 0, 300, 1)}
-
-      {/* Bandeau résultat */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginBottom:16}}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{siDisplay}</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5, fontVariantNumeric:"tabular-nums"}}>
-              IC = {fc || "—"} / {pas || "—"}
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {/* Jauge visuelle */}
-        <div style={{position:"relative", marginTop:6}}>
-          <div style={{
-            display:"flex", height:10, borderRadius:5, overflow:"hidden",
-            border:`1px solid ${C.border}`,
-          }}>
-            <div style={{flex:0.7, background:C.green}}/>
-            <div style={{flex:0.2, background:C.amber}}/>
-            <div style={{flex:0.6, background:C.red}}/>
-          </div>
-          {si > 0 && (
-            <div style={{
-              position:"absolute", top:-3,
-              left:`calc(${gaugePos}% - 7px)`,
-              width:14, height:16,
-              background:C.navy, borderRadius:3,
-              border:`2px solid ${C.card}`,
-              transition:"left .15s",
-              boxShadow:"0 1px 4px rgba(0,0,0,.2)",
-            }}/>
-          )}
-          <div style={{position:"relative", height:14, marginTop:5}}>
-            <span style={{position:"absolute", left:"0%", fontSize:9, color:C.sub, fontVariantNumeric:"tabular-nums"}}>0</span>
-            <span style={{position:"absolute", left:`${pos07}%`, transform:"translateX(-50%)", fontSize:9, color:C.sub, fontVariantNumeric:"tabular-nums"}}>0.7</span>
-            <span style={{position:"absolute", left:`${pos09}%`, transform:"translateX(-50%)", fontSize:9, color:C.sub, fontVariantNumeric:"tabular-nums"}}>0.9</span>
-            <span style={{position:"absolute", right:"0%", fontSize:9, color:C.sub, fontVariantNumeric:"tabular-nums"}}>1.5+</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={()=>{ setFc(80); setPas(130); }}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-// ── Calculateur Apgar (néonatal) ──────────────────────────────────────────────
-function ApgarCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const [t, setT] = useState("1");
-  const [scores, setScores] = useState({
-    "1":  {ap:2, po:2, gr:2, ac:2, re:2},
-    "5":  {ap:2, po:2, gr:2, ac:2, re:2},
-    "10": {ap:2, po:2, gr:2, ac:2, re:2},
-  });
-  const accent = "#EC4899";
-
-  const current = scores[t];
-  const total = current.ap + current.po + current.gr + current.ac + current.re;
-
-  function updateScore(key, val) {
-    setScores(prev => ({
-      ...prev,
-      [t]: {...prev[t], [key]: val}
-    }));
-  }
-  function resetCurrent() {
-    setScores(prev => ({
-      ...prev,
-      [t]: {ap:2, po:2, gr:2, ac:2, re:2}
-    }));
-  }
-  function totalFor(time) {
-    const x = scores[time];
-    return x.ap + x.po + x.gr + x.ac + x.re;
-  }
-  function colorFor(score) {
-    if(score >= 7) return C.green;
-    if(score >= 4) return C.amber;
-    return C.red;
-  }
-
-  let sev, sevColor, sevBg, interpText;
-  if(total >= 7) {
-    sev = "Bonne adaptation (7–10)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Bonne adaptation à la vie extra-utérine. Soins de routine, peau à peau, allaitement précoce.";
-  } else if(total >= 4) {
-    sev = "Adaptation difficile (4–6)";
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "Adaptation difficile. Stimulation, désobstruction, ventilation au masque, oxygène. Réévaluer à 5 min.";
-  } else {
-    sev = "Détresse sévère (0–3)";
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Détresse vitale. Réanimation néonatale immédiate (ventilation, MCE, intubation), appel renfort pédiatre.";
-  }
-
-  const apOpts = [
-    {v:2, label:"Entièrement rose"},
-    {v:1, label:"Corps rose, extrémités bleues (acrocyanose)"},
-    {v:0, label:"Bleu pâle / cyanose globale"},
-  ];
-  const poOpts = [
-    {v:2, label:"> 100 / min"},
-    {v:1, label:"< 100 / min"},
-    {v:0, label:"Absent"},
-  ];
-  const grOpts = [
-    {v:2, label:"Cri vigoureux, toux, éternuement"},
-    {v:1, label:"Grimace / faible réaction"},
-    {v:0, label:"Aucune réaction"},
-  ];
-  const acOpts = [
-    {v:2, label:"Mouvements actifs, bonne flexion"},
-    {v:1, label:"Légère flexion des extrémités"},
-    {v:0, label:"Flasque, hypotonique"},
-  ];
-  const reOpts = [
-    {v:2, label:"Bonne, cri vigoureux"},
-    {v:1, label:"Lente, irrégulière, gasps"},
-    {v:0, label:"Absente"},
-  ];
-
-  function renderSection(title, letter, key, options) {
-    const score = current[key];
-    return (
-      <div style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-        }}>
-          <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-            <span style={{fontSize:13, fontWeight:800, color:C.navy}}>{title}</span>
-            <span style={{fontSize:10, fontWeight:700, color:C.sub, letterSpacing:.5}}>
-              {letter} / 2
-            </span>
-          </div>
-          <div style={{fontSize:17, fontWeight:900, color:accent, fontVariantNumeric:"tabular-nums"}}>
-            {score}
-          </div>
-        </div>
-        {options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  // Bouton segmenté pour les 3 temps
-  function timeBtn(label, val) {
-    const active = t === val;
-    return (
-      <button key={val} onClick={()=>setT(val)} style={{
-        flex:1, padding:"11px 0",
-        border:"none", borderRadius:0,
-        background: active ? accent : "transparent",
-        color: active ? "#fff" : C.text,
-        fontSize:13, fontWeight: active ? 800 : 600,
-        cursor:"pointer",
-        WebkitTapHighlightColor:"transparent",
-        transition:"background .15s, color .15s",
-      }}>{label}</button>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","apgar")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"apgar", type:"score", title:"Score d'Apgar",
-            icon:"👶", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Néonatal" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Score d'Apgar
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Évaluation à 1', 5' et 10' de vie
-      </div>
-
-      {/* Toggle temps */}
-      <div style={{
-        display:"flex",
-        background:C.card,
-        border:`1px solid ${C.border}`,
-        borderRadius:12, overflow:"hidden",
-        marginBottom:16,
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        {timeBtn("1 min", "1")}
-        <div style={{width:1, background:C.border}}/>
-        {timeBtn("5 min", "5")}
-        <div style={{width:1, background:C.border}}/>
-        {timeBtn("10 min", "10")}
-      </div>
-
-      {renderSection("Apparence (couleur)",   "A", "ap", apOpts)}
-      {renderSection("Pouls (FC)",            "P", "po", poOpts)}
-      {renderSection("Grimace (réflexes)",    "G", "gr", grOpts)}
-      {renderSection("Activité (tonus)",      "A", "ac", acOpts)}
-      {renderSection("Respiration",           "R", "re", reOpts)}
-
-      {/* Bandeau total + récap des 3 temps */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, marginBottom:14}}>
-          <div>
-            <div style={{fontSize:10, color:C.sub, fontWeight:800, letterSpacing:.7, marginBottom:4}}>
-              À {t} MIN
-            </div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 10</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5, fontVariantNumeric:"tabular-nums"}}>
-              Ap {current.ap}  Po {current.po}  Gr {current.gr}  Ac {current.ac}  Re {current.re}
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {/* Récap 1'/5'/10' */}
-        <div style={{
-          paddingTop:12,
-          borderTop:`1px solid ${C.border}`,
-          display:"flex", justifyContent:"space-around", alignItems:"stretch",
-          gap:8,
-        }}>
-          {["1","5","10"].map(time => {
-            const sc = totalFor(time);
-            const isCur = time === t;
-            const cc = colorFor(sc);
-            return (
-              <button key={time} onClick={()=>setT(time)} style={{
-                flex:1, background:"none", border:"none", cursor:"pointer",
-                textAlign:"center", padding:"4px 0",
-                WebkitTapHighlightColor:"transparent",
-                position:"relative",
-              }}>
-                <div style={{fontSize:10, color:isCur?accent:C.sub, fontWeight:800, letterSpacing:.5, marginBottom:3}}>
-                  {time}'
+              {(Array.isArray(r.tags)?r.tags:[]).length>0 && (
+                <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:8}}>
+                  {(Array.isArray(r.tags)?r.tags:[]).map((t,i)=><span key={i} style={{background:"#F1F5F9",color:"#64748B",padding:"1px 7px",borderRadius:10,fontSize:10,fontWeight:600}}>#{t.replace(/^#/,"")}</span>)}
                 </div>
-                <div style={{fontSize:22, fontWeight:900, color:cc, fontVariantNumeric:"tabular-nums", lineHeight:1}}>
-                  {sc}
-                </div>
-                {isCur && (
-                  <div style={{
-                    position:"absolute", bottom:-2, left:"50%", transform:"translateX(-50%)",
-                    width:24, height:3, borderRadius:2, background:accent,
-                  }}/>
+              )}
+            </div>
+            {isExp && (
+              <div style={{padding:"4px 16px 14px"}}>
+                <RecoResumeContent text={r.resume} expanded/>
+                {r.urlPdf && (
+                  <a href={r.urlPdf} target="_blank" rel="noopener noreferrer" style={{
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                    marginTop:16,padding:"12px 16px",
+                    background:`linear-gradient(135deg,${C.navy},#2E5C8A)`,
+                    color:"#fff",borderRadius:12,fontSize:13,fontWeight:700,textDecoration:"none",
+                    boxShadow:"0 4px 14px rgba(26,58,92,.25)",letterSpacing:.3
+                  }}>📄 Accéder au document PDF officiel →</a>
                 )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={resetCurrent}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser ({t} min)</Btn>
-    </div>
-  );
-}
-
-// ── Items NIHSS ──────────────────────────────────────────────────────────────
-const NIHSS_ITEMS = [
-  { key:"ndc",        num:"1a", title:"Niveau de conscience", options:[
-    {v:0, label:"Vigilant, réactions vives"},
-    {v:1, label:"Somnolent (éveillable, stimulation mineure)"},
-    {v:2, label:"Stuporeux (stimulation forte/répétée)"},
-    {v:3, label:"Coma (réflexes seulement / aréflexie)"},
-  ]},
-  { key:"ndcQ",       num:"1b", title:"NDC – Questions (mois, âge)", options:[
-    {v:0, label:"Répond correctement aux 2"},
-    {v:1, label:"Répond correctement à 1"},
-    {v:2, label:"Ne répond à aucune"},
-  ]},
-  { key:"ndcO",       num:"1c", title:"NDC – Ordres (yeux, poing)", options:[
-    {v:0, label:"Exécute les 2 ordres"},
-    {v:1, label:"Exécute 1 ordre"},
-    {v:2, label:"N'exécute aucun ordre"},
-  ]},
-  { key:"oculo",      num:"2",  title:"Oculomotricité", options:[
-    {v:0, label:"Normale"},
-    {v:1, label:"Parésie partielle du regard"},
-    {v:2, label:"Déviation forcée / paralysie totale"},
-  ]},
-  { key:"cv",         num:"3",  title:"Champ visuel", options:[
-    {v:0, label:"Normal"},
-    {v:1, label:"Hémianopsie partielle"},
-    {v:2, label:"Hémianopsie complète"},
-    {v:3, label:"Hémianopsie bilatérale / cécité corticale"},
-  ]},
-  { key:"face",       num:"4",  title:"Paralysie faciale", options:[
-    {v:0, label:"Mouvements normaux et symétriques"},
-    {v:1, label:"Paralysie mineure (asymétrie au sourire)"},
-    {v:2, label:"Paralysie centrale (étage inférieur)"},
-    {v:3, label:"Paralysie complète (1 ou 2 côtés)"},
-  ]},
-  { key:"msG",        num:"5a", title:"Motricité MS gauche", options:[
-    {v:0, label:"Maintien à 90° pendant 10 s"},
-    {v:1, label:"Chute progressive avant 10 s (sans toucher le lit)"},
-    {v:2, label:"Effort contre gravité (chute sur le lit)"},
-    {v:3, label:"Pas d'effort contre gravité"},
-    {v:4, label:"Aucun mouvement"},
-  ]},
-  { key:"msD",        num:"5b", title:"Motricité MS droit", options:[
-    {v:0, label:"Maintien à 90° pendant 10 s"},
-    {v:1, label:"Chute progressive avant 10 s (sans toucher le lit)"},
-    {v:2, label:"Effort contre gravité (chute sur le lit)"},
-    {v:3, label:"Pas d'effort contre gravité"},
-    {v:4, label:"Aucun mouvement"},
-  ]},
-  { key:"miG",        num:"6a", title:"Motricité MI gauche", options:[
-    {v:0, label:"Maintien à 30° pendant 5 s"},
-    {v:1, label:"Chute progressive avant 5 s (sans toucher le lit)"},
-    {v:2, label:"Effort contre gravité (chute sur le lit)"},
-    {v:3, label:"Pas d'effort contre gravité"},
-    {v:4, label:"Aucun mouvement"},
-  ]},
-  { key:"miD",        num:"6b", title:"Motricité MI droit", options:[
-    {v:0, label:"Maintien à 30° pendant 5 s"},
-    {v:1, label:"Chute progressive avant 5 s (sans toucher le lit)"},
-    {v:2, label:"Effort contre gravité (chute sur le lit)"},
-    {v:3, label:"Pas d'effort contre gravité"},
-    {v:4, label:"Aucun mouvement"},
-  ]},
-  { key:"ataxie",     num:"7",  title:"Ataxie des membres", options:[
-    {v:0, label:"Absente"},
-    {v:1, label:"Présente sur 1 membre"},
-    {v:2, label:"Présente sur 2 membres"},
-  ]},
-  { key:"sens",       num:"8",  title:"Sensibilité", options:[
-    {v:0, label:"Normale"},
-    {v:1, label:"Hypoesthésie légère à modérée"},
-    {v:2, label:"Anesthésie sévère"},
-  ]},
-  { key:"langage",    num:"9",  title:"Langage", options:[
-    {v:0, label:"Normal"},
-    {v:1, label:"Aphasie légère à modérée"},
-    {v:2, label:"Aphasie sévère"},
-    {v:3, label:"Mutisme / aphasie globale"},
-  ]},
-  { key:"dysarthrie", num:"10", title:"Dysarthrie", options:[
-    {v:0, label:"Normale"},
-    {v:1, label:"Légère à modérée"},
-    {v:2, label:"Sévère (parole inintelligible)"},
-  ]},
-  { key:"negl",       num:"11", title:"Extinction / négligence", options:[
-    {v:0, label:"Pas d'anomalie"},
-    {v:1, label:"Négligence dans 1 modalité"},
-    {v:2, label:"Négligence sévère, plusieurs modalités"},
-  ]},
-];
-
-// ── Calculateur NIHSS (AVC) ──────────────────────────────────────────────────
-function NihssCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#7C3AED";
-
-  const initial = {};
-  NIHSS_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = NIHSS_ITEMS.filter(it => s[it.key] > 0);
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    NIHSS_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  // Sévérité — 4 paliers (+ "pas de symptôme" si 0)
-  let sev, sevColor, sevBg, interpText;
-  if(total === 0) {
-    sev = "Pas de symptôme (0)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Examen neurologique normal. Pas de déficit clinique mesurable.";
-  } else if(total <= 4) {
-    sev = "AVC mineur (1–4)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "AVC mineur. Évaluer indication thrombolyse / thrombectomie selon délai et imagerie.";
-  } else if(total <= 15) {
-    sev = "AVC modéré (5–15)";
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "AVC modéré. Thrombolyse IV à discuter (< 4h30), thrombectomie si occlusion proximale.";
-  } else if(total <= 20) {
-    sev = "Modéré à sévère (16–20)";
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "AVC modéré à sévère. Thrombectomie mécanique si délai compatible, équipe neuro-vasculaire en urgence.";
-  } else {
-    sev = "AVC sévère (≥ 21)";
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "AVC sévère. Pronostic réservé. Thrombectomie si indication, USINV, attention aux complications (HTIC, transformation hémorragique).";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    const max = item.options[item.options.length - 1].v;
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-            }}>{item.num}</span>
-            <span style={{
-              fontSize:13, fontWeight:800, color:C.navy,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-            }}>{item.title}</span>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / {max}</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","nihss")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"nihss", type:"score", title:"NIHSS",
-            icon:"🧠", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Neuro / AVC" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        NIHSS
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        National Institutes of Health Stroke Scale
-      </div>
-
-      {NIHSS_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + items positifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: positiveItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 42</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5}}>
-              {positiveItems.length} item{positiveItems.length>1?"s":""} positif{positiveItems.length>1?"s":""}
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {positiveItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {positiveItems.map(it => (
-              <span key={it.key} style={{
-                fontSize:10, fontWeight:800,
-                padding:"3px 8px", borderRadius:10,
-                background:accent+"18", color:accent,
-                fontVariantNumeric:"tabular-nums",
-                whiteSpace:"nowrap",
-              }}>
-                {it.num} · {s[it.key]}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur qSOFA (sepsis) ───────────────────────────────────────────────
-const QSOFA_ITEMS = [
-  { key:"fr",         num:"1", title:"Fréquence respiratoire", options:[
-    {v:0, label:"FR < 22 / min"},
-    {v:1, label:"FR ≥ 22 / min"},
-  ]},
-  { key:"pas",        num:"2", title:"Pression artérielle systolique", options:[
-    {v:0, label:"PAS > 100 mmHg"},
-    {v:1, label:"PAS ≤ 100 mmHg"},
-  ]},
-  { key:"conscience", num:"3", title:"État de conscience", options:[
-    {v:0, label:"Vigilant (Glasgow = 15)"},
-    {v:1, label:"Altéré (Glasgow < 15 ou confusion)"},
-  ]},
-];
-
-function QsofaCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#EA580C";
-
-  const initial = {};
-  QSOFA_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = QSOFA_ITEMS.filter(it => s[it.key] > 0);
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    QSOFA_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  let sev, sevColor, sevBg, interpText;
-  if(total === 0) {
-    sev = "Négatif (0)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "qSOFA négatif. Faible probabilité de sepsis sur ce critère. Réévaluation si évolution clinique.";
-  } else if(total === 1) {
-    sev = "1 critère positif";
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "Surveillance rapprochée. Rechercher foyer infectieux, lactates, NFS-CRP-PCT, hémocultures si fièvre.";
-  } else {
-    sev = `qSOFA positif (${total}/3)`;
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "qSOFA ≥ 2 : sepsis probable, mortalité augmentée. Bundle 1h : lactates, hémocultures, antibiothérapie large spectre, remplissage 30 mL/kg, surveillance USC/réa.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-            }}>{item.num}</span>
-            <span style={{
-              fontSize:13, fontWeight:800, color:C.navy,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-            }}>{item.title}</span>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / 1</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","qsofa")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"qsofa", type:"score", title:"qSOFA",
-            icon:"🦠", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Sepsis" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        qSOFA
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        quick Sepsis-related Organ Failure Assessment
-      </div>
-
-      {QSOFA_ITEMS.map(renderSection)}
-
-      {/* Bandeau total */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-        display:"flex", alignItems:"center", justifyContent:"space-between", gap:12,
-      }}>
-        <div>
-          <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-            <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-            <span style={{fontSize:16, color:C.sub}}>/ 3</span>
-          </div>
-          <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5}}>
-            {positiveItems.length} critère{positiveItems.length>1?"s":""} positif{positiveItems.length>1?"s":""}
-          </div>
-        </div>
-        <div style={{
-          fontSize:12, fontWeight:800,
-          padding:"6px 12px", borderRadius:20,
-          background:sevBg, color:sevColor,
-          whiteSpace:"nowrap",
-        }}>{sev}</div>
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur CHA₂DS₂-VASc (FA) ────────────────────────────────────────────
-const CHADSVASC_ITEMS = [
-  { key:"icc",     num:"C",  title:"Insuffisance cardiaque", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui (clinique ou FEVG < 40 %)"},
-  ]},
-  { key:"hta",     num:"H",  title:"Hypertension artérielle", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui (≥ 140/90 mmHg ou sous anti-HTA)"},
-  ]},
-  { key:"age",     num:"A",  title:"Âge", options:[
-    {v:0, label:"< 65 ans"},
-    {v:1, label:"65 – 74 ans"},
-    {v:2, label:"≥ 75 ans"},
-  ]},
-  { key:"diabete", num:"D",  title:"Diabète", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui (à jeun ≥ 7 mmol/L ou traité)"},
-  ]},
-  { key:"avc",     num:"S",  title:"ATCD AVC / AIT / embolie", options:[
-    {v:0, label:"Non"},
-    {v:2, label:"Oui"},
-  ]},
-  { key:"vasc",    num:"V",  title:"Maladie vasculaire", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui (IDM, AOMI, plaque aortique)"},
-  ]},
-  { key:"sexe",    num:"Sx", title:"Sexe", options:[
-    {v:0, label:"Homme"},
-    {v:1, label:"Femme"},
-  ]},
-];
-
-// Risque AVC annuel approximatif par score (sans anticoagulation)
-const CHADSVASC_RISK = {
-  0:"0 %", 1:"1.3 %", 2:"2.2 %", 3:"3.2 %", 4:"4.0 %",
-  5:"6.7 %", 6:"9.8 %", 7:"9.6 %", 8:"6.7 %", 9:"15.2 %",
-};
-
-function ChadsvascCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#2563EB";
-
-  const initial = {};
-  CHADSVASC_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = CHADSVASC_ITEMS.filter(it => s[it.key] > 0);
-  const risk = CHADSVASC_RISK[total] || "—";
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    CHADSVASC_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  // Sévérité + interprétation (avec nuance score=1 lié uniquement au sexe féminin)
-  let sev, sevColor, sevBg, interpText;
-  if(total === 0) {
-    sev = "Très faible (0)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Pas d'anticoagulation recommandée. Réévaluation périodique si nouveau facteur de risque.";
-  } else if(total === 1) {
-    const onlySex = s.sexe === 1 && CHADSVASC_ITEMS.filter(it => it.key!=="sexe").every(it => s[it.key]===0);
-    if(onlySex) {
-      sev = "Faible (1 — sexe seul)";
-      sevColor = C.green; sevBg = C.greenLight;
-      interpText = "Score = 1 dû uniquement au sexe féminin : anticoagulation NON recommandée. Réévaluer si nouveau facteur apparaît.";
-    } else {
-      sev = "Faible (1)";
-      sevColor = C.amber; sevBg = C.amberLight;
-      interpText = "Anticoagulation à discuter : recommandée si homme, optionnelle si femme. Décision partagée selon HAS-BLED et préférence patient.";
-    }
-  } else {
-    sev = `Élevé (${total})`;
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Anticoagulation orale recommandée. AOD en 1ère intention (sauf valve mécanique ou RM sévère → AVK). Évaluer HAS-BLED en parallèle.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    const max = item.options[item.options.length - 1].v;
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-              minWidth:18, textAlign:"center",
-            }}>{item.num}</span>
-            <span style={{
-              fontSize:13, fontWeight:800, color:C.navy,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-            }}>{item.title}</span>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / {max}</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","chadsvasc")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"chadsvasc", type:"score", title:"CHA₂DS₂-VASc",
-            icon:"💓", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Cardio / FA" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        CHA₂DS₂-VASc
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Risque thrombo-embolique dans la fibrillation atriale
-      </div>
-
-      {CHADSVASC_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + risque AVC + items positifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: positiveItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 9</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.3}}>
-              Risque AVC annuel ≈ <span style={{color:sevColor, fontWeight:800}}>{risk}</span>
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {positiveItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {positiveItems.map(it => (
-              <span key={it.key} style={{
-                fontSize:10, fontWeight:800,
-                padding:"3px 8px", borderRadius:10,
-                background:accent+"18", color:accent,
-                fontVariantNumeric:"tabular-nums",
-                whiteSpace:"nowrap",
-              }}>
-                {it.num} · {s[it.key]}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur HAS-BLED (risque hémorragique sous AC) ───────────────────────
-const HASBLED_ITEMS = [
-  { key:"hta",     num:"H",  title:"Hypertension non contrôlée", options:[
-    {v:0, label:"PAS ≤ 160 mmHg"},
-    {v:1, label:"PAS > 160 mmHg"},
-  ]},
-  { key:"renal",   num:"A₁", title:"Fonction rénale anormale", options:[
-    {v:0, label:"Normale"},
-    {v:1, label:"Anormale (dialyse, greffe, créat > 200 µmol/L)"},
-  ]},
-  { key:"hepat",   num:"A₂", title:"Fonction hépatique anormale", options:[
-    {v:0, label:"Normale"},
-    {v:1, label:"Anormale (cirrhose, bili > 2N + ASAT/ALAT > 3N)"},
-  ]},
-  { key:"avc",     num:"S",  title:"ATCD AVC", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui"},
-  ]},
-  { key:"saign",   num:"B",  title:"ATCD ou prédisposition aux saignements", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui (saignement majeur, anémie, thrombopénie)"},
-  ]},
-  { key:"inr",     num:"L",  title:"INR labile (si sous AVK)", options:[
-    {v:0, label:"Stable / non concerné"},
-    {v:1, label:"Instable (TTR < 60 %)"},
-  ]},
-  { key:"age",     num:"E",  title:"Âge > 65 ans", options:[
-    {v:0, label:"≤ 65 ans"},
-    {v:1, label:"> 65 ans"},
-  ]},
-  { key:"medic",   num:"D₁", title:"Médicaments à risque", options:[
-    {v:0, label:"Aucun"},
-    {v:1, label:"Antiagrégants ou AINS"},
-  ]},
-  { key:"alcool",  num:"D₂", title:"Consommation d'alcool", options:[
-    {v:0, label:"< 8 unités / semaine"},
-    {v:1, label:"≥ 8 unités / semaine"},
-  ]},
-];
-
-// Risque hémorragique majeur annuel approximatif
-const HASBLED_RISK = {
-  0:"1.1 %", 1:"1.0 %", 2:"1.9 %", 3:"3.7 %", 4:"8.7 %",
-  5:"12.5 %", 6:"≥ 12.5 %", 7:"≥ 12.5 %", 8:"≥ 12.5 %", 9:"≥ 12.5 %",
-};
-
-function HasbledCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#BE123C";
-
-  const initial = {};
-  HASBLED_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = HASBLED_ITEMS.filter(it => s[it.key] > 0);
-  const risk = HASBLED_RISK[total] || "—";
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    HASBLED_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  let sev, sevColor, sevBg, interpText;
-  if(total <= 1) {
-    sev = `Faible (${total})`;
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Risque hémorragique faible. Anticoagulation avec surveillance standard si indiquée par CHA₂DS₂-VASc.";
-  } else if(total === 2) {
-    sev = "Modéré (2)";
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "Risque modéré. Anticoagulation possible avec surveillance renforcée. Corriger les facteurs modifiables (HTA, médicaments à risque, alcool, INR).";
-  } else {
-    sev = `Élevé (${total})`;
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Risque élevé — ne contre-indique PAS l'anticoagulation si indiquée. Corriger les facteurs modifiables (HTA, INR, antiagrégants, alcool), surveillance rapprochée, décision partagée avec le patient.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-              minWidth:18, textAlign:"center",
-            }}>{item.num}</span>
-            <span style={{
-              fontSize:13, fontWeight:800, color:C.navy,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-            }}>{item.title}</span>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / 1</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","hasbled")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"hasbled", type:"score", title:"HAS-BLED",
-            icon:"🩸", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Cardio / FA" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        HAS-BLED
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Risque hémorragique sous anticoagulation
-      </div>
-
-      {HASBLED_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + risque + items positifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: positiveItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 9</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.3}}>
-              Risque hémorragique majeur ≈ <span style={{color:sevColor, fontWeight:800}}>{risk}</span> / an
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {positiveItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {positiveItems.map(it => (
-              <span key={it.key} style={{
-                fontSize:10, fontWeight:800,
-                padding:"3px 8px", borderRadius:10,
-                background:accent+"18", color:accent,
-                fontVariantNumeric:"tabular-nums",
-                whiteSpace:"nowrap",
-              }}>
-                {it.num} · {s[it.key]}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:8, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      {/* Note de couplage */}
-      <div style={{
-        fontSize:11, padding:"8px 12px", borderRadius:8,
-        marginBottom:16, background:C.bg, color:C.sub,
-        lineHeight:1.5, fontStyle:"italic",
-        border:`1px dashed ${C.border}`,
-      }}>
-        À combiner avec <strong style={{color:C.navy}}>CHA₂DS₂-VASc</strong> pour la décision d'anticoagulation.
-      </div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur Parkland (remplissage brûlé grave adulte) ────────────────────
-function ParklandCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const [weight, setWeight] = useState(70);
-  const [bsa, setBsa]       = useState(20);
-  const [delay, setDelay]   = useState(0);
-  const accent = "#C2410C";
-
-  // Calculs Parkland : 4 mL × kg × %SCB sur 24h
-  const total24h = 4 * weight * bsa;
-  const totalPhase1 = total24h / 2;
-  const totalPhase2 = total24h / 2;
-  const timeRemainingPhase1 = Math.max(0, 8 - delay);
-  const ratePhase1 = timeRemainingPhase1 > 0 ? totalPhase1 / timeRemainingPhase1 : null;
-  const ratePhase2 = totalPhase2 / 16;
-
-  // Diurèse cible
-  const minDiurese = Math.round(0.5 * weight);
-  const maxDiurese = Math.round(1.0 * weight);
-
-  // Format français des volumes
-  const fmt = n => (Math.round(n) || 0).toLocaleString('fr-FR');
-
-  // Warnings selon entrées
-  const warnings = [];
-  if(weight > 0 && weight < 40) {
-    warnings.push({
-      level:"err",
-      text:"Poids < 40 kg : Parkland non adaptée. Utiliser une formule pédiatrique (3 × kg × %SCB + besoins de base).",
-    });
-  }
-  if(bsa > 0 && bsa < 10) {
-    warnings.push({
-      level:"warn",
-      text:"SCB < 10 % : Parkland non indiquée. Réhydratation orale ou perfusion d'entretien suffisante.",
-    });
-  }
-  if(bsa > 50) {
-    warnings.push({
-      level:"warn",
-      text:"SCB > 50 % : brûlure massive. Avis centre des brûlés en urgence.",
-    });
-  }
-  if(delay >= 8 && delay < 24) {
-    warnings.push({
-      level:"warn",
-      text:"Délai > 8 h : phase 1 expirée. Rattrapage à discuter avec réanimateur.",
-    });
-  }
-  if(delay >= 24) {
-    warnings.push({
-      level:"err",
-      text:"Délai > 24 h : Parkland non applicable. Adapter selon clinique et diurèse.",
-    });
-  }
-
-  function renderInput(label, value, setValue, unit, min, max, step) {
-    function adjust(delta) {
-      const next = value + delta;
-      if(next < min) setValue(min);
-      else if(next > max) setValue(max);
-      else setValue(next);
-    }
-    return (
-      <div style={{
-        background:C.card, borderRadius:14, padding:"12px 14px",
-        border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-        marginBottom:12,
-      }}>
-        <div style={{fontSize:11, fontWeight:800, color:C.sub, letterSpacing:.5, marginBottom:10}}>
-          {label}
-        </div>
-        <div style={{display:"flex", alignItems:"center", gap:10}}>
-          <button onClick={()=>adjust(-step)} style={{
-            width:42, height:42, borderRadius:12,
-            background:C.bg, border:`1px solid ${C.border}`,
-            fontSize:22, fontWeight:800, color:C.navy,
-            cursor:"pointer", flexShrink:0,
-            WebkitTapHighlightColor:"transparent",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            lineHeight:1,
-          }}>−</button>
-          <input
-            type="number"
-            value={value || ""}
-            onChange={e=>{
-              const v = e.target.value;
-              if(v === "") { setValue(0); return; }
-              const n = parseInt(v, 10);
-              if(!isNaN(n)) setValue(Math.min(max, Math.max(min, n)));
-            }}
-            inputMode="numeric"
-            pattern="[0-9]*"
-            style={{
-              flex:1, textAlign:"center",
-              fontSize:28, fontWeight:900, color:C.navy,
-              background:C.bg, border:`1px solid ${C.border}`, borderRadius:12,
-              padding:"6px 0", outline:"none",
-              fontFamily:"inherit",
-              MozAppearance:"textfield",
-              WebkitAppearance:"none",
-              minWidth:0,
-            }}
-          />
-          <button onClick={()=>adjust(step)} style={{
-            width:42, height:42, borderRadius:12,
-            background:C.bg, border:`1px solid ${C.border}`,
-            fontSize:22, fontWeight:800, color:C.navy,
-            cursor:"pointer", flexShrink:0,
-            WebkitTapHighlightColor:"transparent",
-            display:"flex", alignItems:"center", justifyContent:"center",
-            lineHeight:1,
-          }}>+</button>
-        </div>
-        <div style={{fontSize:11, color:C.sub, textAlign:"center", marginTop:6}}>{unit}</div>
-      </div>
-    );
-  }
-
-  const showResults = weight > 0 && bsa > 0;
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","parkland")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"parkland", type:"score", title:"Parkland (brûlé grave)",
-            icon:"🔥", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Brûlologie / Réa" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Parkland
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:6}}>
-        Remplissage du brûlé grave
-      </div>
-      <div style={{
-        fontSize:11, padding:"7px 11px", borderRadius:8,
-        marginBottom:16, background:accent+"12", color:accent,
-        fontWeight:700, lineHeight:1.4,
-        border:`1px dashed ${accent}55`,
-      }}>
-        Indications : adulte &gt; 40 kg, SCB &gt; 10 %
-      </div>
-
-      {renderInput("POIDS DU PATIENT",        weight, setWeight, "kilogrammes (kg)",            0, 250, 1)}
-      {renderInput("SURFACE CUTANÉE BRÛLÉE",  bsa,    setBsa,    "% de surface corporelle (SCB)", 0, 100, 1)}
-      {renderInput("DÉLAI DEPUIS LA BRÛLURE", delay,  setDelay,  "heures écoulées",              0, 48,  1)}
-
-      {/* Warnings */}
-      {warnings.length > 0 && (
-        <div style={{marginTop:4, marginBottom:12}}>
-          {warnings.map((w,i)=>{
-            const col = w.level==="err" ? C.red : C.amber;
-            const bg  = w.level==="err" ? C.redLight : C.amberLight;
-            return (
-              <div key={i} style={{
-                fontSize:11, padding:"9px 12px", borderRadius:10,
-                marginBottom: i<warnings.length-1 ? 8 : 0,
-                background:bg, color:col,
-                lineHeight:1.45, fontWeight:600,
-                border:`1px solid ${col}33`,
-                display:"flex", gap:8, alignItems:"flex-start",
-              }}>
-                <span style={{flexShrink:0}}>⚠️</span>
-                <span>{w.text}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Bandeau résultat */}
-      {showResults && (
-        <div style={{
-          background:C.card, borderRadius:14,
-          marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-          boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-          overflow:"hidden",
-        }}>
-          {/* Volume total */}
-          <div style={{padding:"18px 16px", background:accent+"08"}}>
-            <div style={{fontSize:10, fontWeight:800, color:C.sub, letterSpacing:.7, marginBottom:6}}>
-              VOLUME TOTAL SUR 24 H
-            </div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8, flexWrap:"wrap"}}>
-              <span style={{fontSize:38, fontWeight:900, lineHeight:1, color:accent, fontVariantNumeric:"tabular-nums"}}>
-                {fmt(total24h)}
-              </span>
-              <span style={{fontSize:18, color:C.sub, fontWeight:700}}>mL</span>
-            </div>
-            <div style={{fontSize:12, color:C.navy, fontWeight:700, marginTop:6}}>
-              Ringer Lactate · 4 mL × {weight} kg × {bsa} %
-            </div>
-          </div>
-
-          {/* Phase 1 */}
-          <div style={{padding:"14px 16px", borderTop:`1px solid ${C.border}`}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:8}}>
-              <div style={{fontSize:13, fontWeight:800, color:C.navy}}>Phase 1</div>
-              <div style={{fontSize:11, color:C.sub, fontWeight:600}}>0 → 8 h post-brûlure</div>
-            </div>
-            <div style={{display:"flex", gap:12, flexWrap:"wrap"}}>
-              <div style={{flex:"1 1 110px"}}>
-                <div style={{fontSize:10, color:C.sub, fontWeight:700, letterSpacing:.4}}>VOLUME</div>
-                <div style={{fontSize:20, fontWeight:900, color:C.text, fontVariantNumeric:"tabular-nums"}}>
-                  {fmt(totalPhase1)} <span style={{fontSize:12, color:C.sub, fontWeight:700}}>mL</span>
+                <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:10}}>
+                  <StarBtn filled={isFavori("recoflash",r.id)} color="#0891B2"
+                    onToggle={()=>toggleFavori({id:r.id,type:"recoflash",title:r.titre,icon:"📋",color:"#0891B2",nav:"recoflash"})}/>
                 </div>
               </div>
-              <div style={{flex:"1 1 110px"}}>
-                <div style={{fontSize:10, color:C.sub, fontWeight:700, letterSpacing:.4}}>DÉBIT</div>
-                <div style={{fontSize:20, fontWeight:900, color:accent, fontVariantNumeric:"tabular-nums"}}>
-                  {ratePhase1 !== null ? `${fmt(ratePhase1)} mL/h` : "—"}
-                </div>
-                <div style={{fontSize:10, color:C.sub, marginTop:2, fontVariantNumeric:"tabular-nums"}}>
-                  {timeRemainingPhase1 > 0
-                    ? `sur ${timeRemainingPhase1} h restante${timeRemainingPhase1>1?"s":""}`
-                    : "phase expirée"}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
+        );
+      })}
 
-          {/* Phase 2 */}
-          <div style={{padding:"14px 16px", borderTop:`1px solid ${C.border}`}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:8}}>
-              <div style={{fontSize:13, fontWeight:800, color:C.navy}}>Phase 2</div>
-              <div style={{fontSize:11, color:C.sub, fontWeight:600}}>8 → 24 h post-brûlure</div>
-            </div>
-            <div style={{display:"flex", gap:12, flexWrap:"wrap"}}>
-              <div style={{flex:"1 1 110px"}}>
-                <div style={{fontSize:10, color:C.sub, fontWeight:700, letterSpacing:.4}}>VOLUME</div>
-                <div style={{fontSize:20, fontWeight:900, color:C.text, fontVariantNumeric:"tabular-nums"}}>
-                  {fmt(totalPhase2)} <span style={{fontSize:12, color:C.sub, fontWeight:700}}>mL</span>
-                </div>
-              </div>
-              <div style={{flex:"1 1 110px"}}>
-                <div style={{fontSize:10, color:C.sub, fontWeight:700, letterSpacing:.4}}>DÉBIT</div>
-                <div style={{fontSize:20, fontWeight:900, color:accent, fontVariantNumeric:"tabular-nums"}}>
-                  {fmt(ratePhase2)} mL/h
-                </div>
-                <div style={{fontSize:10, color:C.sub, marginTop:2}}>sur 16 h</div>
-              </div>
-            </div>
-          </div>
+      {/* FAB */}
+      <button onClick={()=>{setEditingId(null);setRfForm({titre:"",societe:"HAS",datePublication:"",specialite:"Cardiologie",urlPdf:"",resume:"",tags:""});setShowForm(true);}}
+        style={{position:"fixed",bottom:80,right:"calc(50% - 190px)",width:56,height:56,borderRadius:"50%",
+          background:"linear-gradient(135deg,#0E7490,#0891B2)",color:"#fff",border:"none",fontSize:28,
+          cursor:"pointer",boxShadow:"0 6px 24px rgba(14,116,144,.35)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100
+        }}>+</button>
 
-          {/* Diurèse cible */}
-          <div style={{padding:"12px 16px", borderTop:`1px solid ${C.border}`, background:C.bg}}>
-            <div style={{fontSize:10, color:C.sub, fontWeight:800, letterSpacing:.5, marginBottom:4}}>
-              DIURÈSE CIBLE (ADULTE)
+      {/* Modal form */}
+      {showForm && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"flex-end",justifyContent:"center",zIndex:999}} onClick={()=>setShowForm(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:420,maxHeight:"85vh",background:C.white,borderRadius:"20px 20px 0 0",overflow:"auto",padding:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontSize:17,fontWeight:900,color:C.navy}}>{editingId?"✏️ Modifier":"📋 Nouvelle Reco"}</div>
+              <button onClick={()=>setShowForm(false)} style={{background:"#F1F5F9",border:"none",borderRadius:10,width:32,height:32,fontSize:16,cursor:"pointer",color:C.sub}}>✕</button>
             </div>
-            <div style={{fontSize:13, color:C.navy, fontWeight:700, fontVariantNumeric:"tabular-nums"}}>
-              0,5 – 1 mL/kg/h · soit {minDiurese} – {maxDiurese} mL/h chez ce patient
+            <label style={lbl}>Titre *</label>
+            <input style={inp} placeholder="Ex: Prise en charge de l'ACR" value={rfForm.titre} onChange={e=>setRfForm({...rfForm,titre:e.target.value})}/>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <label style={lbl}>Société savante *</label>
+                <select style={{...inp,marginBottom:0}} value={rfForm.societe} onChange={e=>setRfForm({...rfForm,societe:e.target.value})}>
+                  {["HAS","SFMU","SFAR","ERC","ANSM","ESC","SRLF","Autre"].map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{flex:1}}>
+                <label style={lbl}>Date publication *</label>
+                <input type="date" style={{...inp,marginBottom:0}} value={rfForm.datePublication} onChange={e=>setRfForm({...rfForm,datePublication:e.target.value})}/>
+              </div>
             </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:4, lineHeight:1.4}}>
-              Adapter le débit du remplissage à la diurèse horaire.
+            <label style={lbl}>Spécialité *</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+              {RF_SPECS.map(s=>(
+                <button key={s.v} onClick={()=>setRfForm({...rfForm,specialite:s.v})} style={{
+                  padding:"5px 10px",borderRadius:20,
+                  border:`1.5px solid ${rfForm.specialite===s.v?s.color:C.border}`,
+                  background:rfForm.specialite===s.v?s.bg:"transparent",
+                  color:rfForm.specialite===s.v?s.color:C.sub,
+                  fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4
+                }}><span style={{fontSize:11}}>{s.icon}</span>{s.v}</button>
+              ))}
             </div>
+            <label style={lbl}>🔗 Lien URL vers le PDF officiel</label>
+            <input style={inp} placeholder="https://www.has-sante.fr/..." value={rfForm.urlPdf} onChange={e=>setRfForm({...rfForm,urlPdf:e.target.value})}/>
+            <label style={lbl}>📝 Résumé des points clés</label>
+            <textarea style={{...inp,height:120,resize:"vertical"}} placeholder={"**Section :**\n• Point clé 1\n• Point clé 2"} value={rfForm.resume} onChange={e=>setRfForm({...rfForm,resume:e.target.value})}/>
+            <label style={lbl}>🏷️ Tags (séparés par virgules ou espaces)</label>
+            <input style={inp} placeholder="#ACR #adrénaline #défibrillation" value={rfForm.tags} onChange={e=>setRfForm({...rfForm,tags:e.target.value})}/>
+            <button onClick={saveReco} style={{
+              width:"100%",padding:"14px",background:"linear-gradient(135deg,#0E7490,#0891B2)",
+              color:"#fff",border:"none",borderRadius:14,fontSize:14,fontWeight:800,cursor:"pointer",
+              boxShadow:"0 4px 14px rgba(14,116,144,.25)",letterSpacing:.3
+            }}>✅ Enregistrer la recommandation</button>
           </div>
         </div>
       )}
-
-      {/* Note sur la formule */}
-      <div style={{
-        fontSize:11, padding:"9px 12px", borderRadius:8,
-        marginBottom:16, background:C.bg, color:C.sub,
-        lineHeight:1.5, fontStyle:"italic",
-        border:`1px dashed ${C.border}`,
-      }}>
-        <strong style={{color:C.navy, fontStyle:"normal"}}>Formule de Parkland :</strong> 4 mL × kg × % SCB de Ringer Lactate sur 24 h, dont <strong style={{color:C.navy, fontStyle:"normal"}}>50 % sur les 8 premières heures</strong> à compter du moment de la brûlure.
-      </div>
-
-      <Btn
-        onClick={()=>{ setWeight(70); setBsa(20); setDelay(0); }}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
     </div>
   );
 }
-
-
-// ── Calculateur Cushman (sevrage alcoolique) ─────────────────────────────────
-const CUSHMAN_ITEMS = [
-  { key:"fc",      num:"1", title:"Fréquence cardiaque", options:[
-    {v:0, label:"< 80 / min"},
-    {v:1, label:"80 – 100 / min"},
-    {v:2, label:"101 – 120 / min"},
-    {v:3, label:"> 120 / min"},
-  ]},
-  { key:"pad",     num:"2", title:"Pression artérielle diastolique", options:[
-    {v:0, label:"< 95 mmHg"},
-    {v:1, label:"95 – 100 mmHg"},
-    {v:2, label:"101 – 105 mmHg"},
-    {v:3, label:"> 105 mmHg"},
-  ]},
-  { key:"fr",      num:"3", title:"Fréquence respiratoire", options:[
-    {v:0, label:"< 16 / min"},
-    {v:1, label:"16 – 25 / min"},
-    {v:2, label:"26 – 35 / min"},
-    {v:3, label:"> 35 / min"},
-  ]},
-  { key:"trem",    num:"4", title:"Tremblements", options:[
-    {v:0, label:"Aucun"},
-    {v:1, label:"Légers (mains)"},
-    {v:2, label:"Modérés et généralisés"},
-    {v:3, label:"Sévères, intenses au repos"},
-  ]},
-  { key:"sueurs",  num:"5", title:"Sueurs", options:[
-    {v:0, label:"Aucune"},
-    {v:1, label:"Modérées (paumes des mains)"},
-    {v:2, label:"Importantes (front mouillé)"},
-    {v:3, label:"Profuses, généralisées"},
-  ]},
-  { key:"agit",    num:"6", title:"Agitation", options:[
-    {v:0, label:"Calme"},
-    {v:1, label:"Anxieux mais coopérant"},
-    {v:2, label:"Agité, peu coopérant"},
-    {v:3, label:"Très agité, opposition / agressivité"},
-  ]},
-  { key:"trbsens", num:"7", title:"Troubles sensoriels", options:[
-    {v:0, label:"Aucun"},
-    {v:1, label:"Prurit, paresthésies"},
-    {v:2, label:"Illusions visuelles ou auditives"},
-    {v:3, label:"Hallucinations vraies"},
-  ]},
-];
-
-function CushmanCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#0891B2";
-
-  const initial = {};
-  CUSHMAN_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = CUSHMAN_ITEMS.filter(it => s[it.key] > 0);
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    CUSHMAN_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  let sev, sevColor, sevBg, interpText;
-  if(total <= 6) {
-    sev = "Léger (0–6)";
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Sevrage léger ou absent. Surveillance, hydratation, vitamine B1, réévaluation toutes les heures.";
-  } else if(total <= 14) {
-    sev = `Modéré (${total})`;
-    sevColor = C.amber; sevBg = C.amberLight;
-    interpText = "Sevrage modéré. Benzodiazépine à dose adaptée (ex. diazépam 10 mg PO), réévaluation horaire, hydratation, vitamine B1. Anticiper l'aggravation.";
-  } else {
-    sev = `Sévère (≥ 15)`;
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Sevrage sévère, risque de delirium tremens. BZD à doses élevées (diazépam 20 mg ou IV selon protocole), surveillance USC, prévention convulsions, hydratation, vitamine B1 IV.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    const max = item.options[item.options.length - 1].v;
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-              minWidth:18, textAlign:"center",
-            }}>{item.num}</span>
-            <span style={{
-              fontSize:13, fontWeight:800, color:C.navy,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-            }}>{item.title}</span>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / {max}</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","cushman")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"cushman", type:"score", title:"Score de Cushman",
-            icon:"🍷", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Addictologie" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Score de Cushman
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Sevrage alcoolique — titration des benzodiazépines
-      </div>
-
-      {CUSHMAN_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + items positifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: positiveItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 21</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5}}>
-              {positiveItems.length} item{positiveItems.length>1?"s":""} positif{positiveItems.length>1?"s":""}
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {positiveItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {positiveItems.map(it => (
-              <span key={it.key} style={{
-                fontSize:10, fontWeight:800,
-                padding:"3px 8px", borderRadius:10,
-                background:accent+"18", color:accent,
-                fontVariantNumeric:"tabular-nums",
-                whiteSpace:"nowrap",
-              }}>
-                {it.num} · {s[it.key]}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:8, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      {/* Rappel pratique */}
-      <div style={{
-        fontSize:11, padding:"9px 12px", borderRadius:8,
-        marginBottom:16, background:C.bg, color:C.sub,
-        lineHeight:1.5, fontStyle:"italic",
-        border:`1px dashed ${C.border}`,
-      }}>
-        <strong style={{color:C.navy, fontStyle:"normal"}}>Réévaluation toutes les heures</strong> pour adapter la posologie BZD. Toujours associer <strong style={{color:C.navy, fontStyle:"normal"}}>hydratation + vitamine B1</strong> (prévention Gayet-Wernicke).
-      </div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur HEART (douleur thoracique) ───────────────────────────────────
-const HEART_ITEMS = [
-  { key:"history", num:"H", title:"Histoire / anamnèse", options:[
-    {v:0, label:"Peu suspect (atypique, contexte non évocateur)"},
-    {v:1, label:"Modérément suspect (signes mixtes)"},
-    {v:2, label:"Hautement suspect (rétrosternal, oppressif, irradiation, sueurs)"},
-  ]},
-  { key:"ecg",     num:"E", title:"ECG", options:[
-    {v:0, label:"Normal"},
-    {v:1, label:"Anomalie non spécifique (BBG, HVG, repolarisation)"},
-    {v:2, label:"Sus/sous-décalage ST significatif"},
-  ]},
-  { key:"age",     num:"A", title:"Âge", options:[
-    {v:0, label:"< 45 ans"},
-    {v:1, label:"45 – 64 ans"},
-    {v:2, label:"≥ 65 ans"},
-  ]},
-  { key:"risk",    num:"R", title:"Facteurs de risque CV", options:[
-    {v:0, label:"Aucun facteur de risque connu"},
-    {v:1, label:"1 – 2 facteurs"},
-    {v:2, label:"≥ 3 facteurs OU ATCD athéromateux"},
-  ]},
-  { key:"trop",    num:"T", title:"Troponine", options:[
-    {v:0, label:"≤ limite supérieure normale"},
-    {v:1, label:"1 – 3 × limite normale"},
-    {v:2, label:"> 3 × limite normale"},
-  ]},
-];
-
-function HeartCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#4338CA";
-
-  const initial = {};
-  HEART_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = HEART_ITEMS.filter(it => s[it.key] > 0);
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    HEART_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  let sev, sevColor, sevBg, interpText, maceRisk;
-  if(total <= 3) {
-    sev = `Faible (${total})`;
-    sevColor = C.green; sevBg = C.greenLight;
-    maceRisk = "~ 1.7 %";
-    interpText = "Risque faible. Sortie possible après décision partagée si clinique et imagerie rassurantes. Consigne de reconsulter si récidive ou aggravation.";
-  } else if(total <= 6) {
-    sev = `Modéré (${total})`;
-    sevColor = C.amber; sevBg = C.amberLight;
-    maceRisk = "~ 16.6 %";
-    interpText = "Risque modéré. Hospitalisation pour observation, ECG répétés, troponine de contrôle (cinétique), épreuve d'effort ou imagerie selon contexte.";
-  } else {
-    sev = `Élevé (${total})`;
-    sevColor = C.red; sevBg = C.redLight;
-    maceRisk = "~ 50.1 %";
-    interpText = "Risque élevé. Avis cardiologique urgent, stratégie invasive précoce (coronarographie). SCA à évoquer en priorité.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    const max = item.options[item.options.length - 1].v;
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"center", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-              minWidth:18, textAlign:"center",
-            }}>{item.num}</span>
-            <span style={{
-              fontSize:13, fontWeight:800, color:C.navy,
-              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-            }}>{item.title}</span>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / {max}</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","heart")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"heart", type:"score", title:"Score HEART",
-            icon:"❤️", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Cardio / DT" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Score HEART
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Stratification du risque de SCA aux urgences
-      </div>
-
-      {HEART_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + MACE + items positifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: positiveItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 10</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.3}}>
-              MACE à 6 semaines ≈ <span style={{color:sevColor, fontWeight:800}}>{maceRisk}</span>
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {positiveItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {positiveItems.map(it => (
-              <span key={it.key} style={{
-                fontSize:10, fontWeight:800,
-                padding:"3px 8px", borderRadius:10,
-                background:accent+"18", color:accent,
-                fontVariantNumeric:"tabular-nums",
-                whiteSpace:"nowrap",
-              }}>
-                {it.num} · {s[it.key]}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:8, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      {/* Note sur les FdR CV */}
-      <div style={{
-        fontSize:11, padding:"9px 12px", borderRadius:8,
-        marginBottom:16, background:C.bg, color:C.sub,
-        lineHeight:1.5, fontStyle:"italic",
-        border:`1px dashed ${C.border}`,
-      }}>
-        <strong style={{color:C.navy, fontStyle:"normal"}}>FdR CV pris en compte :</strong> hypercholestérolémie, HTA, diabète, tabagisme actif, IMC &gt; 30, ATCD familiaux CV précoces. <strong style={{color:C.navy, fontStyle:"normal"}}>ATCD athéromateux</strong> = IDM, AVC, AOMI, angioplastie, pontage.
-      </div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur Wells TVP (simplifié) ────────────────────────────────────────
-const WELLS_TVP_ITEMS = [
-  { key:"cancer",    num:"1",  title:"Cancer actif",
-    sub:"en cours, ≤ 6 mois ou palliatif",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"paralysie", num:"2",  title:"Paralysie / plâtre du MI",
-    sub:"parésie ou immobilisation récente",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"alit",      num:"3",  title:"Alitement > 3 j ou chirurgie majeure < 12 sem",
-    sub:"avec anesthésie générale ou loco-régionale",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"sensib",    num:"4",  title:"Sensibilité sur trajet veineux profond",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"oedeme",    num:"5",  title:"Œdème de tout le MI",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"mollet",    num:"6",  title:"Augmentation circonférence mollet > 3 cm",
-    sub:"mesurée 10 cm sous tubérosité tibiale, vs côté sain",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"godet",     num:"7",  title:"Œdème prenant le godet (côté symptomatique)",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"veines",    num:"8",  title:"Veines superficielles collatérales",
-    sub:"non variqueuses",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"atcd",      num:"9",  title:"ATCD personnel de TVP documentée",
-    options:[{v:0, label:"Non"}, {v:1, label:"Oui"}]},
-  { key:"alt",       num:"10", title:"Diagnostic alternatif aussi (ou plus) probable",
-    sub:"retire 2 points si oui",
-    options:[{v:0, label:"Non"}, {v:-2, label:"Oui (− 2 points)"}]},
-];
-
-function WellsTvpCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#0F766E";
-
-  const initial = {};
-  WELLS_TVP_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const activeItems = WELLS_TVP_ITEMS.filter(it => s[it.key] !== 0);
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    WELLS_TVP_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  // Wells simplifié → dichotomique : < 2 improbable, ≥ 2 probable
-  let sev, sevColor, sevBg, interpText;
-  if(total < 2) {
-    sev = `TVP improbable (${total})`;
-    sevColor = C.green; sevBg = C.greenLight;
-    interpText = "Probabilité clinique faible. Doser les D-dimères : si négatifs → TVP exclue. Si positifs → écho-Doppler veineux des MI.";
-  } else {
-    sev = `TVP probable (${total})`;
-    sevColor = C.red; sevBg = C.redLight;
-    interpText = "Probabilité clinique élevée. Écho-Doppler veineux des MI indispensable. D-dimères non recommandés en 1ère intention dans cette catégorie.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    const maxVal = item.options[item.options.length - 1].v;
-    const showMax = maxVal > 0;
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"flex-start",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"flex-start", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-              minWidth:20, textAlign:"center",
-              marginTop:1,
-            }}>{item.num}</span>
-            <div style={{minWidth:0, flex:1}}>
-              <div style={{fontSize:13, fontWeight:800, color:C.navy, lineHeight:1.3}}>
-                {item.title}
-              </div>
-              {item.sub && (
-                <div style={{fontSize:11, color:C.sub, fontWeight:500, marginTop:2, lineHeight:1.3, fontStyle:"italic"}}>
-                  {item.sub}
-                </div>
-              )}
-            </div>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score!==0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-            marginTop:1,
-          }}>
-            {score>0 ? "+" : ""}{score}
-            {showMax && <span style={{fontSize:11, color:C.sub, fontWeight:600}}> / +{maxVal}</span>}
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize: Math.abs(o.v)>1 ? 12 : 14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v>0 ? "+"+o.v : o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","wells-tvp")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"wells-tvp", type:"score", title:"Wells TVP (simplifié)",
-            icon:"🦵", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Thrombose" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Wells TVP <span style={{fontSize:13, fontWeight:600, color:C.sub}}>(simplifié)</span>
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Probabilité clinique de thrombose veineuse profonde
-      </div>
-
-      {WELLS_TVP_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + items actifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: activeItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>
-                {total>0?"+":""}{total}
-              </span>
-              <span style={{fontSize:16, color:C.sub}}>/ 9</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.5}}>
-              Seuil dichotomique : &lt; 2 vs ≥ 2
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {activeItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {activeItems.map(it => {
-              const v = s[it.key];
-              const isNeg = v < 0;
-              const col = isNeg ? C.green : accent;
-              return (
-                <span key={it.key} style={{
-                  fontSize:10, fontWeight:800,
-                  padding:"3px 8px", borderRadius:10,
-                  background:col+"18", color:col,
-                  fontVariantNumeric:"tabular-nums",
-                  whiteSpace:"nowrap",
-                }}>
-                  {it.num} · {v>0?"+":""}{v}
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:16, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
-
-// ── Calculateur Score de Genève révisé (EP) ──────────────────────────────────
-const GENEVA_ITEMS = [
-  { key:"age",       num:"1", title:"Âge > 65 ans", options:[
-    {v:0, label:"Non"},
-    {v:1, label:"Oui (+ 1)"},
-  ]},
-  { key:"atcd",      num:"2", title:"ATCD personnel de TVP ou EP", options:[
-    {v:0, label:"Non"},
-    {v:3, label:"Oui (+ 3)"},
-  ]},
-  { key:"chirfrac",  num:"3", title:"Chirurgie sous AG ou fracture MI < 1 mois", options:[
-    {v:0, label:"Non"},
-    {v:2, label:"Oui (+ 2)"},
-  ]},
-  { key:"cancer",    num:"4", title:"Cancer actif",
-    sub:"solide ou hématologique, en cours ou rémission < 1 an",
-    options:[
-      {v:0, label:"Non"},
-      {v:2, label:"Oui (+ 2)"},
-    ]},
-  { key:"dmi",       num:"5", title:"Douleur unilatérale du membre inférieur", options:[
-    {v:0, label:"Non"},
-    {v:3, label:"Oui (+ 3)"},
-  ]},
-  { key:"hemo",      num:"6", title:"Hémoptysie", options:[
-    {v:0, label:"Non"},
-    {v:2, label:"Oui (+ 2)"},
-  ]},
-  { key:"fc",        num:"7", title:"Fréquence cardiaque", options:[
-    {v:0, label:"< 75 / min"},
-    {v:3, label:"75 – 94 / min (+ 3)"},
-    {v:5, label:"≥ 95 / min (+ 5)"},
-  ]},
-  { key:"palpation", num:"8", title:"Douleur palpation veineuse MI + œdème unilatéral", options:[
-    {v:0, label:"Non"},
-    {v:4, label:"Oui (+ 4)"},
-  ]},
-];
-
-function GenevaEpCalculator({ onBack }) {
-  const C = useC();
-  const { toggleFavori, isFavori } = useFavoris();
-  const accent = "#0284C7";
-
-  const initial = {};
-  GENEVA_ITEMS.forEach(it => { initial[it.key] = 0; });
-  const [s, setS] = useState(initial);
-
-  const total = Object.values(s).reduce((a,b) => a+b, 0);
-  const positiveItems = GENEVA_ITEMS.filter(it => s[it.key] > 0);
-
-  function updateScore(key, val) {
-    setS(prev => ({...prev, [key]: val}));
-  }
-  function reset() {
-    const fresh = {};
-    GENEVA_ITEMS.forEach(it => { fresh[it.key] = 0; });
-    setS(fresh);
-  }
-
-  // 3 paliers (Le Gal 2006)
-  let sev, sevColor, sevBg, prevalence, interpText;
-  if(total <= 3) {
-    sev = `Faible (${total})`;
-    sevColor = C.green; sevBg = C.greenLight;
-    prevalence = "~ 9 %";
-    interpText = "Probabilité clinique faible. Doser les D-dimères (seuil ajusté à l'âge si > 50 ans : âge × 10) : si négatifs → EP exclue.";
-  } else if(total <= 10) {
-    sev = `Intermédiaire (${total})`;
-    sevColor = C.amber; sevBg = C.amberLight;
-    prevalence = "~ 28 %";
-    interpText = "Probabilité intermédiaire. D-dimères (avec seuil ajusté à l'âge) ou angio-CT thoracique selon disponibilité et contexte.";
-  } else {
-    sev = `Élevée (${total})`;
-    sevColor = C.red; sevBg = C.redLight;
-    prevalence = "~ 72 %";
-    interpText = "Probabilité élevée. Angio-CT thoracique en urgence (ou scintigraphie V/Q si CI). D-dimères peu utiles : haute prévalence faux positifs.";
-  }
-
-  function renderSection(item) {
-    const score = s[item.key];
-    const maxVal = item.options[item.options.length - 1].v;
-    return (
-      <div key={item.key} style={{
-        background:C.card, borderRadius:14, marginBottom:12,
-        border:`1px solid ${C.border}`, overflow:"hidden",
-        boxShadow:"0 2px 12px rgba(26,58,92,.06)",
-      }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"flex-start",
-          padding:"11px 14px", background:C.bg,
-          borderBottom:`1px solid ${C.border}`,
-          gap:8,
-        }}>
-          <div style={{display:"flex", alignItems:"flex-start", gap:8, minWidth:0, flex:1}}>
-            <span style={{
-              fontSize:10, fontWeight:800, color:accent, letterSpacing:.5,
-              background:accent+"18", padding:"2px 6px", borderRadius:4,
-              flexShrink:0, fontVariantNumeric:"tabular-nums",
-              minWidth:18, textAlign:"center",
-              marginTop:1,
-            }}>{item.num}</span>
-            <div style={{minWidth:0, flex:1}}>
-              <div style={{fontSize:13, fontWeight:800, color:C.navy, lineHeight:1.3}}>
-                {item.title}
-              </div>
-              {item.sub && (
-                <div style={{fontSize:11, color:C.sub, fontWeight:500, marginTop:2, lineHeight:1.3, fontStyle:"italic"}}>
-                  {item.sub}
-                </div>
-              )}
-            </div>
-          </div>
-          <div style={{
-            fontSize:17, fontWeight:900,
-            color: score>0 ? accent : C.sub,
-            fontVariantNumeric:"tabular-nums", flexShrink:0,
-            marginTop:1,
-          }}>
-            {score}<span style={{fontSize:11, color:C.sub, fontWeight:600}}> / {maxVal}</span>
-          </div>
-        </div>
-        {item.options.map((o,i)=>{
-          const sel = score === o.v;
-          return (
-            <div key={o.v} onClick={()=>updateScore(item.key, o.v)} style={{
-              display:"flex", alignItems:"center", gap:12,
-              padding:"11px 14px",
-              borderTop: i>0 ? `1px solid ${C.border}` : "none",
-              background: sel ? accent+"18" : "transparent",
-              cursor:"pointer",
-              transition:"background .1s",
-              WebkitTapHighlightColor:"transparent",
-            }}>
-              <div style={{
-                width:30, height:30, borderRadius:"50%",
-                background: sel ? accent : C.bg,
-                color: sel ? "#fff" : C.sub,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                fontSize:14, fontWeight:800, flexShrink:0,
-                fontVariantNumeric:"tabular-nums",
-                border: sel ? "none" : `1px solid ${C.border}`,
-              }}>{o.v}</div>
-              <span style={{
-                fontSize:13, color:C.text,
-                fontWeight: sel ? 700 : 500,
-                flex:1, lineHeight:1.35,
-              }}>{o.label}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{animation:"fadeIn .2s ease"}}>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-        <BackBtn onClick={onBack}/>
-        <StarBtn
-          filled={isFavori("score","geneva-ep")}
-          color={accent}
-          onToggle={()=>toggleFavori({
-            id:"geneva-ep", type:"score", title:"Score de Genève révisé",
-            icon:"🫁", color:accent, nav:"scores",
-          })}
-        />
-      </div>
-
-      <Tag label="Thrombose / EP" color={accent}/>
-      <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 2px"}}>
-        Score de Genève <span style={{fontSize:13, fontWeight:600, color:C.sub}}>révisé</span>
-      </h2>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>
-        Probabilité clinique d'embolie pulmonaire
-      </div>
-
-      {GENEVA_ITEMS.map(renderSection)}
-
-      {/* Bandeau total + prévalence + items positifs */}
-      <div style={{
-        background:C.card, borderRadius:14, padding:"18px 16px",
-        marginTop:16, marginBottom:12, border:`1px solid ${C.border}`,
-        boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-      }}>
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          gap:12, marginBottom: positiveItems.length>0 ? 14 : 0,
-        }}>
-          <div>
-            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
-              <span style={{fontSize:42, fontWeight:900, lineHeight:1, color:sevColor, fontVariantNumeric:"tabular-nums"}}>{total}</span>
-              <span style={{fontSize:16, color:C.sub}}>/ 22</span>
-            </div>
-            <div style={{fontSize:11, color:C.sub, marginTop:6, letterSpacing:.3}}>
-              Prévalence d'EP attendue ≈ <span style={{color:sevColor, fontWeight:800}}>{prevalence}</span>
-            </div>
-          </div>
-          <div style={{
-            fontSize:12, fontWeight:800,
-            padding:"6px 12px", borderRadius:20,
-            background:sevBg, color:sevColor,
-            whiteSpace:"nowrap",
-          }}>{sev}</div>
-        </div>
-
-        {positiveItems.length > 0 && (
-          <div style={{
-            paddingTop:12, borderTop:`1px solid ${C.border}`,
-            display:"flex", flexWrap:"wrap", gap:6,
-          }}>
-            {positiveItems.map(it => (
-              <span key={it.key} style={{
-                fontSize:10, fontWeight:800,
-                padding:"3px 8px", borderRadius:10,
-                background:accent+"18", color:accent,
-                fontVariantNumeric:"tabular-nums",
-                whiteSpace:"nowrap",
-              }}>
-                {it.num} · +{s[it.key]}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Interprétation clinique */}
-      <div style={{
-        fontSize:12, padding:"10px 14px", borderRadius:10,
-        marginBottom:8, background:sevBg, color:sevColor,
-        lineHeight:1.5, fontWeight:600,
-        border:`1px solid ${sevColor}33`,
-      }}>{interpText}</div>
-
-      {/* Note approche dichotomique */}
-      <div style={{
-        fontSize:11, padding:"9px 12px", borderRadius:8,
-        marginBottom:16, background:C.bg, color:C.sub,
-        lineHeight:1.5, fontStyle:"italic",
-        border:`1px dashed ${C.border}`,
-      }}>
-        <strong style={{color:C.navy, fontStyle:"normal"}}>Approche dichotomique :</strong> ≤ 5 = EP improbable (D-dimères) · ≥ 6 = EP probable (imagerie). <strong style={{color:C.navy, fontStyle:"normal"}}>D-dimères ajustés à l'âge</strong> : seuil = âge × 10 µg/L si patient &gt; 50 ans.
-      </div>
-
-      <Btn
-        onClick={reset}
-        color={C.sub} outline
-        style={{width:"100%", marginTop:8}}
-      >↻ Réinitialiser</Btn>
-    </div>
-  );
-}
-
 
 // ─── AdminScreen ───────────────────────────────────────────────────────────────
 function AdminScreen({ onNewItem }) {
@@ -6272,6 +3600,7 @@ function AdminScreen({ onNewItem }) {
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
+  const [rfForm, setRfForm] = useState({ titre:"", societe:"HAS", datePublication:"", specialite:"Cardiologie", urlPdf:"", resume:"", tags:"" });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
@@ -6279,6 +3608,7 @@ function AdminScreen({ onNewItem }) {
   const [editingD, setEditingD] = useState(null);
   const [editingDil, setEditingDil] = useState(null);
   const [editingG, setEditingG] = useState(null);
+  const [editingRf, setEditingRf] = useState(null);
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
@@ -6292,6 +3622,7 @@ function AdminScreen({ onNewItem }) {
   const customGestes = store.gestes;
   const customRetex = store.retex;
   const customContacts = store.contacts;
+  const customRecoFlash = store.recoFlash;
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(null), 2500); }
 
@@ -6416,6 +3747,42 @@ function AdminScreen({ onNewItem }) {
     }
   }
 
+  const RECO_SOCIETES = ["HAS","SFMU","SFAR","ERC","ANSM","ESC","SRLF","Autre"];
+  const RECO_SPECIALITES = [
+    {v:"Cardiologie",icon:"❤️",color:"#DC2626",bg:"#FEF2F2"},
+    {v:"Neurologie",icon:"🧠",color:"#7C3AED",bg:"#F5F3FF"},
+    {v:"Traumatologie",icon:"🦴",color:"#EA580C",bg:"#FFF7ED"},
+    {v:"Réanimation",icon:"🫁",color:"#0891B2",bg:"#ECFEFF"},
+    {v:"Infectiologie",icon:"🦠",color:"#059669",bg:"#ECFDF5"},
+    {v:"Pédiatrie",icon:"👶",color:"#D946EF",bg:"#FDF4FF"},
+    {v:"Toxicologie",icon:"☠️",color:"#854D0E",bg:"#FEFCE8"},
+    {v:"Pneumologie",icon:"💨",color:"#2563EB",bg:"#EFF6FF"},
+    {v:"Urgences",icon:"🚨",color:"#E11D48",bg:"#FFF1F2"},
+    {v:"Respiratoire",icon:"🌬️",color:"#0284C7",bg:"#F0F9FF"},
+    {v:"Douleur/Analgésie",icon:"💊",color:"#BE185D",bg:"#FFF1F2"},
+    {v:"Autre",icon:"📋",color:"#475569",bg:"#F1F5F9"},
+  ];
+  function getSpecStyle(s) { return RECO_SPECIALITES.find(x=>x.v===s)||{icon:"📋",color:"#475569",bg:"#F1F5F9"}; }
+
+  const rfEmpty = {titre:"",societe:"HAS",datePublication:"",specialite:"Cardiologie",urlPdf:"",resume:"",tags:""};
+
+  async function addRecoFlash() {
+    if(!rfForm.titre.trim()||!rfForm.datePublication) return;
+    const tags = (rfForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    if(editingRf!==null) {
+      const item = {...rfForm, id:editingRf, tags};
+      await updateItem("recoFlash","admin_reco_flash",item,[]);
+      setEditingRf(null); setRfForm(rfEmpty);
+      showSaved("Recommandation modifiée !");
+    } else {
+      const item = {...rfForm, id:Date.now(), tags};
+      await addItem("recoFlash","admin_reco_flash",item,[]);
+      setRfForm(rfEmpty);
+      showSaved("Recommandation ajoutée !");
+      if(onNewItem) onNewItem({id:item.id,title:item.titre,icon:"📋",color:"#0891B2",nav:"recoflash"});
+    }
+  }
+
   async function deleteItem(storeKey, storageKey, id, setter) {
     if(setter) {
       setter(prev => { const n=prev.filter(x=>x.id!==id); safeSet(storageKey,JSON.stringify(n)); return n; });
@@ -6445,7 +3812,7 @@ function AdminScreen({ onNewItem }) {
       )}
 
       <div style={{display:"flex", gap:6, marginBottom:20, background:"#eef2f7", borderRadius:12, padding:4, overflowX:"auto", WebkitOverflowScrolling:"touch", scrollbarWidth:"none"}}>
-        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
+        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"recoflash",label:"📋 Recos"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             flexShrink:0, border:"none", borderRadius:9, padding:"8px 10px", cursor:"pointer",
             background:tab===t.id?C.white:"transparent",
@@ -7046,6 +4413,74 @@ function AdminScreen({ onNewItem }) {
         </div>
       )}
 
+      {tab==="recoflash" && (
+        <div>
+          <Card style={{marginBottom:16}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingRf ? "✏️ Modifier la recommandation" : "+ Nouvelle recommandation"}</div>
+            <label style={lbl}>Titre *</label>
+            <input style={inp} placeholder="Ex: Prise en charge de l'ACR" value={rfForm.titre} onChange={e=>setRfForm({...rfForm,titre:e.target.value})}/>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <label style={lbl}>Société savante *</label>
+                <select style={{...inp,marginBottom:0}} value={rfForm.societe} onChange={e=>setRfForm({...rfForm,societe:e.target.value})}>
+                  {RECO_SOCIETES.map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{flex:1}}>
+                <label style={lbl}>Date publication *</label>
+                <input type="date" style={{...inp,marginBottom:0}} value={rfForm.datePublication} onChange={e=>setRfForm({...rfForm,datePublication:e.target.value})}/>
+              </div>
+            </div>
+            <label style={lbl}>Spécialité *</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+              {RECO_SPECIALITES.map(s=>(
+                <button key={s.v} onClick={()=>setRfForm({...rfForm,specialite:s.v})} style={{
+                  padding:"5px 10px",borderRadius:20,
+                  border:`1.5px solid ${rfForm.specialite===s.v?s.color:C.border}`,
+                  background:rfForm.specialite===s.v?s.bg:"transparent",
+                  color:rfForm.specialite===s.v?s.color:C.sub,
+                  fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4
+                }}><span style={{fontSize:11}}>{s.icon}</span>{s.v}</button>
+              ))}
+            </div>
+            <label style={lbl}>{"🔗 Lien URL vers le PDF officiel"}</label>
+            <input style={inp} placeholder="https://www.has-sante.fr/..." value={rfForm.urlPdf} onChange={e=>setRfForm({...rfForm,urlPdf:e.target.value})}/>
+            <label style={lbl}>{"📝 Résumé des points clés"}</label>
+            <textarea style={{...inp,height:120,resize:"vertical"}} placeholder={"**Section :**\n• Point clé 1\n• Point clé 2"} value={rfForm.resume} onChange={e=>setRfForm({...rfForm,resume:e.target.value})}/>
+            <label style={lbl}>{"🏷️ Tags (séparés par virgules ou espaces)"}</label>
+            <input style={inp} placeholder="#ACR #adrénaline #défibrillation" value={rfForm.tags} onChange={e=>setRfForm({...rfForm,tags:e.target.value})}/>
+            {editingRf && <Btn onClick={()=>{setEditingRf(null);setRfForm(rfEmpty);}} color={C.sub} style={{width:"100%",marginBottom:6}}>Annuler la modification</Btn>}
+            <Btn onClick={addRecoFlash} color="#0891B2" style={{width:"100%"}}>{editingRf?"✅ Enregistrer les modifications":"📋 Ajouter la recommandation"}</Btn>
+          </Card>
+          {customRecoFlash.length>0 && (
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:C.sub,marginBottom:8}}>Recommandations ajoutées ({customRecoFlash.length})</div>
+              {[...customRecoFlash].sort((a,b)=>new Date(b.datePublication||0)-new Date(a.datePublication||0)).map(r=>{
+                const sp=getSpecStyle(r.specialite);
+                return (
+                  <div key={r.id} style={{background:C.white,borderRadius:10,padding:"10px 14px",marginBottom:8,border:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:4}}>
+                          <span style={{background:"#EFF6FF",color:"#2563EB",padding:"1px 6px",borderRadius:6,fontSize:9,fontWeight:800}}>{r.societe}</span>
+                          <span style={{background:sp.bg,color:sp.color,padding:"1px 6px",borderRadius:6,fontSize:9,fontWeight:700}}>{sp.icon} {r.specialite}</span>
+                        </div>
+                        <div style={{fontSize:13,fontWeight:700,color:C.text}}>{r.titre}</div>
+                        <div style={{fontSize:10,color:C.sub,marginTop:2}}>📅 {r.datePublication||"—"}</div>
+                      </div>
+                      <div style={{display:"flex",gap:6,flexShrink:0,marginLeft:8}}>
+                        <button onClick={()=>{setEditingRf(r.id);setRfForm({...r,tags:Array.isArray(r.tags)?r.tags.join(" "):r.tags||""});window.scrollTo(0,0);}} style={{background:"#E8A82E",color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>✏️</button>
+                        <button onClick={()=>deleteItem("recoFlash","admin_reco_flash",r.id)} style={{background:C.red,color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,cursor:"pointer"}}>Suppr.</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {tab==="annuaire" && (
         <div>
           {/* Formulaire ajout contact */}
@@ -7295,8 +4730,9 @@ function AppInner() {
         {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink}/>}
+        {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink}/>}
+        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif}/>}
       </div>
