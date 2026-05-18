@@ -58,8 +58,15 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
-  // Normalise tags array→string pour compatibilité avec le reste de l'app
-  if (Array.isArray(r.tags)) r.tags = r.tags.join(", ");
+  // Normalise tags : on garde un ARRAY pour que .map() fonctionne partout en lecture
+  // (la conversion string→array pour le formulaire d'édition se fait à l'init du form)
+  if (!Array.isArray(r.tags)) {
+    if (typeof r.tags === "string" && r.tags.trim()) {
+      r.tags = r.tags.split(",").map(t => t.trim()).filter(Boolean);
+    } else {
+      r.tags = [];
+    }
+  }
   return r;
 }
 
