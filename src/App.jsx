@@ -1761,24 +1761,19 @@ function ECGScreen({ deepLinkId }) {
             </div>
           )}
 
-        <div style={{background:"#0A1628", borderRadius:14, padding:e.imageData?4:16, marginBottom:16}}>
-          {e.imageUrl ? (
-            e.imageData
-              ? <ClickableImage src={e.imageData} alt="ECG" style={{borderRadius:10}}/>
-              : <div style={{color:"rgba(255,255,255,.4)", textAlign:"center", padding:20, fontSize:12}}>Image non disponible</div>
+        <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData||e.imageUrl)?4:16, marginBottom:16}}>
+          {(e.imageData||e.imageUrl) ? (
+            <ClickableImage src={e.imageData||e.imageUrl} alt="ECG" style={{borderRadius:10}}/>
           ) : (
             <SvgEcg color={e.color}/>
           )}
-          {!e.imageData && <div style={{color:"rgba(255,255,255,.5)", fontSize:10, textAlign:"center", marginTop:8}}>ECG - {e.title}</div>}
+          {!(e.imageData||e.imageUrl) && <div style={{color:"rgba(255,255,255,.5)", fontSize:10, textAlign:"center", marginTop:8}}>ECG - {e.title}</div>}
         </div>
 
-        {e.hasSecondEcg && e.imageUrl2 && (
-          <div style={{background:"#0A1628", borderRadius:14, padding:e.imageData2?4:16, marginBottom:16}}>
+        {e.hasSecondEcg && (e.imageData2||e.imageUrl2) && (
+          <div style={{background:"#0A1628", borderRadius:14, padding:4, marginBottom:16}}>
             <div style={{color:"rgba(255,255,255,.7)", fontSize:11, fontWeight:700, marginBottom:8, padding:"8px 8px 0"}}>{e.secondTitle}</div>
-            {e.imageData2
-              ? <ClickableImage src={e.imageData2} alt="ECG 2" style={{borderRadius:10}}/>
-              : <div style={{color:"rgba(255,255,255,.4)", textAlign:"center", padding:20, fontSize:12}}>Image non disponible</div>
-            }
+            <ClickableImage src={e.imageData2||e.imageUrl2} alt="ECG 2" style={{borderRadius:10}}/>
           </div>
         )}
 
@@ -1833,8 +1828,8 @@ function ECGScreen({ deepLinkId }) {
           <Card key={e.id} onClick={()=>setSelected(e)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
               <div style={{background:C.redLight, borderRadius:12, padding:8, minWidth:56, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
-                {e.imageUrl
-                  ? <img src={e.imageData} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
+                {(e.imageData||e.imageUrl)
+                  ? <img src={e.imageData||e.imageUrl} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
                   : <svg viewBox="0 0 60 30" style={{width:56, height:30}}><polyline points="0,15 8,15 12,5 16,25 20,15 28,15 32,8 36,22 40,15 48,15 52,10 56,20 60,15" fill="none" stroke={e.color||C.red} strokeWidth="1.5"/></svg>
                 }
               </div>
@@ -1877,10 +1872,10 @@ function IconoScreen({ deepLinkId }) {
         <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 8px"}}>{c.title}</h2>
         <div style={{fontSize:12, color:C.sub, marginBottom:16}}>{c.context}</div>
         <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData?4:30, textAlign:"center", marginBottom:16}}>
-          {c.imageData && c.isVideo ? (
-            <video src={c.imageData} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
-          ) : c.imageData ? (
-            <ClickableImage src={c.imageData} alt={c.title} style={{borderRadius:10}}/>
+          {(c.imageData||c.imageUrl) && c.isVideo ? (
+            <video src={c.imageData||c.imageUrl} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
+          ) : (c.imageData||c.imageUrl) ? (
+            <ClickableImage src={c.imageData||c.imageUrl} alt={c.title} style={{borderRadius:10}}/>
           ) : (
             <div>
               <div style={{fontSize:60}}>{"🩻"}</div>
@@ -1936,7 +1931,7 @@ function IconoScreen({ deepLinkId }) {
           <Card key={c.id} onClick={()=>setSelected(c)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
               <div style={{background:(c.color||C.blue)+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>
-                {c.imageData ? <img src={c.imageData} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
+                {(c.imageData||c.imageUrl) ? <img src={c.imageData||c.imageUrl} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{c.title}</div>
@@ -2114,13 +2109,13 @@ function AgendaScreen({ deepLinkId }) {
             {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
           </div>
         </Card>
-        {selected.imageData && (
+        {(selected.imageData||selected.imageUrl) && (
           <div style={{borderRadius:12, overflow:"hidden", marginBottom:12}}>
             {selected.imageUrl&&selected.imageUrl.endsWith(".pdf") ? (
-              <a href={selected.imageData} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
+              <a href={selected.imageData||selected.imageUrl} target="_blank" rel="noreferrer" style={{display:"block", background:C.blueLight, borderRadius:12, padding:16, textAlign:"center", color:C.blue, fontWeight:700, fontSize:13, textDecoration:"none"}}>{"📂 Ouvrir le document"}</a>
             ) : (
               <div style={{background:"#f8f9fa", border:"1px solid #e0e0e0", borderRadius:12, overflow:"hidden"}}>
-                <ClickableImage src={selected.imageData} alt={selected.title} style={{borderRadius:12}}/>
+                <ClickableImage src={selected.imageData||selected.imageUrl} alt={selected.title} style={{borderRadius:12}}/>
               </div>
             )}
           </div>
@@ -2373,7 +2368,7 @@ function GestesScreen({ deepLinkId }) {
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{g.title}</div>
                 <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                  {g.tags.slice(0,3).map(t=>(
+                  {(Array.isArray(g.tags) ? g.tags : (typeof g.tags === "string" && g.tags ? g.tags.split(",").map(s=>s.trim()).filter(Boolean) : [])).slice(0,3).map(t=>(
                     <span key={t} style={{fontSize:10, fontWeight:700,
                       background:C.blue+"22", color:C.blue,
                       padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -2439,7 +2434,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           <div>
             <div style={{fontSize:16, fontWeight:800, color:C.text, lineHeight:1.3}}>{geste.title}</div>
             <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:5}}>
-              {geste.tags.map(t=>(
+              {(Array.isArray(geste.tags) ? geste.tags : (typeof geste.tags === "string" && geste.tags ? geste.tags.split(",").map(s=>s.trim()).filter(Boolean) : [])).map(t=>(
                 <span key={t} style={{fontSize:10, fontWeight:700,
                   background:C.blue+"22", color:C.blue,
                   padding:"2px 7px", borderRadius:6}}>{t}</span>
@@ -2483,9 +2478,9 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
       )}
 
       {/* Image principale si disponible */}
-      {geste.imageData && (
+      {(geste.imageData||geste.imageUrl) && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
-          <ClickableImage src={geste.imageData} alt={geste.title} style={{borderRadius:14}}/>
+          <ClickableImage src={geste.imageData||geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
         </div>
       )}
       {geste.credit && (
@@ -2694,8 +2689,8 @@ function DiversScreen({ deepLinkId }) {
             <span style={{fontSize:11, color:C.navy, fontWeight:700}}>{selected.source}</span>
           </div>
         )}
-        {selected.imageData && (
-          <DiversImageViewer src={selected.imageData} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData}/>
+        {(selected.imageData||selected.imageUrl) && (
+          <DiversImageViewer src={selected.imageData||selected.imageUrl} alt={selected.title} isPdf={selected.imageUrl&&selected.imageUrl.endsWith(".pdf")} pdfData={selected.imageData||selected.imageUrl}/>
         )}
         {selected.credit && (
           <div style={{fontSize:10, color:C.sub, fontStyle:"italic", marginBottom:8, paddingLeft:2}}>
@@ -2949,7 +2944,7 @@ function DilutionScreen({ deepLinkId }) {
         </div>
 
         {/* Schema visuel uploadé */}
-        {selected.schemaData && (
+        {(selected.schemaData||selected.schemaUrl) && (
           <div style={{marginBottom:16}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.blue+"18", borderRadius:10, width:34, height:34,
@@ -2957,7 +2952,7 @@ function DilutionScreen({ deepLinkId }) {
               <span style={{fontSize:12, fontWeight:800, color:C.blue, letterSpacing:.5, textTransform:"uppercase"}}>Schéma visuel</span>
             </div>
             <div style={{background:"#0A1628", borderRadius:14, padding:4, overflow:"hidden"}}>
-              <ClickableImage src={selected.schemaData} alt="Schema de dilution" style={{borderRadius:10}}/>
+              <ClickableImage src={selected.schemaData||selected.schemaUrl} alt="Schema de dilution" style={{borderRadius:10}}/>
             </div>
           </div>
         )}
@@ -3001,14 +2996,14 @@ function DilutionScreen({ deepLinkId }) {
         )}
 
         {/* Photo complémentaire */}
-        {selected.photoData && (
+        {(selected.photoData||selected.photoUrl) && (
           <div style={{marginTop:16, marginBottom:12}}>
             <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
               <div style={{background:C.navy+"18", borderRadius:10, width:34, height:34,
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:17}}>{"📷"}</div>
               <span style={{fontSize:12, fontWeight:800, color:C.navy, letterSpacing:.5, textTransform:"uppercase"}}>Photo</span>
             </div>
-            <ClickableImage src={selected.photoData} alt="Photo" style={{borderRadius:12}}/>
+            <ClickableImage src={selected.photoData||selected.photoUrl} alt="Photo" style={{borderRadius:12}}/>
           </div>
         )}
         {selected.medias?.length > 0 && (
