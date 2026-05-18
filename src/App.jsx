@@ -15,6 +15,7 @@ const TABLE_MAP = {
   admin_gestes:       "gestes",
   retex_submissions:  "retex",
   admin_contacts:     "contacts",
+  admin_recoflash:    "reco_flash",
 };
 
 // Requête REST Supabase générique
@@ -58,6 +59,9 @@ function rowToItem(table, row) {
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
+  // Reco Flash : mapping spécifique
+  if ("date_publication" in r) { r.datePublication = r.date_publication; delete r.date_publication; }
+  if ("url_pdf"     in r) { r.urlPdf     = r.url_pdf;     delete r.url_pdf; }
   // Normalise tags : on garde un ARRAY pour que .map() fonctionne partout en lecture
   // (la conversion string→array pour le formulaire d'édition se fait à l'init du form)
   if (!Array.isArray(r.tags)) {
@@ -94,6 +98,9 @@ function itemToRow(table, item) {
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
+  // Reco Flash : mapping spécifique
+  if ("datePublication"  in r) { r.date_publication   = r.datePublication;  delete r.datePublication; }
+  if ("urlPdf"           in r) { r.url_pdf            = r.urlPdf;           delete r.urlPdf; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   return r;
@@ -155,7 +162,7 @@ function DataProvider({ children }) {
   const [store, setStore] = React.useState({
     ecgs: [], imagerie: [], agenda: [],
     divers: [], dilutions: [], gestes: [], retex: [],
-    contacts: [], loaded: false
+    contacts: [], recoflash: [], loaded: false
   });
 
   React.useEffect(() => { loadAll(); }, []);
@@ -206,6 +213,9 @@ function DataProvider({ children }) {
 
     const rc = await safeGet("admin_contacts");
     next.contacts = rc ? JSON.parse(rc.value) : [];
+
+    const rrf = await safeGet("admin_recoflash");
+    next.recoflash = rrf ? JSON.parse(rrf.value) : [];
 
     next.loaded = true;
     setStore(next);
@@ -956,6 +966,8 @@ function HomeScreen({onNav}) {
     {id:"imagerie",   icon:"🖼️", label:"Imagerie",          color:"#9B59B6", bg:"#F3E8FF"},
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
+    {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
+    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
     
@@ -3117,6 +3129,7 @@ function AdminScreen({ onNewItem }) {
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
+  const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"", tags:"" });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
@@ -3124,6 +3137,7 @@ function AdminScreen({ onNewItem }) {
   const [editingD, setEditingD] = useState(null);
   const [editingDil, setEditingDil] = useState(null);
   const [editingG, setEditingG] = useState(null);
+  const [editingRf, setEditingRf] = useState(null);
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
@@ -3137,6 +3151,7 @@ function AdminScreen({ onNewItem }) {
   const customGestes = store.gestes;
   const customRetex = store.retex;
   const customContacts = store.contacts;
+  const customRecoflash = store.recoflash || [];
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(null), 2500); }
 
@@ -3261,6 +3276,23 @@ function AdminScreen({ onNewItem }) {
     }
   }
 
+  async function addRecoflash() {
+    if(!rfForm.titre.trim()) return;
+    const tags = (rfForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    if(editingRf !== null) {
+      const item = {...rfForm, id:editingRf, tags};
+      await updateItem("recoflash","admin_recoflash",item,[]);
+      setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
+      showSaved("Reco modifiée !");
+    } else {
+      const item = {...rfForm, id:Date.now(), tags};
+      await addItem("recoflash","admin_recoflash",item,[]);
+      setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
+      showSaved("Reco ajoutée !");
+      if(onNewItem) onNewItem({id:item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
+    }
+  }
+
   async function deleteItem(storeKey, storageKey, id, setter) {
     if(setter) {
       setter(prev => { const n=prev.filter(x=>x.id!==id); safeSet(storageKey,JSON.stringify(n)); return n; });
@@ -3290,7 +3322,7 @@ function AdminScreen({ onNewItem }) {
       )}
 
       <div style={{display:"flex", gap:6, marginBottom:20, background:"#eef2f7", borderRadius:12, padding:4, overflowX:"auto", WebkitOverflowScrolling:"touch", scrollbarWidth:"none"}}>
-        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
+        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"recoflash",label:"⚡ Reco Flash"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             flexShrink:0, border:"none", borderRadius:9, padding:"8px 10px", cursor:"pointer",
             background:tab===t.id?C.white:"transparent",
@@ -3891,6 +3923,60 @@ function AdminScreen({ onNewItem }) {
         </div>
       )}
 
+      {tab==="recoflash" && (
+        <div>
+          <Card style={{marginBottom:16}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingRf ? "✏️ Modifier la reco" : "+ Nouvelle Reco Flash"}</div>
+
+            <label style={lbl}>Titre * (ex: Prise en charge du sepsis 2024)</label>
+            <input style={inp} placeholder="Titre de la recommandation" value={rfForm.titre} onChange={e=>setRfForm({...rfForm,titre:e.target.value})}/>
+
+            <label style={lbl}>Société savante / Organisme (HAS, SFMU, SFAR, ERC, ANSM…)</label>
+            <input style={inp} placeholder="ex: HAS" value={rfForm.societe} onChange={e=>setRfForm({...rfForm,societe:e.target.value})}/>
+
+            <label style={lbl}>Date de publication</label>
+            <input type="date" style={inp} value={rfForm.datePublication} onChange={e=>setRfForm({...rfForm,datePublication:e.target.value})}/>
+
+            <label style={lbl}>Spécialité / Catégorie (ex: Cardiologie, Infectieux…)</label>
+            <input style={inp} placeholder="ex: Infectieux" value={rfForm.specialite} onChange={e=>setRfForm({...rfForm,specialite:e.target.value})}/>
+
+            <label style={lbl}>URL du PDF officiel (lien direct)</label>
+            <input style={inp} placeholder="https://www.has-sante.fr/..." value={rfForm.urlPdf} onChange={e=>setRfForm({...rfForm,urlPdf:e.target.value})}/>
+
+            <label style={lbl}>Résumé / Points clés</label>
+            <textarea style={{...inp, minHeight:140, fontFamily:"inherit", resize:"vertical"}} placeholder={"- Point clé 1\n- Point clé 2\n- Conduite à tenir..."} value={rfForm.resume} onChange={e=>setRfForm({...rfForm,resume:e.target.value})}/>
+
+            <label style={lbl}>Tags (séparés par espace ou virgule)</label>
+            <input style={inp} placeholder="#sepsis #antibiotique #urgence" value={rfForm.tags} onChange={e=>setRfForm({...rfForm,tags:e.target.value})}/>
+
+            {editingRf && <Btn onClick={()=>{ setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""}); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            <Btn onClick={addRecoflash} color="#0EA5E9" style={{width:"100%"}}>{editingRf ? "✅ Enregistrer les modifications" : "⚡ Ajouter la reco"}</Btn>
+          </Card>
+
+          {customRecoflash.length > 0 && (
+            <div>
+              <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Recos ajoutées ({customRecoflash.length})</div>
+              {customRecoflash.map(r => (
+                <div key={r.id} style={{background:C.white, borderRadius:10, padding:"10px 14px", marginBottom:8,
+                  border:`1px solid ${C.border}`, borderLeft:`4px solid #0EA5E9`,
+                  display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:13, fontWeight:700, color:C.text}}>⚡ {r.titre}</div>
+                    <div style={{fontSize:11, color:C.sub}}>{[r.societe, r.specialite, r.datePublication].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <div style={{display:"flex", gap:6, flexShrink:0}}>
+                    <button onClick={()=>{ setEditingRf(r.id); setRfForm({titre:r.titre||"", societe:r.societe||"", datePublication:r.datePublication||"", specialite:r.specialite||"", urlPdf:r.urlPdf||"", resume:r.resume||"", tags:Array.isArray(r.tags)?r.tags.join(" "):r.tags||""}); window.scrollTo(0,0); }}
+                      style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ if(window.confirm("Supprimer cette reco ?")) deleteItem("recoflash","admin_recoflash",r.id); }}
+                      style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {tab==="annuaire" && (
         <div>
           {/* Formulaire ajout contact */}
@@ -3989,6 +4075,319 @@ function AdminScreen({ onNewItem }) {
       <div style={{marginTop:20, padding:"12px 16px", background:C.amberLight, border:`1px solid ${C.amber}`, borderRadius:12, fontSize:11, color:C.text, lineHeight:1.6}}>
         <div style={{fontWeight:800, color:C.amber, marginBottom:4}}>{"📎 Comment ajouter un fichier ?"}</div>
         Cliquez sur la zone pointillee pour selectionner un PDF ou une image depuis votre appareil. Le fichier est charge directement dans l'application et sauvegarde pour les prochaines sessions.
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// RecoFlashScreen : Recommandations officielles flash
+// ────────────────────────────────────────────────────────────────────────────
+function RecoFlashScreen({ deepLinkId }) {
+  const C = useC();
+  const { store } = useData();
+  const { toggleFavori, isFavori } = useFavoris();
+  const [search, setSearch] = useState("");
+  const [selectedSpec, setSelectedSpec] = useState("all");
+  const [selected, setSelected] = useState(null);
+
+  const list = store.recoflash || [];
+
+  // Tri : plus récent en premier (date_publication desc)
+  const sorted = [...list].sort((a, b) => {
+    const da = a.datePublication || "";
+    const db = b.datePublication || "";
+    return db.localeCompare(da);
+  });
+
+  // Spécialités présentes (pour les chips de filtre)
+  const specialites = Array.from(new Set(sorted.map(r => r.specialite).filter(Boolean))).sort();
+
+  useEffect(() => {
+    if (deepLinkId && sorted.length) {
+      const it = sorted.find(x => x.id === deepLinkId);
+      if (it) setSelected(it);
+    }
+  }, [deepLinkId, store.recoflash]);
+
+  // Filtres recherche + spécialité
+  const filtered = sorted.filter(r => {
+    if (selectedSpec !== "all" && r.specialite !== selectedSpec) return false;
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    const hay = [r.titre, r.societe, r.specialite, r.resume, (Array.isArray(r.tags) ? r.tags : []).join(" ")].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+
+  function formatDate(d) {
+    if (!d) return "";
+    try {
+      const dt = new Date(d);
+      if (isNaN(dt)) return d;
+      return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+    } catch (e) { return d; }
+  }
+
+  // Vue détail
+  if (selected) {
+    return (
+      <div>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+          <BackBtn onClick={() => setSelected(null)}/>
+          <StarBtn filled={isFavori("recoflash", selected.id)} color="#0EA5E9"
+            onToggle={() => toggleFavori({id: selected.id, type: "recoflash", title: selected.titre, icon: "⚡", color: "#0EA5E9", nav: "recoflash"})}/>
+        </div>
+
+        <div style={{background:`linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%)`, borderRadius:16, padding:18, marginTop:8, marginBottom:14, color:"#fff"}}>
+          <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:8}}>
+            <span style={{background:"rgba(255,255,255,.22)", padding:"3px 9px", borderRadius:14, fontSize:11, fontWeight:700}}>⚡ Reco Flash</span>
+            {selected.societe && <span style={{background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:14, fontSize:11, fontWeight:700}}>{selected.societe}</span>}
+          </div>
+          <div style={{fontSize:17, fontWeight:800, lineHeight:1.3, marginBottom:6}}>{selected.titre}</div>
+          <div style={{fontSize:11, opacity:.9}}>
+            {[selected.specialite, formatDate(selected.datePublication)].filter(Boolean).join(" · ")}
+          </div>
+        </div>
+
+        {selected.urlPdf && (
+          <a href={selected.urlPdf} target="_blank" rel="noreferrer"
+             style={{display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+               background:"#0EA5E9", color:"#fff", borderRadius:12, padding:"13px 16px",
+               textDecoration:"none", fontSize:13, fontWeight:800, marginBottom:14,
+               boxShadow:"0 2px 8px rgba(14,165,233,.25)"}}>
+            📂 Ouvrir le document officiel
+          </a>
+        )}
+
+        {selected.resume && (
+          <Card style={{marginBottom:12, borderLeft:`4px solid #0EA5E9`}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#0EA5E9", marginBottom:8, letterSpacing:.5}}>POINTS CLÉS</div>
+            <div style={{fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{selected.resume}</div>
+          </Card>
+        )}
+
+        {Array.isArray(selected.tags) && selected.tags.length > 0 && (
+          <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:12}}>
+            {selected.tags.map((t, i) => (
+              <span key={i} style={{background:"#0EA5E9"+"22", color:"#0284C7", padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Vue liste
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <div style={{background:"#0EA5E9"+"22", borderRadius:12, width:44, height:44,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"⚡"}</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Reco Flash</div>
+          <div style={{fontSize:12, color:C.sub}}>{sorted.length} reco{sorted.length > 1 ? "s" : ""} officielle{sorted.length > 1 ? "s" : ""}</div>
+        </div>
+      </div>
+
+      {/* Barre de recherche */}
+      <div style={{display:"flex", alignItems:"center", gap:10,
+        background:C.white, border:`1px solid ${C.border}`,
+        borderRadius:14, padding:"11px 14px", marginBottom:14}}>
+        <span style={{fontSize:15, opacity:.5}}>{"🔍"}</span>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Rechercher (titre, société, mot-clé)..."
+          style={{flex:1, border:"none", outline:"none", fontSize:13,
+            color:C.text, background:"transparent", fontFamily:"inherit"}}
+        />
+        {search && (
+          <button onClick={() => setSearch("")}
+            style={{background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:15, padding:0}}>✕</button>
+        )}
+      </div>
+
+      {/* Filtres spécialités */}
+      {specialites.length > 0 && (
+        <div style={{display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:4, scrollbarWidth:"none"}}>
+          <button onClick={() => setSelectedSpec("all")} style={{
+            flexShrink:0, border:"none", borderRadius:18, padding:"6px 12px", cursor:"pointer",
+            background: selectedSpec === "all" ? "#0EA5E9" : C.white,
+            color: selectedSpec === "all" ? "#fff" : C.sub,
+            fontWeight: 700, fontSize: 11, whiteSpace:"nowrap",
+            border:`1px solid ${selectedSpec === "all" ? "#0EA5E9" : C.border}`,
+          }}>📋 Toutes</button>
+          {specialites.map(s => (
+            <button key={s} onClick={() => setSelectedSpec(s)} style={{
+              flexShrink:0, border:"none", borderRadius:18, padding:"6px 12px", cursor:"pointer",
+              background: selectedSpec === s ? "#0EA5E9" : C.white,
+              color: selectedSpec === s ? "#fff" : C.sub,
+              fontWeight: 700, fontSize: 11, whiteSpace:"nowrap",
+              border:`1px solid ${selectedSpec === s ? "#0EA5E9" : C.border}`,
+            }}>{s}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Liste */}
+      <div style={{display:"flex", flexDirection:"column", gap:10}}>
+        {filtered.map(r => (
+          <button key={r.id} onClick={() => setSelected(r)}
+            style={{background:C.white, border:`1px solid ${C.border}`,
+              borderRadius:16, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+              borderLeft:`4px solid #0EA5E9`}}>
+            <div style={{display:"flex", alignItems:"flex-start", gap:12}}>
+              <div style={{background:"#0EA5E9"+"15", borderRadius:10,
+                width:42, height:42, display:"flex", alignItems:"center",
+                justifyContent:"center", fontSize:20, flexShrink:0}}>{"⚡"}</div>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:4, lineHeight:1.3}}>{r.titre}</div>
+                <div style={{fontSize:11, color:C.sub, marginBottom:4}}>
+                  {[r.societe, r.specialite, formatDate(r.datePublication)].filter(Boolean).join(" · ")}
+                </div>
+                {Array.isArray(r.tags) && r.tags.length > 0 && (
+                  <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:6}}>
+                    {r.tags.slice(0, 3).map((t, i) => (
+                      <span key={i} style={{fontSize:10, fontWeight:700,
+                        background:"#0EA5E9"+"15", color:"#0284C7",
+                        padding:"2px 7px", borderRadius:6}}>{t}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
+            </div>
+          </button>
+        ))}
+
+        {filtered.length === 0 && (
+          <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+            <div style={{fontSize:48, marginBottom:12}}>⚡</div>
+            <div style={{fontSize:14, fontWeight:700, color:C.navy, marginBottom:6}}>
+              {search || selectedSpec !== "all" ? "Aucun résultat" : "Aucune reco pour le moment"}
+            </div>
+            <div style={{fontSize:12, lineHeight:1.5}}>
+              {search || selectedSpec !== "all"
+                ? "Essayez d'autres mots-clés ou changez le filtre"
+                : "Ajoutez vos premières recommandations depuis l'Éditeur de fiches"}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ScoresScreen : Calculateurs cliniques (structure prête à recevoir les scores)
+// ────────────────────────────────────────────────────────────────────────────
+const SCORES_LIST = [
+  // Les calculateurs seront ajoutés un par un ici
+  // Exemple de structure pour quand on ajoutera Glasgow :
+  // { id:"glasgow", category:"neuro", title:"Score de Glasgow", subtitle:"Évaluation du coma (GCS)", icon:"🧠", color:"#9B59B6", tags:["#neuro","#coma"] },
+];
+
+const SCORES_CATEGORIES = [
+  { id:"all",    label:"Tous",        icon:"📋", color:"#0D9488" },
+  { id:"urg",    label:"Urgences",    icon:"🚨", color:"#DC2626" },
+  { id:"cardio", label:"Cardio",      icon:"❤️", color:"#2563EB" },
+  { id:"respi",  label:"Respiratoire", icon:"🫁", color:"#0284C7" },
+  { id:"neuro",  label:"Neuro",       icon:"🧠", color:"#9B59B6" },
+  { id:"infect", label:"Infectieux",  icon:"🦠", color:"#EA580C" },
+  { id:"pedia",  label:"Pédiatrie",   icon:"👶", color:"#EC4899" },
+  { id:"autres", label:"Autres",      icon:"⚙️", color:"#6B7280" },
+];
+
+function ScoresScreen() {
+  const C = useC();
+  const [selectedCat, setSelectedCat] = useState("all");
+  const [selected, setSelected] = useState(null);
+
+  const filtered = selectedCat === "all"
+    ? SCORES_LIST
+    : SCORES_LIST.filter(s => s.category === selectedCat);
+
+  // Routing vers le calculateur sélectionné
+  if (selected) {
+    // Les calculateurs seront branchés ici un par un
+    // Exemple : if (selected.id === "glasgow") return <GlasgowCalculator onBack={() => setSelected(null)}/>;
+    return (
+      <div>
+        <BackBtn onClick={() => setSelected(null)}/>
+        <Card style={{marginTop:16, textAlign:"center", padding:30}}>
+          <div style={{fontSize:48, marginBottom:12}}>{selected.icon}</div>
+          <div style={{fontSize:16, fontWeight:800, color:C.navy, marginBottom:8}}>{selected.title}</div>
+          <div style={{fontSize:13, color:C.sub}}>Calculateur en cours d'intégration</div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Vue liste
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <div style={{background:"#0D9488"+"22", borderRadius:12, width:44, height:44,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"🧮"}</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Scores cliniques</div>
+          <div style={{fontSize:12, color:C.sub}}>{SCORES_LIST.length} calculateur{SCORES_LIST.length > 1 ? "s" : ""} disponible{SCORES_LIST.length > 1 ? "s" : ""}</div>
+        </div>
+      </div>
+
+      {/* Filtres catégories */}
+      <div style={{display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:4, scrollbarWidth:"none"}}>
+        {SCORES_CATEGORIES.map(cat => {
+          const count = cat.id === "all" ? SCORES_LIST.length : SCORES_LIST.filter(s => s.category === cat.id).length;
+          if (cat.id !== "all" && count === 0) return null;
+          return (
+            <button key={cat.id} onClick={() => setSelectedCat(cat.id)} style={{
+              flexShrink:0, border:"none", borderRadius:18, padding:"6px 12px", cursor:"pointer",
+              background: selectedCat === cat.id ? cat.color : C.white,
+              color: selectedCat === cat.id ? "#fff" : C.sub,
+              fontWeight: 700, fontSize: 11, whiteSpace:"nowrap",
+              border:`1px solid ${selectedCat === cat.id ? cat.color : C.border}`,
+              display:"flex", alignItems:"center", gap:4,
+            }}>
+              <span>{cat.icon}</span>
+              <span>{cat.label}</span>
+              <span style={{opacity:.7, fontSize:10}}>({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Liste des scores */}
+      <div style={{display:"flex", flexDirection:"column", gap:10}}>
+        {filtered.map(s => (
+          <button key={s.id} onClick={() => setSelected(s)}
+            style={{background:C.white, border:`1px solid ${C.border}`,
+              borderRadius:16, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+              borderLeft:`4px solid ${s.color}`}}>
+            <div style={{display:"flex", alignItems:"center", gap:12}}>
+              <div style={{background:s.color+"15", borderRadius:12,
+                width:46, height:46, display:"flex", alignItems:"center",
+                justifyContent:"center", fontSize:22, flexShrink:0}}>{s.icon}</div>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:3}}>{s.title}</div>
+                <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
+              </div>
+              <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
+            </div>
+          </button>
+        ))}
+
+        {filtered.length === 0 && (
+          <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+            <div style={{fontSize:48, marginBottom:12}}>🧮</div>
+            <div style={{fontSize:14, fontWeight:700, color:C.navy, marginBottom:6}}>
+              Aucun score pour le moment
+            </div>
+            <div style={{fontSize:12, lineHeight:1.5}}>
+              Les calculateurs (Glasgow, GBS, Wells, qSOFA…) seront ajoutés un par un dans cette section.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4141,6 +4540,8 @@ function AppInner() {
         {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink}/>}
+        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion}/>}
+        {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif}/>}
       </div>
