@@ -1293,10 +1293,15 @@ const REACTIONS = [
 ];
 
 // ── Formulaire d'ajout RETEX/Récit ────────────────────────────────────────────
-function RetexSubmitForm({ onSubmit, onCancel }) {
+function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   const C = useC();
-  const [tab, setTab] = useState("retex"); // retex | recit
-  const [form, setForm] = useState({
+  const isEdit = !!initial;
+  const [tab, setTab] = useState(initial?.type || "retex"); // retex | recit
+  const [form, setForm] = useState(initial ? {
+    ...initial,
+    // Reconvertit tags array → string pour l'input
+    tags: Array.isArray(initial.tags) ? initial.tags.join(" ") : (initial.tags || ""),
+  } : {
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
     recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
@@ -1329,7 +1334,7 @@ function RetexSubmitForm({ onSubmit, onCancel }) {
     <div style={{animation:"fadeIn .2s ease"}}>
       {/* Header */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
-        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>📝 Nouvelle publication</div>
+        <div style={{fontSize:17, fontWeight:900, color:C.navy}}>{isEdit ? "✏️ Modifier la publication" : "📝 Nouvelle publication"}</div>
         <button onClick={onCancel} style={{background:"none", border:"none", color:C.sub, fontSize:22, cursor:"pointer"}}>✕</button>
       </div>
 
@@ -1424,14 +1429,14 @@ function RetexSubmitForm({ onSubmit, onCancel }) {
         fontWeight:800, color:"#fff", cursor:form.title.trim()?"pointer":"not-allowed",
         marginTop:4,
       }}>
-        {saving?"Enregistrement...":"✅ Publier"}
+        {saving?"Enregistrement...":(isEdit ? "✅ Enregistrer les modifications" : "✅ Publier")}
       </button>
     </div>
   );
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
   const [commentText, setCommentText] = useState("");
@@ -1595,6 +1600,13 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete }) {
         </div>
       </div>
 
+      {/* Modifier */}
+      {onEdit && (
+        <button onClick={()=>onEdit(item)} style={{width:"100%", background:"#E8A82E", border:"none", borderRadius:10, padding:"10px", fontSize:11, fontWeight:800, color:"#fff", cursor:"pointer", marginTop:10, marginBottom:6}}>
+          ✏️ Modifier cette publication
+        </button>
+      )}
+
       {/* Supprimer */}
       <button onClick={()=>onDelete(item.id)} style={{width:"100%", background:"none", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer", marginTop:4}}>
         🗑 Supprimer cette publication
@@ -1610,6 +1622,7 @@ function RetexScreen({ deepLinkId }) {
   const items = store.retex;
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("tous");
   const [search, setSearch] = useState("");
 
@@ -1617,6 +1630,14 @@ function RetexScreen({ deepLinkId }) {
     const tags = (form.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...form, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
     await addRetexItem(item);
+    return item;
+  }
+
+  async function submitEdit(form) {
+    const tags = (form.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    const item = {...editing, ...form, tags};
+    await updateRetex(item);
+    setSelected(item);
     return item;
   }
 
@@ -1667,6 +1688,14 @@ function RetexScreen({ deepLinkId }) {
     (x.tags||[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
   );
 
+  if(editing) return (
+    <RetexSubmitForm
+      initial={editing}
+      onSubmit={async (form)=>{ await submitEdit(form); setEditing(null); }}
+      onCancel={()=>setEditing(null)}
+    />
+  );
+
   if(showForm) return (
     <RetexSubmitForm
       onSubmit={async (form)=>{ await submit(form); setShowForm(false); }}
@@ -1681,6 +1710,7 @@ function RetexScreen({ deepLinkId }) {
       onReaction={toggleReaction}
       onComment={addComment}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
+      onEdit={(it)=>{ setEditing(it); }}
     />
   );
 
@@ -3176,7 +3206,7 @@ function AdminScreen({ onNewItem }) {
   const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("ecg");
   const [saved, setSaved] = useState(null);
-  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" });
+  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
   const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
@@ -3214,15 +3244,16 @@ function AdminScreen({ onNewItem }) {
     if(!eForm.title.trim()) return;
     const tags = eForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
+    const ecgReset = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:"",hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null};
     if(editingE !== null) {
       const item = {...eForm, id:editingE, tags, points, color:"#E05260"};
-      await updateItem("ecgs","admin_ecgs",item,["image"]);
-      setEditingE(null); setEForm({title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await updateItem("ecgs","admin_ecgs",item,["image","image2"]);
+      setEditingE(null); setEForm(ecgReset);
       showSaved("ECG modifié !");
     } else {
       const item = {...eForm, id:Date.now(), tags, points, revealed:false, color:"#E05260"};
-      await addItem("ecgs","admin_ecgs",item,["image"]);
-      setEForm({title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      await addItem("ecgs","admin_ecgs",item,["image","image2"]);
+      setEForm(ecgReset);
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
@@ -3408,12 +3439,58 @@ function AdminScreen({ onNewItem }) {
                 const file = e.target.files[0];
                 if(!file) return;
                 const reader = new FileReader();
-                reader.onload = ev => {
-                  setEForm(f => ({...f, imageUrl:file.name, imageData:ev.target.result}));
+                reader.onload = async ev => {
+                  const dataUrl = ev.target.result;
+                  setEForm(f => ({...f, imageUrl:"⏳ Upload en cours...", imageData:dataUrl}));
+                  try {
+                    const publicUrl = await uploadMedia(file.name, dataUrl);
+                    setEForm(f => ({...f, imageUrl: publicUrl, imageData: dataUrl}));
+                  } catch(err) {
+                    alert("Erreur upload image : " + err.message);
+                    setEForm(f => ({...f, imageUrl:"", imageData:null}));
+                  }
                 };
                 reader.readAsDataURL(file);
               }}/>
             </label>
+
+            {/* 2e ECG (optionnel, avant révélation) */}
+            <label style={{display:"flex", alignItems:"center", gap:8, marginTop:6, marginBottom:10, cursor:"pointer", fontSize:12, fontWeight:700, color:C.navy}}>
+              <input type="checkbox" checked={!!eForm.hasSecondEcg} onChange={e=>setEForm(f=>({...f, hasSecondEcg:e.target.checked}))} style={{width:18, height:18, accentColor:C.red, cursor:"pointer"}}/>
+              ➕ Ajouter un 2e ECG (affiché avant la révélation)
+            </label>
+            {eForm.hasSecondEcg && (
+              <div style={{background:"#F8FAFC", border:`1px dashed ${C.border}`, borderRadius:10, padding:"12px", marginBottom:10}}>
+                <label style={lbl}>Titre du 2e ECG (ex: « ECG après 20 min »)</label>
+                <input style={inp} placeholder="ECG de contrôle / dérivations postérieures…" value={eForm.secondTitle||""} onChange={e=>setEForm({...eForm, secondTitle:e.target.value})}/>
+                <label style={lbl}>Image du 2e ECG</label>
+                <label style={{display:"flex", alignItems:"center", gap:10, background:eForm.imageUrl2?"#E8F7F1":"#F0F4F8", border:`2px dashed ${eForm.imageUrl2?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:0}}>
+                  <span style={{fontSize:22}}>📎</span>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:12, fontWeight:700, color:eForm.imageUrl2?C.green:C.navy, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{eForm.imageUrl2 ? (eForm.imageUrl2.startsWith("http")?"Image uploadée ✓":eForm.imageUrl2) : "Cliquer pour choisir une image"}</div>
+                    <div style={{fontSize:10, color:C.sub}}>Formats acceptés : .jpg, .png</div>
+                  </div>
+                  {eForm.imageUrl2 && <span style={{color:C.green, fontWeight:800, fontSize:16}}>{"✓"}</span>}
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = async ev => {
+                      const dataUrl = ev.target.result;
+                      setEForm(f => ({...f, imageUrl2:"⏳ Upload en cours...", imageData2:dataUrl}));
+                      try {
+                        const publicUrl = await uploadMedia(file.name, dataUrl);
+                        setEForm(f => ({...f, imageUrl2: publicUrl, imageData2: dataUrl}));
+                      } catch(err) {
+                        alert("Erreur upload 2e image : " + err.message);
+                        setEForm(f => ({...f, imageUrl2:"", imageData2:null}));
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}/>
+                </label>
+              </div>
+            )}
             <label style={lbl}>Question pedagogique</label>
             <input style={inp} placeholder="Quel est votre diagnostic ?" value={eForm.question} onChange={e=>setEForm({...eForm,question:e.target.value})}/>
             <label style={lbl}>Interpretation</label>
@@ -3430,7 +3507,7 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#SCA #Arythmie #Pediatrie" value={eForm.tags} onChange={e=>setEForm({...eForm,tags:e.target.value})}/>
-            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addEcg} color={C.red} style={{width:"100%"}}>{editingE ? "✅ Enregistrer les modifications" : "Ajouter l'ECG"}</Btn>
           </Card>
           {customEcgs.length>0 && (
