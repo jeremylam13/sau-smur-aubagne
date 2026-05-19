@@ -249,6 +249,24 @@ function DataProvider({ children }) {
 
   async function addItem(storeKey, storageKey, item, fileFields = []) {
     await saveFiles(item, fileFields);
+    // Si la clé pointe vers une table Supabase → vrai INSERT POST
+    if (TABLE_MAP[storageKey]) {
+      const row = itemToRow(TABLE_MAP[storageKey], item);
+      try {
+        const rows = await supaFetch("/" + TABLE_MAP[storageKey], "POST", row);
+        const newItem = rowToItem(TABLE_MAP[storageKey], Array.isArray(rows) ? rows[0] : rows);
+        setStore(prev => ({
+          ...prev,
+          [storeKey]: [...(prev[storeKey] || []), newItem],
+        }));
+        return newItem;
+      } catch(e) {
+        console.error("addItem Supabase", storageKey, e);
+        alert("Erreur lors de l'enregistrement : " + e.message);
+        throw e;
+      }
+    }
+    // Fallback localStorage (clés non mappées)
     const newItem = { ...item, id: item.id || Date.now() };
     const exists = store[storeKey].find(x => x.id === newItem.id);
     const updated = exists
@@ -258,12 +276,48 @@ function DataProvider({ children }) {
   }
 
   async function removeItem(storeKey, storageKey, id, stripFields = []) {
+    // Si la clé pointe vers une table Supabase → vrai DELETE
+    if (TABLE_MAP[storageKey]) {
+      try {
+        await supaFetch("/" + TABLE_MAP[storageKey] + "?id=eq." + encodeURIComponent(id), "DELETE");
+        setStore(prev => ({
+          ...prev,
+          [storeKey]: (prev[storeKey] || []).filter(x => x.id !== id),
+        }));
+        return;
+      } catch(e) {
+        console.error("removeItem Supabase", storageKey, e);
+        alert("Erreur lors de la suppression : " + e.message);
+        throw e;
+      }
+    }
     const updated = store[storeKey].filter(x => x.id !== id);
     await save(storageKey, storeKey, updated, stripFields);
   }
 
   async function updateItem(storeKey, storageKey, item, fileFields = []) {
     await saveFiles(item, fileFields);
+    // Si la clé pointe vers une table Supabase → vrai PATCH
+    if (TABLE_MAP[storageKey]) {
+      const row = itemToRow(TABLE_MAP[storageKey], item);
+      try {
+        const rows = await supaFetch(
+          "/" + TABLE_MAP[storageKey] + "?id=eq." + encodeURIComponent(item.id),
+          "PATCH",
+          row
+        );
+        const updatedItem = rowToItem(TABLE_MAP[storageKey], Array.isArray(rows) ? rows[0] : rows);
+        setStore(prev => ({
+          ...prev,
+          [storeKey]: (prev[storeKey] || []).map(x => x.id === item.id ? (updatedItem || item) : x),
+        }));
+        return updatedItem;
+      } catch(e) {
+        console.error("updateItem Supabase", storageKey, e);
+        alert("Erreur lors de la mise à jour : " + e.message);
+        throw e;
+      }
+    }
     const updated = store[storeKey].map(x => x.id === item.id ? item : x);
     await save(storageKey, storeKey, updated, fileFields.map(f => f + "Data"));
   }
@@ -4281,10 +4335,7627 @@ function RecoFlashScreen({ deepLinkId }) {
 // ────────────────────────────────────────────────────────────────────────────
 // ScoresScreen : Calculateurs cliniques (structure prête à recevoir les scores)
 // ────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// GlasgowCalculator : Score de Glasgow (GCS) - Évaluation du coma
+// ────────────────────────────────────────────────────────────────────────────
+function GlasgowCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#9B59B6";
+
+  // Par défaut : patient "normal" → 15/15
+  const [yeux, setYeux] = useState(4);
+  const [verbal, setVerbal] = useState(5);
+  const [moteur, setMoteur] = useState(6);
+
+  const total = yeux + verbal + moteur;
+
+  // Sévérité avec code couleur du thème
+  let severity, sevColor, sevBg, sevLabel;
+  if (total >= 13)      { severity = "léger";  sevColor = C.green; sevBg = C.greenLight; sevLabel = "TC léger"; }
+  else if (total >= 9)  { severity = "modéré"; sevColor = C.amber; sevBg = C.amberLight; sevLabel = "TC modéré"; }
+  else                  { severity = "grave";  sevColor = C.red;   sevBg = C.redLight;   sevLabel = "TC grave"; }
+
+  // Interprétation clinique adaptée
+  let interpretation;
+  if (total === 15)     interpretation = "Conscience normale. Surveillance standard.";
+  else if (total >= 13) interpretation = "Atteinte légère. Surveillance neurologique rapprochée.";
+  else if (total >= 9)  interpretation = "Atteinte modérée. Imagerie cérébrale, surveillance en USI.";
+  else                  interpretation = "Coma. Indication d'intubation orotrachéale (IOT), sédation et scanner cérébral en urgence.";
+
+  // Options Yeux (Y)
+  const Y_OPTIONS = [
+    { value: 4, label: "Spontanée" },
+    { value: 3, label: "À l'ordre verbal" },
+    { value: 2, label: "À la douleur" },
+    { value: 1, label: "Aucune" },
+  ];
+  // Options Verbal (V)
+  const V_OPTIONS = [
+    { value: 5, label: "Orientée" },
+    { value: 4, label: "Confuse" },
+    { value: 3, label: "Inappropriée" },
+    { value: 2, label: "Incompréhensible (sons)" },
+    { value: 1, label: "Aucune" },
+  ];
+  // Options Moteur (M)
+  const M_OPTIONS = [
+    { value: 6, label: "Obéit aux ordres" },
+    { value: 5, label: "Localise la douleur" },
+    { value: 4, label: "Évitement (flexion)" },
+    { value: 3, label: "Flexion stéréotypée (décortication)" },
+    { value: 2, label: "Extension stéréotypée (décérébration)" },
+    { value: 1, label: "Aucune" },
+  ];
+
+  function reset() {
+    setYeux(4); setVerbal(5); setMoteur(6);
+  }
+
+  // Bouton d'option réutilisable
+  function OptionBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          padding: "11px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          fontSize: 13,
+          fontWeight: isSelected ? 800 : 600,
+          color: isSelected ? color : C.text,
+          flex: 1,
+        }}>{option.label}</span>
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 28, height: 28,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 13,
+          fontWeight: 800,
+          flexShrink: 0,
+        }}>{option.value}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #7E3FA0 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🧠</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Glasgow</div>
+            <div style={{fontSize: 11, opacity: .85}}>Glasgow Coma Scale (GCS)</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section Yeux (Y) */}
+      <div style={{marginBottom: 14}}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 8,
+        }}>
+          <span style={{
+            background: COLOR + "18",
+            color: COLOR,
+            borderRadius: 8,
+            padding: "3px 9px",
+            fontSize: 13,
+            fontWeight: 900,
+          }}>Y</span>
+          <span style={{fontSize: 13, fontWeight: 800, color: C.navy}}>Ouverture des yeux</span>
+          <span style={{marginLeft: "auto", fontSize: 12, fontWeight: 700, color: COLOR}}>{yeux}/4</span>
+        </div>
+        {Y_OPTIONS.map(o => (
+          <OptionBtn key={o.value} option={o} selected={yeux} onSelect={setYeux} color={COLOR}/>
+        ))}
+      </div>
+
+      {/* Section Verbal (V) */}
+      <div style={{marginBottom: 14}}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 8,
+        }}>
+          <span style={{
+            background: COLOR + "18",
+            color: COLOR,
+            borderRadius: 8,
+            padding: "3px 9px",
+            fontSize: 13,
+            fontWeight: 900,
+          }}>V</span>
+          <span style={{fontSize: 13, fontWeight: 800, color: C.navy}}>Réponse verbale</span>
+          <span style={{marginLeft: "auto", fontSize: 12, fontWeight: 700, color: COLOR}}>{verbal}/5</span>
+        </div>
+        {V_OPTIONS.map(o => (
+          <OptionBtn key={o.value} option={o} selected={verbal} onSelect={setVerbal} color={COLOR}/>
+        ))}
+      </div>
+
+      {/* Section Moteur (M) */}
+      <div style={{marginBottom: 14}}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 8,
+        }}>
+          <span style={{
+            background: COLOR + "18",
+            color: COLOR,
+            borderRadius: 8,
+            padding: "3px 9px",
+            fontSize: 13,
+            fontWeight: 900,
+          }}>M</span>
+          <span style={{fontSize: 13, fontWeight: 800, color: C.navy}}>Réponse motrice</span>
+          <span style={{marginLeft: "auto", fontSize: 12, fontWeight: 700, color: COLOR}}>{moteur}/6</span>
+        </div>
+        {M_OPTIONS.map(o => (
+          <OptionBtn key={o.value} option={o} selected={moteur} onSelect={setMoteur} color={COLOR}/>
+        ))}
+      </div>
+
+      {/* Carte résultat (en bas, après évaluation Y/V/M) */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE TOTAL</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 15</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              Y{yeux} · V{verbal} · M{moteur}
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser (15/15)
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>13–15</b> : traumatisme crânien léger<br/>
+        • <b>9–12</b> : traumatisme crânien modéré<br/>
+        • <b>≤ 8</b> : traumatisme crânien grave — <b>indication d'IOT</b><br/>
+        • Si un item non évaluable (IOT, œdème palpébral...) : noter "NT" (non testable)
+      </div>
+    </div>
+  );
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// ShockIndexCalculator : Indice de choc (Shock Index = FC / PAS)
+// ────────────────────────────────────────────────────────────────────────────
+function ShockIndexCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#DC2626";
+
+  const [fc, setFc] = useState("");
+  const [pas, setPas] = useState("");
+
+  const fcNum = parseFloat(fc);
+  const pasNum = parseFloat(pas);
+  const valid = !isNaN(fcNum) && !isNaN(pasNum) && fcNum > 0 && pasNum > 0;
+  const si = valid ? fcNum / pasNum : null;
+
+  // Paliers cliniques
+  let severity, sevColor, sevBg, sevLabel, interpretation;
+  if (si === null) {
+    severity = null;
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    interpretation = "Saisis la FC et la PAS pour calculer l'indice de choc.";
+  } else if (si < 0.7) {
+    severity = "normal";
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Normal";
+    interpretation = "Hémodynamique stable. Surveillance standard.";
+  } else if (si < 1.0) {
+    severity = "pre-choc";
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Pré-choc";
+    interpretation = "Indice de choc élevé. Surveiller, rechercher cause (hémorragie occulte, sepsis, déshydratation). Bilan + remplissage selon contexte.";
+  } else if (si < 1.4) {
+    severity = "choc";
+    sevColor = COLOR;
+    sevBg = C.redLight;
+    sevLabel = "Choc";
+    interpretation = "État de choc probable. Mise en condition urgente : 2 VVP gros calibre, remplissage, bilan complet (lactates, NFS, groupe-RAI). Rechercher étiologie.";
+  } else {
+    severity = "choc-severe";
+    sevColor = "#7F1D1D";
+    sevBg = C.redLight;
+    sevLabel = "Choc sévère";
+    interpretation = "Choc sévère / hémorragie massive probable. Transfusion massive à envisager (PFC + CGR + plaquettes), amines, déchoc, bloc en urgence si saignement actif.";
+  }
+
+  function reset() {
+    setFc("");
+    setPas("");
+  }
+
+  // Style commun input numérique
+  const numInputStyle = {
+    width: "100%",
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 12,
+    padding: "14px 16px",
+    fontSize: 24,
+    fontWeight: 800,
+    color: C.text,
+    background: C.white,
+    boxSizing: "border-box",
+    outline: "none",
+    textAlign: "center",
+    fontFamily: "inherit",
+    MozAppearance: "textfield",
+  };
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #991B1B 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🫀</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Shock Index</div>
+            <div style={{fontSize: 11, opacity: .85}}>Indice de choc = FC / PAS</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Inputs FC et PAS */}
+      <div style={{display: "flex", gap: 10, marginBottom: 14}}>
+        <div style={{flex: 1}}>
+          <label style={{
+            display: "block",
+            fontSize: 11,
+            fontWeight: 800,
+            color: C.sub,
+            letterSpacing: .5,
+            marginBottom: 6,
+            textAlign: "center",
+          }}>FC (bpm)</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            placeholder="—"
+            value={fc}
+            onChange={e => setFc(e.target.value)}
+            style={numInputStyle}
+          />
+        </div>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          paddingTop: 24,
+          fontSize: 20,
+          fontWeight: 900,
+          color: C.sub,
+        }}>÷</div>
+        <div style={{flex: 1}}>
+          <label style={{
+            display: "block",
+            fontSize: 11,
+            fontWeight: 800,
+            color: C.sub,
+            letterSpacing: .5,
+            marginBottom: 6,
+            textAlign: "center",
+          }}>PAS (mmHg)</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            placeholder="—"
+            value={pas}
+            onChange={e => setPas(e.target.value)}
+            style={numInputStyle}
+          />
+        </div>
+      </div>
+
+      {/* Échelle visuelle des paliers avec curseur */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "14px 14px 12px",
+        marginBottom: 14,
+      }}>
+        <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 14}}>PALIERS</div>
+
+        {/* Barre + curseur (l'échelle va de 0 à 2.0) */}
+        <div style={{position: "relative", marginBottom: 8, paddingTop: 14}}>
+          {/* Curseur (triangle + bulle de valeur) */}
+          {si !== null && (
+            <div style={{
+              position: "absolute",
+              top: 0,
+              left: `${Math.min(Math.max(si / 2.0, 0), 1) * 100}%`,
+              transform: "translateX(-50%)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              transition: "left .25s ease-out",
+              pointerEvents: "none",
+            }}>
+              <div style={{
+                background: sevColor,
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 900,
+                padding: "2px 8px",
+                borderRadius: 10,
+                boxShadow: "0 2px 6px rgba(0,0,0,.15)",
+                whiteSpace: "nowrap",
+              }}>{si.toFixed(2)}</div>
+              <div style={{
+                width: 0, height: 0,
+                borderLeft: "5px solid transparent",
+                borderRight: "5px solid transparent",
+                borderTop: `6px solid ${sevColor}`,
+                marginTop: -1,
+              }}/>
+            </div>
+          )}
+
+          {/* Barre colorée */}
+          <div style={{display: "flex", gap: 0, height: 10, borderRadius: 5, overflow: "hidden"}}>
+            <div style={{flex: 0.7, background: C.green}}/>
+            <div style={{flex: 0.3, background: C.amber}}/>
+            <div style={{flex: 0.4, background: COLOR}}/>
+            <div style={{flex: 0.3, background: "#7F1D1D"}}/>
+          </div>
+
+          {/* Graduations sous la barre */}
+          <div style={{position: "relative", height: 14, marginTop: 4}}>
+            {[
+              {val: 0,    pos: 0},
+              {val: 0.7,  pos: 0.7 / 2.0},
+              {val: 1.0,  pos: 1.0 / 2.0},
+              {val: 1.4,  pos: 1.4 / 2.0},
+              {val: 2.0,  pos: 1},
+            ].map(g => (
+              <div key={g.val} style={{
+                position: "absolute",
+                left: `${g.pos * 100}%`,
+                transform: "translateX(-50%)",
+                fontSize: 9,
+                fontWeight: 700,
+                color: C.sub,
+              }}>{g.val}</div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{fontSize: 11, lineHeight: 1.5, color: C.text, marginTop: 4}}>
+          <b style={{color: C.green}}>&lt; 0.7</b> Normal · <b style={{color: C.amber}}>0.7–1.0</b> Pré-choc · <b style={{color: COLOR}}>1.0–1.4</b> Choc · <b style={{color: "#7F1D1D"}}>&gt; 1.4</b> Choc sévère
+        </div>
+      </div>
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SHOCK INDEX</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>
+                {si !== null ? si.toFixed(2) : "—"}
+              </span>
+            </div>
+            {valid && (
+              <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+                {fcNum} / {pasNum}
+              </div>
+            )}
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • Particulièrement utile en <b>traumato</b> (détection précoce de l'hémorragie occulte)<br/>
+        • Sensible chez le <b>jeune adulte</b> qui peut maintenir longtemps une PAS normale malgré un saignement actif<br/>
+        • <b>Modified SI</b> (mSI = FC / PAM) et <b>Age SI</b> (SI × âge) sont parfois plus précis chez le sujet âgé<br/>
+        • Un SI ≥ 1.0 chez le traumatisé doit faire <b>activer le protocole hémorragie massive</b>
+      </div>
+    </div>
+  );
+}
+
+// Style des boutons preset (déclaré ici pour réutilisation)
+// (supprimé : section exemples cliniques retirée)
+
+// ────────────────────────────────────────────────────────────────────────────
+// ApgarCalculator : Score d'Apgar (adaptation néonatale)
+// Évaluation à 1 minute, 5 minutes, et éventuellement 10 minutes
+// ────────────────────────────────────────────────────────────────────────────
+function ApgarCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#EC4899";
+
+  // État pour chaque temps : null = non évalué
+  // 5 critères : apparence (A), pouls (P), grimace (G), activité (A), respiration (R)
+  const emptyEval = { apparence: null, pouls: null, grimace: null, activite: null, respiration: null };
+  const [eval1, setEval1] = useState({...emptyEval});
+  const [eval5, setEval5] = useState({...emptyEval});
+  const [eval10, setEval10] = useState({...emptyEval});
+  const [show10, setShow10] = useState(false);
+  const [activeTime, setActiveTime] = useState("1"); // "1", "5", "10"
+
+  // Définition des 5 critères APGAR
+  const CRITERIA = [
+    {
+      key: "apparence",
+      letter: "A",
+      label: "Apparence (coloration)",
+      options: [
+        { value: 0, label: "Cyanose totale ou pâleur" },
+        { value: 1, label: "Cyanose des extrémités, tronc rose" },
+        { value: 2, label: "Entièrement rose" },
+      ],
+    },
+    {
+      key: "pouls",
+      letter: "P",
+      label: "Pouls (fréquence cardiaque)",
+      options: [
+        { value: 0, label: "Absent" },
+        { value: 1, label: "< 100 bpm" },
+        { value: 2, label: "≥ 100 bpm" },
+      ],
+    },
+    {
+      key: "grimace",
+      letter: "G",
+      label: "Grimace (réactivité à la stimulation)",
+      options: [
+        { value: 0, label: "Aucune réaction" },
+        { value: 1, label: "Grimace, faible mouvement" },
+        { value: 2, label: "Cri vif, toux, éternuement" },
+      ],
+    },
+    {
+      key: "activite",
+      letter: "A",
+      label: "Activité (tonus musculaire)",
+      options: [
+        { value: 0, label: "Hypotonie, flasque" },
+        { value: 1, label: "Légère flexion des extrémités" },
+        { value: 2, label: "Bonne flexion, mouvements actifs" },
+      ],
+    },
+    {
+      key: "respiration",
+      letter: "R",
+      label: "Respiration",
+      options: [
+        { value: 0, label: "Absente" },
+        { value: 1, label: "Lente, irrégulière, gasps" },
+        { value: 2, label: "Régulière, cri vigoureux" },
+      ],
+    },
+  ];
+
+  // Calcul du total pour une évaluation
+  function totalOf(ev) {
+    const values = Object.values(ev);
+    if (values.some(v => v === null)) return null; // incomplet
+    return values.reduce((a, b) => a + b, 0);
+  }
+
+  // Sévérité d'un total
+  function severityOf(total) {
+    if (total === null) return { label: "—", color: C.sub, bg: "#F1F5F9", interp: "Cote les 5 critères pour obtenir le score." };
+    if (total >= 7)     return { label: "Bonne adaptation",   color: C.green, bg: C.greenLight, interp: "Adaptation néonatale satisfaisante. Soins de routine." };
+    if (total >= 4)     return { label: "Modérément déprimé", color: C.amber, bg: C.amberLight, interp: "Adaptation médiocre. Stimulation, désobstruction des VAS, ventilation au masque si besoin. Surveillance rapprochée." };
+    return                     { label: "Sévèrement déprimé", color: COLOR,   bg: C.redLight,   interp: "Détresse néonatale sévère. Réanimation immédiate (ventilation, MCE si FC < 60 bpm, accès vasculaire ombilical). Appel pédiatre/réanimateur." };
+  }
+
+  const total1 = totalOf(eval1);
+  const total5 = totalOf(eval5);
+  const total10 = totalOf(eval10);
+
+  // Évaluation active
+  const currentEval = activeTime === "1" ? eval1 : activeTime === "5" ? eval5 : eval10;
+  const setCurrentEval = activeTime === "1" ? setEval1 : activeTime === "5" ? setEval5 : setEval10;
+  const currentTotal = totalOf(currentEval);
+  const currentSev = severityOf(currentTotal);
+
+  function setCritere(key, value) {
+    setCurrentEval({ ...currentEval, [key]: value });
+  }
+
+  function reset() {
+    setEval1({...emptyEval});
+    setEval5({...emptyEval});
+    setEval10({...emptyEval});
+    setShow10(false);
+    setActiveTime("1");
+  }
+
+  // Bouton onglet de temps
+  function TimeTab({ id, label, total }) {
+    const active = activeTime === id;
+    const sev = severityOf(total);
+    return (
+      <button
+        onClick={() => setActiveTime(id)}
+        style={{
+          flex: 1,
+          padding: "10px 8px",
+          border: "none",
+          background: active ? COLOR : C.white,
+          color: active ? "#fff" : C.text,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "center",
+          fontWeight: 700,
+          fontSize: 12,
+          touchAction: "manipulation",
+          border: `1.5px solid ${active ? COLOR : C.border}`,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 2,
+        }}
+      >
+        <span style={{fontSize: 11, fontWeight: 700, opacity: active ? .9 : .7}}>{label}</span>
+        <span style={{
+          fontSize: 18,
+          fontWeight: 900,
+          color: active ? "#fff" : (total !== null ? sev.color : C.sub),
+        }}>{total !== null ? `${total}/10` : "—"}</span>
+      </button>
+    );
+  }
+
+  // Bouton 0/1/2 pour un critère
+  function ScoreBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          flex: 1,
+          padding: "8px 6px",
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "center",
+          transition: "all .15s",
+          touchAction: "manipulation",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          minHeight: 64,
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{option.value}</span>
+        <span style={{
+          fontSize: 10,
+          lineHeight: 1.25,
+          fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? color : C.text,
+        }}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #BE185D 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>👶</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score d'Apgar</div>
+            <div style={{fontSize: 11, opacity: .85}}>Adaptation néonatale</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Onglets temps (1 min / 5 min / 10 min) */}
+      <div style={{display: "flex", gap: 6, marginBottom: 14}}>
+        <TimeTab id="1" label="1 minute" total={total1}/>
+        <TimeTab id="5" label="5 minutes" total={total5}/>
+        {show10 && <TimeTab id="10" label="10 minutes" total={total10}/>}
+      </div>
+
+      {!show10 && (
+        <button onClick={() => { setShow10(true); setActiveTime("10"); }}
+          style={{
+            width: "100%",
+            background: C.white,
+            border: `1px dashed ${C.border}`,
+            borderRadius: 10,
+            padding: "8px 12px",
+            fontSize: 11,
+            fontWeight: 700,
+            color: C.sub,
+            cursor: "pointer",
+            marginBottom: 14,
+            touchAction: "manipulation",
+          }}>
+          + Ajouter une évaluation à 10 minutes
+        </button>
+      )}
+
+      {/* Bandeau du temps actif */}
+      <div style={{
+        background: COLOR + "12",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 12,
+        fontSize: 12,
+        fontWeight: 700,
+        color: COLOR,
+        textAlign: "center",
+      }}>
+        Évaluation à {activeTime} {activeTime === "1" ? "minute" : "minutes"}
+      </div>
+
+      {/* 5 critères APGAR */}
+      {CRITERIA.map(crit => (
+        <div key={crit.key} style={{marginBottom: 12}}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}>
+            <span style={{
+              background: COLOR + "18",
+              color: COLOR,
+              borderRadius: 8,
+              padding: "3px 9px",
+              fontSize: 13,
+              fontWeight: 900,
+            }}>{crit.letter}</span>
+            <span style={{fontSize: 12, fontWeight: 800, color: C.navy, flex: 1}}>{crit.label}</span>
+            <span style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: currentEval[crit.key] !== null ? COLOR : C.sub,
+            }}>{currentEval[crit.key] !== null ? `${currentEval[crit.key]}/2` : "—"}</span>
+          </div>
+          <div style={{display: "flex", gap: 6}}>
+            {crit.options.map(o => (
+              <ScoreBtn key={o.value} option={o} selected={currentEval[crit.key]} onSelect={(v) => setCritere(crit.key, v)} color={COLOR}/>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Carte résultat pour le temps actif */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${currentSev.color}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>
+              SCORE À {activeTime} {activeTime === "1" ? "MIN" : "MIN"}
+            </div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: currentSev.color, lineHeight: 1}}>
+                {currentTotal !== null ? currentTotal : "—"}
+              </span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 10</span>
+            </div>
+          </div>
+          <div style={{
+            background: currentSev.bg,
+            color: currentSev.color,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{currentSev.label}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: currentSev.bg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{currentSev.interp}</div>
+      </div>
+
+      {/* Comparaison évolution 1 min → 5 min (si les 2 sont remplis) */}
+      {total1 !== null && total5 !== null && (
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+        }}>
+          <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>ÉVOLUTION 1 → 5 MIN</div>
+          <div style={{display: "flex", alignItems: "center", justifyContent: "center", gap: 12, fontSize: 16, fontWeight: 800}}>
+            <span style={{color: severityOf(total1).color}}>{total1}</span>
+            <span style={{color: C.sub, fontSize: 14}}>→</span>
+            <span style={{color: severityOf(total5).color}}>{total5}</span>
+            <span style={{
+              marginLeft: 6,
+              padding: "3px 10px",
+              borderRadius: 10,
+              fontSize: 12,
+              fontWeight: 800,
+              background: total5 > total1 ? C.greenLight : total5 < total1 ? C.redLight : "#F1F5F9",
+              color: total5 > total1 ? C.green : total5 < total1 ? COLOR : C.sub,
+            }}>
+              {total5 > total1 ? `+${total5 - total1}` : total5 < total1 ? `${total5 - total1}` : "="}
+            </span>
+          </div>
+          {total5 < 7 && (
+            <div style={{
+              marginTop: 10,
+              padding: "8px 10px",
+              background: C.redLight,
+              borderRadius: 8,
+              fontSize: 11,
+              color: C.text,
+              lineHeight: 1.5,
+            }}>
+              ⚠️ Score à 5 min &lt; 7 : <b>poursuivre la réanimation</b> et évaluer à 10 min.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>≥ 7</b> : bonne adaptation, soins de routine<br/>
+        • <b>4–6</b> : adaptation médiocre, stimulation + ventilation au masque<br/>
+        • <b>≤ 3</b> : détresse sévère, <b>réanimation immédiate</b><br/>
+        • Score à <b>5 min &lt; 7</b> : poursuivre l'évaluation jusqu'à 10 min (et au-delà si besoin)<br/>
+        • Le score d'Apgar ne doit <b>pas retarder la réanimation</b> : on agit dès la naissance si bébé non vigoureux
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// NIHSSCalculator : National Institutes of Health Stroke Scale
+// Évaluation neurologique de l'AVC ischémique (15 items, total /42)
+// ────────────────────────────────────────────────────────────────────────────
+function NIHSSCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#7C3AED";
+
+  // Définition des 15 items du NIHSS
+  // Chaque item a une lettre/numéro, un titre court, une description, et des options
+  const ITEMS = [
+    // Section 1 : Niveau de conscience
+    {
+      id: "1a", section: "Conscience", title: "1a. Niveau de conscience",
+      options: [
+        { value: 0, label: "Vigilant, réactif" },
+        { value: 1, label: "Somnolent, éveillable par stimulation mineure" },
+        { value: 2, label: "Stuporeux, nécessite stimulation répétée/douloureuse" },
+        { value: 3, label: "Coma, réflexes moteurs ou aréactif" },
+      ],
+    },
+    {
+      id: "1b", section: "Conscience", title: "1b. Questions d'orientation",
+      help: "Mois en cours + âge du patient",
+      options: [
+        { value: 0, label: "Répond correctement aux 2 questions" },
+        { value: 1, label: "Répond correctement à 1 question" },
+        { value: 2, label: "Aucune réponse correcte" },
+      ],
+    },
+    {
+      id: "1c", section: "Conscience", title: "1c. Commandes simples",
+      help: "Ouvrir/fermer les yeux, serrer/ouvrir la main non parétique",
+      options: [
+        { value: 0, label: "Exécute correctement les 2 commandes" },
+        { value: 1, label: "Exécute correctement 1 commande" },
+        { value: 2, label: "N'exécute aucune commande" },
+      ],
+    },
+
+    // Section 2 : Motricité oculaire
+    {
+      id: "2", section: "Oculomotricité", title: "2. Oculomotricité",
+      options: [
+        { value: 0, label: "Normale" },
+        { value: 1, label: "Paralysie partielle du regard" },
+        { value: 2, label: "Déviation forcée ou paralysie totale, non vaincue" },
+      ],
+    },
+
+    // Section 3 : Champ visuel
+    {
+      id: "3", section: "Champ visuel", title: "3. Champ visuel",
+      options: [
+        { value: 0, label: "Aucun déficit" },
+        { value: 1, label: "Hémianopsie partielle" },
+        { value: 2, label: "Hémianopsie complète" },
+        { value: 3, label: "Hémianopsie bilatérale (cécité corticale)" },
+      ],
+    },
+
+    // Section 4 : Paralysie faciale
+    {
+      id: "4", section: "Paralysie faciale", title: "4. Paralysie faciale",
+      options: [
+        { value: 0, label: "Mouvements normaux et symétriques" },
+        { value: 1, label: "Paralysie mineure (effacement pli nasogénien, asymétrie sourire)" },
+        { value: 2, label: "Paralysie partielle (paralysie totale de l'étage inférieur)" },
+        { value: 3, label: "Paralysie complète (étages supérieur + inférieur)" },
+      ],
+    },
+
+    // Section 5 : Motricité membres supérieurs
+    {
+      id: "5a", section: "Motricité MS", title: "5a. Motricité MS gauche",
+      help: "Bras tendu à 90° (assis) ou 45° (couché), 10 sec",
+      options: [
+        { value: 0, label: "Pas de chute" },
+        { value: 1, label: "Chute partielle avant 10 sec, sans toucher le plan" },
+        { value: 2, label: "Effort contre pesanteur mais le bras chute sur le plan" },
+        { value: 3, label: "Aucun effort contre pesanteur, le bras tombe" },
+        { value: 4, label: "Aucun mouvement" },
+      ],
+    },
+    {
+      id: "5b", section: "Motricité MS", title: "5b. Motricité MS droit",
+      help: "Bras tendu à 90° (assis) ou 45° (couché), 10 sec",
+      options: [
+        { value: 0, label: "Pas de chute" },
+        { value: 1, label: "Chute partielle avant 10 sec, sans toucher le plan" },
+        { value: 2, label: "Effort contre pesanteur mais le bras chute sur le plan" },
+        { value: 3, label: "Aucun effort contre pesanteur, le bras tombe" },
+        { value: 4, label: "Aucun mouvement" },
+      ],
+    },
+
+    // Section 6 : Motricité membres inférieurs
+    {
+      id: "6a", section: "Motricité MI", title: "6a. Motricité MI gauche",
+      help: "Jambe levée à 30°, 5 sec",
+      options: [
+        { value: 0, label: "Pas de chute" },
+        { value: 1, label: "Chute partielle avant 5 sec, sans toucher le plan" },
+        { value: 2, label: "Effort contre pesanteur mais la jambe chute" },
+        { value: 3, label: "Aucun effort contre pesanteur" },
+        { value: 4, label: "Aucun mouvement" },
+      ],
+    },
+    {
+      id: "6b", section: "Motricité MI", title: "6b. Motricité MI droit",
+      help: "Jambe levée à 30°, 5 sec",
+      options: [
+        { value: 0, label: "Pas de chute" },
+        { value: 1, label: "Chute partielle avant 5 sec, sans toucher le plan" },
+        { value: 2, label: "Effort contre pesanteur mais la jambe chute" },
+        { value: 3, label: "Aucun effort contre pesanteur" },
+        { value: 4, label: "Aucun mouvement" },
+      ],
+    },
+
+    // Section 7 : Ataxie
+    {
+      id: "7", section: "Ataxie", title: "7. Ataxie",
+      help: "Doigt-nez et talon-genou des 2 côtés",
+      options: [
+        { value: 0, label: "Absente" },
+        { value: 1, label: "Présente dans 1 membre" },
+        { value: 2, label: "Présente dans 2 membres" },
+      ],
+    },
+
+    // Section 8 : Sensibilité
+    {
+      id: "8", section: "Sensibilité", title: "8. Sensibilité",
+      options: [
+        { value: 0, label: "Normale" },
+        { value: 1, label: "Hypoesthésie minime à modérée" },
+        { value: 2, label: "Hypoesthésie sévère ou anesthésie" },
+      ],
+    },
+
+    // Section 9 : Langage
+    {
+      id: "9", section: "Langage", title: "9. Langage (aphasie)",
+      options: [
+        { value: 0, label: "Normal, aucune aphasie" },
+        { value: 1, label: "Aphasie légère à modérée (compréhensible)" },
+        { value: 2, label: "Aphasie sévère (communication très limitée)" },
+        { value: 3, label: "Aphasie totale (mutisme) ou coma" },
+      ],
+    },
+
+    // Section 10 : Dysarthrie
+    {
+      id: "10", section: "Dysarthrie", title: "10. Dysarthrie",
+      options: [
+        { value: 0, label: "Articulation normale" },
+        { value: 1, label: "Dysarthrie légère à modérée" },
+        { value: 2, label: "Dysarthrie sévère / parole inintelligible" },
+      ],
+    },
+
+    // Section 11 : Extinction / Négligence
+    {
+      id: "11", section: "Extinction", title: "11. Extinction / négligence",
+      options: [
+        { value: 0, label: "Aucune anomalie" },
+        { value: 1, label: "Négligence pour 1 modalité (visuelle ou tactile)" },
+        { value: 2, label: "Héminégligence sévère, multimodale" },
+      ],
+    },
+  ];
+
+  // État : valeur de chaque item (null = non évalué)
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.id] = null; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function setItem(id, value) {
+    setScores(s => ({ ...s, [id]: value }));
+  }
+
+  // Total : on additionne les valeurs non-nulles
+  const total = Object.values(scores).reduce((acc, v) => acc + (v === null ? 0 : v), 0);
+  const evaluatedCount = Object.values(scores).filter(v => v !== null).length;
+  const totalItems = ITEMS.length;
+
+  // Sévérité
+  let sevColor, sevBg, sevLabel, interpretation;
+  if (evaluatedCount === 0) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    interpretation = "Évalue les items pour obtenir le score.";
+  } else if (total === 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Pas de déficit";
+    interpretation = "NIHSS = 0. Aucun déficit neurologique mesurable. Rester vigilant : possible AVC mineur passé inaperçu.";
+  } else if (total <= 4) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "AVC mineur";
+    interpretation = "Déficit léger. Discuter thrombolyse selon le déficit fonctionnel (NIHSS faible n'exclut pas une thrombolyse si symptôme invalidant : aphasie isolée, atteinte hémicorps dominant...).";
+  } else if (total <= 15) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "AVC modéré";
+    interpretation = "Déficit modéré. Indication de thrombolyse IV si < 4h30 et absence de contre-indication. Envisager thrombectomie si occlusion proximale.";
+  } else if (total <= 20) {
+    sevColor = COLOR;
+    sevBg = "#EDE9FE";
+    sevLabel = "AVC sévère";
+    interpretation = "Déficit sévère. Thrombolyse + thrombectomie en urgence si éligible. Imagerie vasculaire (angioscanner ou angioIRM) sans délai. Discussion neuro-vasculaire prioritaire.";
+  } else {
+    sevColor = "#5B21B6";
+    sevBg = "#EDE9FE";
+    sevLabel = "AVC très sévère";
+    interpretation = "Déficit très sévère. Thrombectomie mécanique souvent indispensable. Pronostic réservé. Discussion collégiale (neuro-vasculaire + réa) en urgence.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Grouper les items par section
+  const sections = [];
+  ITEMS.forEach(it => {
+    const last = sections[sections.length - 1];
+    if (last && last.name === it.section) {
+      last.items.push(it);
+    } else {
+      sections.push({ name: it.section, items: [it] });
+    }
+  });
+
+  // Bouton option
+  function OptionBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "9px 12px",
+          marginBottom: 4,
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 9,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{option.value}</span>
+        <span style={{
+          fontSize: 12,
+          lineHeight: 1.35,
+          fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? color : C.text,
+          flex: 1,
+        }}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #5B21B6 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🧠</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>NIHSS</div>
+            <div style={{fontSize: 11, opacity: .85}}>Stroke Scale — Évaluation AVC</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Indicateur progression */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}>
+        <span style={{fontSize: 11, fontWeight: 700, color: C.sub}}>PROGRESSION</span>
+        <div style={{flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden"}}>
+          <div style={{
+            width: `${(evaluatedCount / totalItems) * 100}%`,
+            height: "100%",
+            background: COLOR,
+            transition: "width .3s ease-out",
+          }}/>
+        </div>
+        <span style={{fontSize: 11, fontWeight: 800, color: COLOR}}>{evaluatedCount}/{totalItems}</span>
+      </div>
+
+      {/* Sections d'items */}
+      {sections.map(sec => (
+        <div key={sec.name} style={{marginBottom: 14}}>
+          <div style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: COLOR,
+            letterSpacing: .5,
+            textTransform: "uppercase",
+            marginBottom: 8,
+            paddingLeft: 4,
+          }}>{sec.name}</div>
+
+          {sec.items.map(it => (
+            <div key={it.id} style={{marginBottom: 10}}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 4,
+              }}>
+                <span style={{fontSize: 12, fontWeight: 800, color: C.navy, flex: 1}}>{it.title}</span>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: scores[it.id] !== null ? COLOR : C.sub,
+                }}>{scores[it.id] !== null ? `${scores[it.id]}` : "—"}</span>
+              </div>
+              {it.help && (
+                <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginBottom: 6, paddingLeft: 2}}>
+                  💬 {it.help}
+                </div>
+              )}
+              {it.options.map(o => (
+                <OptionBtn key={o.value} option={o} selected={scores[it.id]} onSelect={(v) => setItem(it.id, v)} color={COLOR}/>
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE NIHSS</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 42</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              {evaluatedCount}/{totalItems} item{totalItems > 1 ? "s" : ""} évalué{evaluatedCount > 1 ? "s" : ""}
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+        {evaluatedCount > 0 && evaluatedCount < totalItems && (
+          <div style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            background: C.amberLight,
+            border: `1px solid ${C.amber}40`,
+            borderRadius: 8,
+            fontSize: 11,
+            color: C.text,
+            lineHeight: 1.4,
+          }}>
+            ⚠️ Évaluation incomplète — {totalItems - evaluatedCount} item{totalItems - evaluatedCount > 1 ? "s" : ""} restant{totalItems - evaluatedCount > 1 ? "s" : ""}
+          </div>
+        )}
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>0</b> : pas de déficit · <b>1–4</b> : AVC mineur · <b>5–15</b> : modéré · <b>16–20</b> : sévère · <b>&gt; 20</b> : très sévère<br/>
+        • <b>Thrombolyse IV</b> : envisagée si NIHSS &gt; 4 et &lt; 4h30 depuis le début des symptômes (sauf déficit isolé invalidant)<br/>
+        • <b>Thrombectomie</b> : à discuter si NIHSS ≥ 6 + occlusion proximale documentée &lt; 6h (jusqu'à 24h en mismatch)<br/>
+        • À <b>répéter</b> : entrée, post-thrombolyse, à 24h, et à toute aggravation<br/>
+        • <b>Pièges</b> : examiner d'abord l'hémicorps sain (pour calibrer), faire 5a/5b et 6a/6b même chez un patient en coma (item à 4)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// HeartCalculator : Score HEART
+// Stratification du risque de SCA chez le patient avec douleur thoracique
+// History · ECG · Age · Risk factors · Troponin (chaque item 0-2, total /10)
+// ────────────────────────────────────────────────────────────────────────────
+function HeartCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#4338CA";
+
+  // Définition des 5 items HEART
+  const ITEMS = [
+    {
+      key: "history",
+      letter: "H",
+      title: "History (Anamnèse)",
+      help: "Caractéristiques de la douleur thoracique",
+      options: [
+        { value: 0, label: "Faiblement suspecte (atypique : pleurale, reproductible, brève...)" },
+        { value: 1, label: "Modérément suspecte (mélange typique/atypique)" },
+        { value: 2, label: "Hautement suspecte (constrictive, irradiation MS/mâchoire, effort, sueurs)" },
+      ],
+    },
+    {
+      key: "ecg",
+      letter: "E",
+      title: "ECG",
+      options: [
+        { value: 0, label: "Normal" },
+        { value: 1, label: "Anomalies non spécifiques (troubles de repolarisation, BBG connu, séquelles)" },
+        { value: 2, label: "Sous-décalage ST significatif (≥ 0,5 mm) ou ondes T négatives diffuses" },
+      ],
+    },
+    {
+      key: "age",
+      letter: "A",
+      title: "Age",
+      options: [
+        { value: 0, label: "< 45 ans" },
+        { value: 1, label: "45 – 64 ans" },
+        { value: 2, label: "≥ 65 ans" },
+      ],
+    },
+    {
+      key: "risk",
+      letter: "R",
+      title: "Risk factors (FdR cardio-vasculaires)",
+      help: "HTA, dyslipidémie, diabète, tabagisme actuel, obésité (IMC > 30), ATCD familiaux précoces, athérosclérose documentée",
+      options: [
+        { value: 0, label: "Aucun FdR" },
+        { value: 1, label: "1 à 2 FdR" },
+        { value: 2, label: "≥ 3 FdR ou athérosclérose documentée (coronaropathie, AVC, AOMI)" },
+      ],
+    },
+    {
+      key: "troponin",
+      letter: "T",
+      title: "Troponin (Troponine)",
+      help: "Selon le seuil du laboratoire (LSN = limite supérieure de la normale)",
+      options: [
+        { value: 0, label: "≤ LSN (normale)" },
+        { value: 1, label: "1 – 3 × LSN" },
+        { value: 2, label: "> 3 × LSN" },
+      ],
+    },
+  ];
+
+  // État : valeur de chaque item (null = non évalué)
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = null; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function setItem(key, value) {
+    setScores(s => ({ ...s, [key]: value }));
+  }
+
+  // Total
+  const total = Object.values(scores).reduce((acc, v) => acc + (v === null ? 0 : v), 0);
+  const evaluatedCount = Object.values(scores).filter(v => v !== null).length;
+  const totalItems = ITEMS.length;
+  const complete = evaluatedCount === totalItems;
+
+  // Sévérité et conduite à tenir
+  let sevColor, sevBg, sevLabel, mace, interpretation, action;
+  if (evaluatedCount === 0) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    mace = null;
+    interpretation = "Évalue les 5 items (H·E·A·R·T) pour obtenir le score.";
+    action = null;
+  } else if (total <= 3) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Risque FAIBLE";
+    mace = "≈ 1.7%";
+    interpretation = "Risque faible d'événement cardiaque majeur (MACE) à 6 semaines.";
+    action = "Sortie possible après 2 troponines négatives à H0 et H3 (ou Hs-cTn selon protocole local). Pas d'imagerie de stress en urgence.";
+  } else if (total <= 6) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Risque MODÉRÉ";
+    mace = "≈ 16.6%";
+    interpretation = "Risque intermédiaire de MACE à 6 semaines.";
+    action = "Hospitalisation pour surveillance, ECG itératifs, cinétique troponines. Discuter coronarographie ou test d'ischémie selon évolution. Avis cardiologique.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#EEF2FF";
+    sevLabel = "Risque ÉLEVÉ";
+    mace = "≈ 50%";
+    interpretation = "Risque élevé de MACE à 6 semaines.";
+    action = "Stratégie invasive : coronarographie en urgence (≤ 24h, voire immédiate selon clinique/ECG). Charge en antiagrégants + anticoagulation selon protocole local. Avis cardiologique immédiat.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Bouton option
+  function OptionBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 12px",
+          marginBottom: 5,
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 26, height: 26,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 13,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{option.value}</span>
+        <span style={{
+          fontSize: 12,
+          lineHeight: 1.4,
+          fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? color : C.text,
+          flex: 1,
+        }}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #312E81 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>❤️</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score HEART</div>
+            <div style={{fontSize: 11, opacity: .85}}>Douleur thoracique — risque de SCA</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Indicateur progression */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}>
+        <span style={{fontSize: 11, fontWeight: 700, color: C.sub}}>PROGRESSION</span>
+        <div style={{flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden"}}>
+          <div style={{
+            width: `${(evaluatedCount / totalItems) * 100}%`,
+            height: "100%",
+            background: COLOR,
+            transition: "width .3s ease-out",
+          }}/>
+        </div>
+        <span style={{fontSize: 11, fontWeight: 800, color: COLOR}}>{evaluatedCount}/{totalItems}</span>
+      </div>
+
+      {/* Items HEART */}
+      {ITEMS.map(it => (
+        <div key={it.key} style={{marginBottom: 14}}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}>
+            <span style={{
+              background: COLOR + "18",
+              color: COLOR,
+              borderRadius: 8,
+              padding: "3px 10px",
+              fontSize: 14,
+              fontWeight: 900,
+            }}>{it.letter}</span>
+            <span style={{fontSize: 13, fontWeight: 800, color: C.navy, flex: 1}}>{it.title}</span>
+            <span style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: scores[it.key] !== null ? COLOR : C.sub,
+            }}>{scores[it.key] !== null ? `${scores[it.key]}/2` : "—"}</span>
+          </div>
+          {it.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginBottom: 6, paddingLeft: 2, lineHeight: 1.4}}>
+              💬 {it.help}
+            </div>
+          )}
+          {it.options.map(o => (
+            <OptionBtn key={o.value} option={o} selected={scores[it.key]} onSelect={(v) => setItem(it.key, v)} color={COLOR}/>
+          ))}
+        </div>
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE HEART</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 10</span>
+            </div>
+            {mace && (
+              <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+                MACE 6 semaines : <b style={{color: sevColor}}>{mace}</b>
+              </div>
+            )}
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+
+        {evaluatedCount > 0 && !complete && (
+          <div style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            background: C.amberLight,
+            border: `1px solid ${C.amber}40`,
+            borderRadius: 8,
+            fontSize: 11,
+            color: C.text,
+            lineHeight: 1.4,
+          }}>
+            ⚠️ Évaluation incomplète — {totalItems - evaluatedCount} item{totalItems - evaluatedCount > 1 ? "s" : ""} restant{totalItems - evaluatedCount > 1 ? "s" : ""}
+          </div>
+        )}
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>0–3</b> : risque faible (MACE ~1.7%) — <b>sortie possible</b> après 2 tropos négatives<br/>
+        • <b>4–6</b> : risque modéré (MACE ~16.6%) — <b>hospitalisation + bilan complémentaire</b><br/>
+        • <b>7–10</b> : risque élevé (MACE ~50%) — <b>stratégie invasive</b> (coronarographie ≤ 24h)<br/>
+        • <b>Pathway HEART</b> (HEART + 2e troponine à H3) : permet la sortie sûre des HEART ≤ 3 avec tropo négative<br/>
+        • Score validé pour la <b>douleur thoracique non traumatique</b> ; ne remplace pas le jugement clinique (notamment si suspicion forte malgré score bas)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cha2ds2VaCalculator : Score CHA₂DS₂-VA (ESC 2024, sans le critère sexe)
+// Stratification du risque thrombo-embolique dans la fibrillation atriale
+// 7 critères, total /8 — anticoagulation indiquée si score ≥ 2
+// ────────────────────────────────────────────────────────────────────────────
+function Cha2ds2VaCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#2563EB";
+
+  // Définition des 7 items du CHA₂DS₂-VA
+  // C (1), H (1), A₂ (2), D (1), S₂ (2), V (1), A (1) = 8 max
+  const ITEMS = [
+    {
+      key: "c",
+      letter: "C",
+      title: "Insuffisance cardiaque congestive",
+      help: "ICC actuelle, ATCD d'ICC, FEVG ≤ 40% (avec ou sans symptômes)",
+      points: 1,
+    },
+    {
+      key: "h",
+      letter: "H",
+      title: "Hypertension artérielle",
+      help: "HTA traitée ou PA > 140/90 mmHg à 2 reprises",
+      points: 1,
+    },
+    {
+      key: "a2",
+      letter: "A₂",
+      title: "Âge ≥ 75 ans",
+      points: 2,
+    },
+    {
+      key: "d",
+      letter: "D",
+      title: "Diabète",
+      help: "Diabète de type 1 ou 2, traité ou non",
+      points: 1,
+    },
+    {
+      key: "s2",
+      letter: "S₂",
+      title: "AVC / AIT / Embolie systémique",
+      help: "ATCD d'AVC ischémique, AIT, ou embolie systémique (toute date)",
+      points: 2,
+    },
+    {
+      key: "v",
+      letter: "V",
+      title: "Maladie vasculaire",
+      help: "Coronaropathie (IDM, angioplastie, pontage), AOMI, plaque aortique",
+      points: 1,
+    },
+    {
+      key: "a",
+      letter: "A",
+      title: "Âge 65 – 74 ans",
+      points: 1,
+    },
+  ];
+
+  // État : true/false pour chaque item
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = false; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function toggleItem(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Total
+  const total = ITEMS.reduce((acc, it) => acc + (scores[it.key] ? it.points : 0), 0);
+
+  // Risque AVC annuel selon le score (approximations issues des cohortes CHA₂DS₂-VASc)
+  const STROKE_RISK = {
+    0: "0.5 %",
+    1: "1.5 %",
+    2: "2.9 %",
+    3: "4.6 %",
+    4: "6.7 %",
+    5: "10.0 %",
+    6: "13.6 %",
+    7: "15.7 %",
+    8: "15.2 %",
+  };
+
+  // Sévérité et conduite à tenir
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (total === 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Risque très faible";
+    interpretation = "Risque thrombo-embolique très faible.";
+    action = "Pas d'anticoagulation indiquée. Pas d'antiagrégant en prévention de l'AVC sur FA.";
+  } else if (total === 1) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Risque faible";
+    interpretation = "Risque thrombo-embolique faible.";
+    action = "Anticoagulation à discuter au cas par cas (anciennement « à envisager »). Selon ESC 2024, l'indication formelle est ≥ 2 ; à 1, la décision se prend après évaluation du risque hémorragique (HAS-BLED) et préférences du patient.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#DBEAFE";
+    sevLabel = "Risque significatif";
+    interpretation = "Risque thrombo-embolique significatif.";
+    action = "Anticoagulation orale indiquée (AOD en 1re intention sauf valvulopathie mitrale rhumatismale / prothèse valvulaire mécanique → AVK). Évaluer le risque hémorragique (HAS-BLED) avant initiation.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Bouton case à cocher pour chaque item
+  function ItemCheckbox({ item, checked, onToggle }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        {/* Lettre du critère */}
+        <span style={{
+          background: checked ? COLOR : COLOR + "18",
+          color: checked ? "#fff" : COLOR,
+          borderRadius: 8,
+          padding: "4px 9px",
+          fontSize: 13,
+          fontWeight: 900,
+          flexShrink: 0,
+          minWidth: 32,
+          textAlign: "center",
+        }}>{item.letter}</span>
+
+        {/* Titre + aide */}
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {item.help}
+            </div>
+          )}
+        </div>
+
+        {/* Points */}
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}>+{item.points}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #1E40AF 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>💓</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>CHA₂DS₂-VA</div>
+            <div style={{fontSize: 11, opacity: .85}}>Risque thrombo-embolique dans la FA · ESC 2024</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note version */}
+      <div style={{
+        background: "#DBEAFE",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.4,
+      }}>
+        ℹ️ Version <b>ESC 2024</b> sans le critère "Sexe féminin" (Sc) — total sur 8 points.
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <ItemCheckbox
+          key={it.key}
+          item={it}
+          checked={scores[it.key]}
+          onToggle={() => toggleItem(it.key)}
+        />
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE CHA₂DS₂-VA</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 8</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              Risque AVC annuel : <b style={{color: sevColor}}>{STROKE_RISK[total]}</b>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (ESC 2024)</div>
+        • <b>0</b> : pas d'anticoagulation<br/>
+        • <b>1</b> : anticoagulation à discuter (selon HAS-BLED + préférences)<br/>
+        • <b>≥ 2</b> : <b>anticoagulation orale recommandée</b> (AOD en 1re intention)<br/>
+        • <b>Évolution 2024</b> : le critère "sexe féminin" est retiré → seuil unique ≥ 2 pour les 2 sexes<br/>
+        • Toujours évaluer le <b>risque hémorragique (HAS-BLED)</b> avant initiation<br/>
+        • Privilégier les <b>AOD</b> (apixaban, rivaroxaban, dabigatran, edoxaban) sauf valvulopathie mitrale rhumatismale ou prothèse valvulaire mécanique (→ AVK)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// HasBledCalculator : Score HAS-BLED
+// Stratification du risque hémorragique sous anticoagulation chez le patient en FA
+// 7 items, total /9 — identifier les facteurs modifiables avant initiation
+// ────────────────────────────────────────────────────────────────────────────
+function HasBledCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#BE123C";
+
+  // Items simples (1 point chacun)
+  const ITEMS_SIMPLE = [
+    {
+      key: "h",
+      letter: "H",
+      title: "Hypertension non contrôlée",
+      help: "PAS > 160 mmHg",
+      points: 1,
+    },
+    {
+      key: "a",
+      letter: "A",
+      title: "Anomalie rénale et/ou hépatique",
+      help: "Rénale : dialyse, transplantation, créatinine > 200 µmol/L (1 pt) · Hépatique : cirrhose, bili > 2× LSN avec ASAT/ALAT > 3× LSN (1 pt). Si les 2 : cocher les 2.",
+      points: 1,
+      double: true, // peut être coché 2 fois (1 pour rénal, 1 pour hépatique)
+    },
+    {
+      key: "s",
+      letter: "S",
+      title: "AVC (Stroke)",
+      help: "ATCD d'AVC ischémique ou hémorragique",
+      points: 1,
+    },
+    {
+      key: "b",
+      letter: "B",
+      title: "Bleeding (saignement)",
+      help: "ATCD de saignement majeur ou prédisposition (anémie chronique)",
+      points: 1,
+    },
+    {
+      key: "l",
+      letter: "L",
+      title: "Labile INR",
+      help: "INR instable sous AVK (temps en zone thérapeutique < 60%). Coter 0 si sous AOD.",
+      points: 1,
+    },
+    {
+      key: "e",
+      letter: "E",
+      title: "Elderly (âge > 65 ans)",
+      points: 1,
+    },
+  ];
+
+  // Item Drugs/Alcohol séparé car peut valoir 1 ou 2 points
+  // (drugs = AINS/antiagrégants ; alcool = ≥ 8 verres/semaine)
+
+  // États
+  const [scores, setScores] = useState({
+    h: false,
+    a_renal: false,
+    a_hepatic: false,
+    s: false,
+    b: false,
+    l: false,
+    e: false,
+    d_drugs: false,    // AINS, antiagrégants
+    d_alcohol: false,  // ≥ 8 verres/semaine
+  });
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Calcul du total
+  const total =
+    (scores.h ? 1 : 0) +
+    (scores.a_renal ? 1 : 0) +
+    (scores.a_hepatic ? 1 : 0) +
+    (scores.s ? 1 : 0) +
+    (scores.b ? 1 : 0) +
+    (scores.l ? 1 : 0) +
+    (scores.e ? 1 : 0) +
+    (scores.d_drugs ? 1 : 0) +
+    (scores.d_alcohol ? 1 : 0);
+
+  // Risque hémorragique annuel (saignement majeur)
+  const BLEEDING_RISK = {
+    0: "0.9 %",
+    1: "3.4 %",
+    2: "4.1 %",
+    3: "5.8 %",
+    4: "8.9 %",
+    5: "9.1 %",
+    6: ">10 %",
+    7: ">10 %",
+    8: ">10 %",
+    9: ">10 %",
+  };
+
+  // Sévérité et conduite à tenir
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (total <= 2) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Risque FAIBLE";
+    interpretation = "Risque hémorragique faible sous anticoagulation.";
+    action = "Anticoagulation possible si indication (CHA₂DS₂-VA ≥ 2). Surveillance standard.";
+  } else if (total === 3) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Risque ÉLEVÉ";
+    interpretation = "Risque hémorragique modérément élevé (≥ 3).";
+    action = "Identifier et corriger les facteurs modifiables (HTA, INR labile, alcool, AINS). Anticoagulation possible avec surveillance rapprochée. AOD plutôt qu'AVK si possible.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#FFE4E6";
+    sevLabel = "Risque TRÈS ÉLEVÉ";
+    interpretation = "Risque hémorragique très élevé (≥ 4).";
+    action = "Ne pas contre-indiquer l'anticoagulation pour autant : réévaluer la balance bénéfice/risque, corriger les facteurs modifiables, surveillance étroite. Discussion collégiale + cardio si CHA₂DS₂-VA élevé en parallèle.";
+  }
+
+  function reset() {
+    setScores({
+      h: false, a_renal: false, a_hepatic: false, s: false, b: false,
+      l: false, e: false, d_drugs: false, d_alcohol: false,
+    });
+  }
+
+  // Bouton case à cocher pour chaque item
+  function ItemCheckbox({ letterDisplay, title, help, checked, onToggle, points = 1 }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          background: checked ? COLOR : COLOR + "18",
+          color: checked ? "#fff" : COLOR,
+          borderRadius: 8,
+          padding: "4px 9px",
+          fontSize: 13,
+          fontWeight: 900,
+          flexShrink: 0,
+          minWidth: 32,
+          textAlign: "center",
+        }}>{letterDisplay}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{title}</div>
+          {help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}>+{points}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #881337 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🩸</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>HAS-BLED</div>
+            <div style={{fontSize: 11, opacity: .85}}>Risque hémorragique sous anticoagulation</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note importante */}
+      <div style={{
+        background: "#FFE4E6",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.4,
+      }}>
+        ⚠️ Un HAS-BLED élevé <b>ne contre-indique pas</b> l'anticoagulation : il sert à <b>identifier les facteurs modifiables</b> à corriger.
+      </div>
+
+      {/* H — Hypertension */}
+      <ItemCheckbox
+        letterDisplay="H"
+        title="Hypertension non contrôlée"
+        help="PAS > 160 mmHg"
+        checked={scores.h}
+        onToggle={() => toggle("h")}
+      />
+
+      {/* A — Anomalie (rénale et/ou hépatique) - en 2 sous-items */}
+      <div style={{marginBottom: 6}}>
+        <ItemCheckbox
+          letterDisplay="A"
+          title="Anomalie rénale"
+          help="Dialyse, transplantation, créatinine > 200 µmol/L"
+          checked={scores.a_renal}
+          onToggle={() => toggle("a_renal")}
+        />
+        <ItemCheckbox
+          letterDisplay="A"
+          title="Anomalie hépatique"
+          help="Cirrhose, bili > 2× LSN avec ASAT/ALAT > 3× LSN"
+          checked={scores.a_hepatic}
+          onToggle={() => toggle("a_hepatic")}
+        />
+      </div>
+
+      {/* S — Stroke */}
+      <ItemCheckbox
+        letterDisplay="S"
+        title="AVC (Stroke)"
+        help="ATCD d'AVC ischémique ou hémorragique"
+        checked={scores.s}
+        onToggle={() => toggle("s")}
+      />
+
+      {/* B — Bleeding */}
+      <ItemCheckbox
+        letterDisplay="B"
+        title="Bleeding (saignement)"
+        help="ATCD de saignement majeur ou prédisposition (anémie chronique)"
+        checked={scores.b}
+        onToggle={() => toggle("b")}
+      />
+
+      {/* L — Labile INR */}
+      <ItemCheckbox
+        letterDisplay="L"
+        title="Labile INR"
+        help="INR instable sous AVK (TTR < 60%). Coter 0 si sous AOD."
+        checked={scores.l}
+        onToggle={() => toggle("l")}
+      />
+
+      {/* E — Elderly */}
+      <ItemCheckbox
+        letterDisplay="E"
+        title="Elderly (âge > 65 ans)"
+        checked={scores.e}
+        onToggle={() => toggle("e")}
+      />
+
+      {/* D — Drugs / Alcohol (en 2 sous-items) */}
+      <div style={{marginBottom: 6}}>
+        <ItemCheckbox
+          letterDisplay="D"
+          title="Drugs (médicaments à risque)"
+          help="AINS, antiagrégants plaquettaires (aspirine, clopidogrel...)"
+          checked={scores.d_drugs}
+          onToggle={() => toggle("d_drugs")}
+        />
+        <ItemCheckbox
+          letterDisplay="D"
+          title="Alcool (consommation excessive)"
+          help="≥ 8 verres / semaine"
+          checked={scores.d_alcohol}
+          onToggle={() => toggle("d_alcohol")}
+        />
+      </div>
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE HAS-BLED</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 9</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              Saignement majeur/an : <b style={{color: sevColor}}>{BLEEDING_RISK[total]}</b>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>0–2</b> : risque faible — anticoagulation OK<br/>
+        • <b>3</b> : risque élevé — corriger les facteurs modifiables, surveillance rapprochée<br/>
+        • <b>≥ 4</b> : risque très élevé — réévaluer balance bénéfice/risque<br/>
+        • <b>Facteurs modifiables à corriger</b> : HTA mal contrôlée, INR labile (passer à AOD), AINS/antiagrégant non indispensable, alcool excessif<br/>
+        • <b>À utiliser en complément du CHA₂DS₂-VA</b> : un HAS-BLED élevé ne contre-indique <i>jamais</i> à lui seul l'anticoagulation
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ParklandCalculator : Formule de Parkland (remplissage brûlé grave)
+// Volume 24h = 4 × poids (kg) × SCB (%) de Ringer Lactate
+// 50% sur H0-H8 (depuis l'heure de la brûlure), 50% sur H8-H24
+// ────────────────────────────────────────────────────────────────────────────
+function ParklandCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#C2410C";
+
+  const [poids, setPoids] = useState("");
+  const [scb, setScb] = useState("");
+  const [heureBrulure, setHeureBrulure] = useState(""); // format "HH:MM"
+
+  const poidsNum = parseFloat(poids);
+  const scbNum = parseFloat(scb);
+  const valid = !isNaN(poidsNum) && !isNaN(scbNum) && poidsNum > 0 && scbNum > 0;
+
+  // Calculs
+  const volume24h = valid ? 4 * poidsNum * scbNum : null;
+  const volume8h = valid ? volume24h / 2 : null;
+  const volume16h = valid ? volume24h / 2 : null;
+  const debitH0H8 = valid ? volume8h / 8 : null;
+  const debitH8H24 = valid ? volume16h / 16 : null;
+
+  // Calcul du débit actuel si l'heure de brûlure est saisie
+  let debitActuel = null;
+  let heuresEcoulees = null;
+  let phaseActuelle = null; // "H0-H8" ou "H8-H24" ou "Terminé"
+  let volumeRestant = null;
+  let volumeDejaPerfuse = null;
+
+  if (valid && heureBrulure) {
+    const now = new Date();
+    const [h, m] = heureBrulure.split(":").map(s => parseInt(s, 10));
+    if (!isNaN(h) && !isNaN(m)) {
+      const brulure = new Date(now);
+      brulure.setHours(h, m, 0, 0);
+      // Si l'heure saisie est dans le futur, considérer qu'elle est de la veille
+      if (brulure > now) brulure.setDate(brulure.getDate() - 1);
+
+      const msEcoules = now - brulure;
+      heuresEcoulees = msEcoules / (1000 * 60 * 60);
+
+      if (heuresEcoulees < 0) {
+        phaseActuelle = null;
+      } else if (heuresEcoulees < 8) {
+        phaseActuelle = "H0-H8";
+        debitActuel = debitH0H8;
+        volumeDejaPerfuse = debitH0H8 * heuresEcoulees;
+        volumeRestant = volume24h - volumeDejaPerfuse;
+      } else if (heuresEcoulees < 24) {
+        phaseActuelle = "H8-H24";
+        debitActuel = debitH8H24;
+        volumeDejaPerfuse = volume8h + debitH8H24 * (heuresEcoulees - 8);
+        volumeRestant = volume24h - volumeDejaPerfuse;
+      } else {
+        phaseActuelle = "Terminé";
+        debitActuel = 0;
+        volumeDejaPerfuse = volume24h;
+        volumeRestant = 0;
+      }
+    }
+  }
+
+  function reset() {
+    setPoids("");
+    setScb("");
+    setHeureBrulure("");
+  }
+
+  // Helper formatage volume
+  function fmtVol(v) {
+    if (v === null || isNaN(v)) return "—";
+    return Math.round(v).toLocaleString("fr-FR") + " mL";
+  }
+  function fmtDebit(v) {
+    if (v === null || isNaN(v)) return "—";
+    return Math.round(v) + " mL/h";
+  }
+
+  // Style commun input numérique
+  const numInputStyle = {
+    width: "100%",
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 12,
+    padding: "14px 16px",
+    fontSize: 22,
+    fontWeight: 800,
+    color: C.text,
+    background: C.white,
+    boxSizing: "border-box",
+    outline: "none",
+    textAlign: "center",
+    fontFamily: "inherit",
+  };
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #9A3412 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🔥</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Formule de Parkland</div>
+            <div style={{fontSize: 11, opacity: .85}}>Remplissage du brûlé grave (adulte)</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Formule */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 12,
+        color: C.text,
+        textAlign: "center",
+        lineHeight: 1.5,
+      }}>
+        <b style={{color: COLOR}}>Volume 24h</b> = <b>4 mL × Poids (kg) × SCB (%)</b><br/>
+        <span style={{fontSize: 11, color: C.sub}}>Ringer Lactate · 50% sur H0–H8, 50% sur H8–H24</span>
+      </div>
+
+      {/* Inputs Poids et SCB */}
+      <div style={{display: "flex", gap: 10, marginBottom: 14}}>
+        <div style={{flex: 1}}>
+          <label style={{
+            display: "block",
+            fontSize: 11,
+            fontWeight: 800,
+            color: C.sub,
+            letterSpacing: .5,
+            marginBottom: 6,
+            textAlign: "center",
+          }}>POIDS (kg)</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder="—"
+            value={poids}
+            onChange={e => setPoids(e.target.value)}
+            style={numInputStyle}
+          />
+        </div>
+        <div style={{flex: 1}}>
+          <label style={{
+            display: "block",
+            fontSize: 11,
+            fontWeight: 800,
+            color: C.sub,
+            letterSpacing: .5,
+            marginBottom: 6,
+            textAlign: "center",
+          }}>SCB (%)</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            placeholder="—"
+            value={scb}
+            onChange={e => setScb(e.target.value)}
+            style={numInputStyle}
+          />
+        </div>
+      </div>
+
+      {/* Règle des 9 (Wallace) */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 14,
+      }}>
+        <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>
+          🩹 RÈGLE DES 9 (Wallace) — adulte
+        </div>
+        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 11, lineHeight: 1.5}}>
+          <div>• Tête + cou : <b>9%</b></div>
+          <div>• Périnée : <b>1%</b></div>
+          <div>• Tronc avant : <b>18%</b></div>
+          <div>• Tronc arrière : <b>18%</b></div>
+          <div>• Chaque MS : <b>9%</b></div>
+          <div>• Chaque MI : <b>18%</b></div>
+        </div>
+        <div style={{fontSize: 10, color: C.sub, marginTop: 6, fontStyle: "italic"}}>
+          💡 Astuce : la <b>paume du patient</b> = 1% de SCB
+        </div>
+      </div>
+
+      {/* Heure de brûlure (optionnel) */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 14,
+      }}>
+        <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>
+          ⏱️ HEURE DE LA BRÛLURE (optionnel)
+        </div>
+        <input
+          type="time"
+          value={heureBrulure}
+          onChange={e => setHeureBrulure(e.target.value)}
+          style={{
+            width: "100%",
+            border: `1.5px solid ${C.border}`,
+            borderRadius: 10,
+            padding: "10px 12px",
+            fontSize: 16,
+            fontWeight: 700,
+            color: C.text,
+            background: C.white,
+            boxSizing: "border-box",
+            outline: "none",
+            fontFamily: "inherit",
+          }}
+        />
+        <div style={{fontSize: 10, color: C.sub, marginTop: 6, fontStyle: "italic", lineHeight: 1.4}}>
+          Le calcul démarre à l'heure de la brûlure (pas à l'arrivée aux urgences). Permet de calculer le débit actuel et le volume restant à perfuser.
+        </div>
+      </div>
+
+      {/* Carte résultat principal */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${COLOR}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 6}}>VOLUME TOTAL 24H</div>
+        <div style={{display: "flex", alignItems: "baseline", gap: 4, marginBottom: 14}}>
+          <span style={{fontSize: 38, fontWeight: 900, color: COLOR, lineHeight: 1}}>
+            {volume24h !== null ? Math.round(volume24h).toLocaleString("fr-FR") : "—"}
+          </span>
+          <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>mL</span>
+        </div>
+
+        {/* Découpage en 2 phases */}
+        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8}}>
+          {/* Phase 1 : H0-H8 */}
+          <div style={{
+            background: phaseActuelle === "H0-H8" ? COLOR + "18" : "#FFEDD5",
+            border: `1.5px solid ${phaseActuelle === "H0-H8" ? COLOR : "transparent"}`,
+            borderRadius: 12,
+            padding: "10px 12px",
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: COLOR, letterSpacing: .5, marginBottom: 4}}>
+              H0 → H8 (50%)
+            </div>
+            <div style={{fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 2}}>
+              {fmtVol(volume8h)}
+            </div>
+            <div style={{fontSize: 11, color: C.sub}}>
+              <b style={{color: COLOR}}>{fmtDebit(debitH0H8)}</b>
+            </div>
+          </div>
+
+          {/* Phase 2 : H8-H24 */}
+          <div style={{
+            background: phaseActuelle === "H8-H24" ? COLOR + "18" : "#FFEDD5",
+            border: `1.5px solid ${phaseActuelle === "H8-H24" ? COLOR : "transparent"}`,
+            borderRadius: 12,
+            padding: "10px 12px",
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: COLOR, letterSpacing: .5, marginBottom: 4}}>
+              H8 → H24 (50%)
+            </div>
+            <div style={{fontSize: 16, fontWeight: 800, color: C.text, marginBottom: 2}}>
+              {fmtVol(volume16h)}
+            </div>
+            <div style={{fontSize: 11, color: C.sub}}>
+              <b style={{color: COLOR}}>{fmtDebit(debitH8H24)}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Carte phase actuelle (si heure brûlure renseignée) */}
+      {valid && heureBrulure && phaseActuelle && (
+        <div style={{
+          background: C.white,
+          borderRadius: 16,
+          padding: 16,
+          marginBottom: 12,
+          border: `2px solid ${COLOR}`,
+          boxShadow: "0 2px 12px rgba(194,65,12,.15)",
+        }}>
+          <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10}}>
+            <div style={{fontSize: 11, fontWeight: 800, color: COLOR, letterSpacing: .5}}>
+              ⏱️ ÉTAT ACTUEL
+            </div>
+            <div style={{
+              background: COLOR,
+              color: "#fff",
+              padding: "3px 10px",
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 800,
+            }}>{phaseActuelle === "Terminé" ? "Protocole 24h terminé" : `Phase ${phaseActuelle}`}</div>
+          </div>
+
+          <div style={{fontSize: 12, color: C.text, lineHeight: 1.6}}>
+            <div>⏰ Brûlure il y a <b>{heuresEcoulees !== null ? heuresEcoulees.toFixed(1) : "—"} h</b></div>
+
+            {phaseActuelle !== "Terminé" && (
+              <>
+                <div>💧 Débit actuel : <b style={{color: COLOR, fontSize: 14}}>{fmtDebit(debitActuel)}</b></div>
+                <div style={{marginTop: 6, padding: "8px 10px", background: "#FFEDD5", borderRadius: 8}}>
+                  <div style={{fontSize: 11}}>Déjà perfusé (théorique) : <b>{fmtVol(volumeDejaPerfuse)}</b></div>
+                  <div style={{fontSize: 11}}>Reste à perfuser : <b style={{color: COLOR}}>{fmtVol(volumeRestant)}</b></div>
+                </div>
+              </>
+            )}
+            {phaseActuelle === "Terminé" && (
+              <div style={{marginTop: 6, padding: "8px 10px", background: C.greenLight, borderRadius: 8, fontSize: 11, color: C.green, fontWeight: 700}}>
+                ✅ Protocole 24h achevé — adapter le remplissage selon diurèse et clinique
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Objectifs cliniques */}
+      {valid && (
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+        }}>
+          <div style={{fontSize: 11, fontWeight: 800, color: C.navy, letterSpacing: .5, marginBottom: 8}}>
+            🎯 OBJECTIFS À ATTEINDRE
+          </div>
+          <div style={{fontSize: 12, color: C.text, lineHeight: 1.7}}>
+            • <b>Diurèse</b> : 0.5–1 mL/kg/h chez l'adulte (soit <b>{poidsNum ? Math.round(0.5 * poidsNum) + "–" + Math.round(poidsNum) : "—"} mL/h</b>)<br/>
+            • <b>PAM</b> ≥ 65 mmHg<br/>
+            • <b>Lactates</b> en décroissance<br/>
+            • Adapter le débit ±20% selon diurèse horaire
+          </div>
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>Indication</b> : adulte avec SCB &gt; 20% (souvent appliqué dès 10–15% selon protocoles)<br/>
+        • Le <b>chronomètre démarre à l'heure de la brûlure</b>, pas à l'arrivée à l'hôpital. Si retard, rattraper le volume manquant<br/>
+        • <b>Cristalloïde de choix</b> : Ringer Lactate (Ringer acétate possible)<br/>
+        • <b>SCB</b> : ne pas inclure les brûlures du 1er degré (érythème simple)<br/>
+        • <b>Pédiatrie</b> : autres formules (Carvajal, Galveston) avec ajout d'apports de base<br/>
+        • <b>Brûlure électrique</b> : besoins augmentés (× 1.5 à × 2), surveiller la myoglobinurie<br/>
+        • <b>Ajuster ±20%</b> selon diurèse horaire — éviter le sur-remplissage (œdèmes pulmonaires, syndrome compartimental)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CushmanCalculator : Score de Cushman (sevrage alcoolique)
+// 7 items (0-3 chacun), total /21
+// Guide la titration des benzodiazépines
+// ────────────────────────────────────────────────────────────────────────────
+function CushmanCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0891B2";
+
+  // Définition des 7 items du Cushman
+  const ITEMS = [
+    {
+      key: "pouls",
+      letter: "1",
+      title: "Pouls (bpm)",
+      options: [
+        { value: 0, label: "< 80" },
+        { value: 1, label: "80 – 100" },
+        { value: 2, label: "100 – 120" },
+        { value: 3, label: "> 120" },
+      ],
+    },
+    {
+      key: "pas",
+      letter: "2",
+      title: "Pression artérielle systolique (mmHg)",
+      options: [
+        { value: 0, label: "< 135" },
+        { value: 1, label: "135 – 145" },
+        { value: 2, label: "145 – 155" },
+        { value: 3, label: "> 155" },
+      ],
+    },
+    {
+      key: "fr",
+      letter: "3",
+      title: "Fréquence respiratoire (/min)",
+      options: [
+        { value: 0, label: "< 16" },
+        { value: 1, label: "16 – 20" },
+        { value: 2, label: "20 – 24" },
+        { value: 3, label: "> 24" },
+      ],
+    },
+    {
+      key: "sueurs",
+      letter: "4",
+      title: "Sueurs",
+      options: [
+        { value: 0, label: "Absentes" },
+        { value: 1, label: "Paumes humides" },
+        { value: 2, label: "Visage, front humides" },
+        { value: 3, label: "Sueurs profuses, vêtements trempés" },
+      ],
+    },
+    {
+      key: "tremblements",
+      letter: "5",
+      title: "Tremblements",
+      options: [
+        { value: 0, label: "Absents" },
+        { value: 1, label: "Discrets, mains tendues" },
+        { value: 2, label: "Évidents, mains tendues" },
+        { value: 3, label: "Permanents, généralisés au repos" },
+      ],
+    },
+    {
+      key: "agitation",
+      letter: "6",
+      title: "Agitation",
+      options: [
+        { value: 0, label: "Absente" },
+        { value: 1, label: "Discrète, contrôlable" },
+        { value: 2, label: "Marquée, mais maîtrisable" },
+        { value: 3, label: "Incontrôlable" },
+      ],
+    },
+    {
+      key: "sensoriels",
+      letter: "7",
+      title: "Troubles sensoriels",
+      help: "Hallucinations visuelles, auditives, tactiles",
+      options: [
+        { value: 0, label: "Absents" },
+        { value: 1, label: "Hyperesthésie (bruit, lumière)" },
+        { value: 2, label: "Hallucinations critiquées par le patient" },
+        { value: 3, label: "Hallucinations non critiquées (DT)" },
+      ],
+    },
+  ];
+
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = null; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function setItem(key, value) {
+    setScores(s => ({ ...s, [key]: value }));
+  }
+
+  const total = Object.values(scores).reduce((acc, v) => acc + (v === null ? 0 : v), 0);
+  const evaluatedCount = Object.values(scores).filter(v => v !== null).length;
+  const totalItems = ITEMS.length;
+  const complete = evaluatedCount === totalItems;
+
+  // Sévérité et conduite à tenir
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (evaluatedCount === 0) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    interpretation = "Évalue les 7 items pour obtenir le score.";
+    action = null;
+  } else if (total <= 7) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Sevrage léger";
+    interpretation = "Pas de sevrage significatif ou sevrage très léger.";
+    action = "Surveillance simple. Hydratation, vitaminothérapie B1-B6-PP. Pas de BZD systématique. Réévaluer toutes les 4h.";
+  } else if (total <= 14) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Sevrage modéré";
+    interpretation = "Sevrage modéré nécessitant un traitement.";
+    action = "BZD : diazépam 10 mg PO (ou oxazépam 50 mg si insuffisance hépatique) toutes les 1-2h jusqu'à sédation. Hydratation, vitaminothérapie B1 IV (≥ 500 mg/j) avant tout apport glucosé. Réévaluer toutes les 2h.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#CFFAFE";
+    sevLabel = "Sevrage SÉVÈRE";
+    interpretation = "Sevrage sévère. Risque élevé de delirium tremens, crise convulsive.";
+    action = "BZD à fortes doses : diazépam 10-20 mg PO/IV toutes les heures jusqu'à sédation. Surveillance scope, USC/réa. Vitamine B1 IV ≥ 1g/j. Discuter clonidine si HTA résistante. Convulsions : BZD IV en bolus.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Bouton 0/1/2/3 — 4 boutons compacts côte à côte
+  function ScoreBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          flex: 1,
+          padding: "8px 6px",
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 9,
+          cursor: "pointer",
+          textAlign: "center",
+          transition: "all .15s",
+          touchAction: "manipulation",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          minHeight: 64,
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 22, height: 22,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 11,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{option.value}</span>
+        <span style={{
+          fontSize: 10,
+          lineHeight: 1.25,
+          fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? color : C.text,
+        }}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #155E75 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🍷</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Cushman</div>
+            <div style={{fontSize: 11, opacity: .85}}>Sevrage alcoolique — titration BZD</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Indicateur progression */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}>
+        <span style={{fontSize: 11, fontWeight: 700, color: C.sub}}>PROGRESSION</span>
+        <div style={{flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden"}}>
+          <div style={{
+            width: `${(evaluatedCount / totalItems) * 100}%`,
+            height: "100%",
+            background: COLOR,
+            transition: "width .3s ease-out",
+          }}/>
+        </div>
+        <span style={{fontSize: 11, fontWeight: 800, color: COLOR}}>{evaluatedCount}/{totalItems}</span>
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <div key={it.key} style={{marginBottom: 12}}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}>
+            <span style={{
+              background: COLOR + "18",
+              color: COLOR,
+              borderRadius: 8,
+              padding: "3px 9px",
+              fontSize: 12,
+              fontWeight: 900,
+              minWidth: 24,
+              textAlign: "center",
+            }}>{it.letter}</span>
+            <span style={{fontSize: 12, fontWeight: 800, color: C.navy, flex: 1}}>{it.title}</span>
+            <span style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: scores[it.key] !== null ? COLOR : C.sub,
+            }}>{scores[it.key] !== null ? `${scores[it.key]}/3` : "—"}</span>
+          </div>
+          {it.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginBottom: 6, paddingLeft: 2}}>
+              💬 {it.help}
+            </div>
+          )}
+          <div style={{display: "flex", gap: 5}}>
+            {it.options.map(o => (
+              <ScoreBtn key={o.value} option={o} selected={scores[it.key]} onSelect={(v) => setItem(it.key, v)} color={COLOR}/>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE CUSHMAN</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 21</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              {evaluatedCount}/{totalItems} item{totalItems > 1 ? "s" : ""} évalué{evaluatedCount > 1 ? "s" : ""}
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+
+        {evaluatedCount > 0 && !complete && (
+          <div style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            background: C.amberLight,
+            border: `1px solid ${C.amber}40`,
+            borderRadius: 8,
+            fontSize: 11,
+            color: C.text,
+            lineHeight: 1.4,
+          }}>
+            ⚠️ Évaluation incomplète — {totalItems - evaluatedCount} item{totalItems - evaluatedCount > 1 ? "s" : ""} restant{totalItems - evaluatedCount > 1 ? "s" : ""}
+          </div>
+        )}
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>0–7</b> : sevrage léger — surveillance simple<br/>
+        • <b>8–14</b> : sevrage modéré — BZD systématique<br/>
+        • <b>≥ 15</b> : sevrage sévère — BZD à fortes doses + surveillance rapprochée, <b>risque DT</b><br/>
+        • <b>À répéter toutes les 1–4h</b> selon évolution pour adapter la titration BZD<br/>
+        • <b>Vitamine B1</b> IV (≥ 500 mg/j à 1 g/j) <b>avant tout apport glucosé</b> (prévention Gayet-Wernicke)<br/>
+        • <b>Hydratation</b> : 2–3 L/24h, supplémentation Mg, K si besoin<br/>
+        • <b>Alternative</b> oxazépam 50 mg si insuffisance hépatique (élimination non hépatique)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// QsofaCalculator : Quick SOFA — dépistage rapide du sepsis
+// 3 critères binaires, total /3 — seuil critique ≥ 2
+// ────────────────────────────────────────────────────────────────────────────
+function QsofaCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#EA580C";
+
+  // 3 items binaires
+  const ITEMS = [
+    {
+      key: "fr",
+      letter: "R",
+      title: "Fréquence respiratoire ≥ 22 /min",
+      help: "Polypnée — souvent le 1er signe d'alerte",
+    },
+    {
+      key: "mentale",
+      letter: "C",
+      title: "Altération de la conscience",
+      help: "GCS < 15 (confusion, somnolence, agitation, désorientation)",
+    },
+    {
+      key: "pas",
+      letter: "P",
+      title: "PAS ≤ 100 mmHg",
+      help: "Pression artérielle systolique basse",
+    },
+  ];
+
+  const [scores, setScores] = useState({ fr: false, mentale: false, pas: false });
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  const total = Object.values(scores).filter(Boolean).length;
+
+  // Sévérité
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (total === 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Faible suspicion";
+    interpretation = "Aucun critère qSOFA présent.";
+    action = "Pas de critère de sepsis à ce stade. Rechercher d'autres signes (lactates, marbrures, oligurie) si suspicion clinique malgré qSOFA = 0.";
+  } else if (total === 1) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Vigilance";
+    interpretation = "1 critère qSOFA présent. Suspicion modérée mais surveillance recommandée.";
+    action = "Réévaluation clinique régulière. Bilan biologique avec lactates si tableau infectieux. Ne pas se contenter du qSOFA pour exclure un sepsis débutant.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#FFEDD5";
+    sevLabel = "SEPSIS PROBABLE";
+    interpretation = "≥ 2 critères qSOFA présents → risque accru de mortalité (≈ 10× sans sepsis).";
+    action = "Activer la prise en charge du sepsis : bilan complet (NFS, ionogramme, CRP, lactates, gaz, hémocultures × 2, ECBU), calcul du SOFA complet, ANTIBIOTHÉRAPIE PROBABILISTE dans l'heure, remplissage 30 mL/kg de cristalloïdes si hypotension/lactates ≥ 2 mmol/L, monitoring rapproché, avis réanimateur.";
+  }
+
+  function reset() {
+    setScores({ fr: false, mentale: false, pas: false });
+  }
+
+  // Bouton case à cocher
+  function ItemCheckbox({ item, checked, onToggle }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px",
+          marginBottom: 8,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 12,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          background: checked ? COLOR : COLOR + "18",
+          color: checked ? "#fff" : COLOR,
+          borderRadius: 8,
+          padding: "5px 11px",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+          minWidth: 36,
+          textAlign: "center",
+        }}>{item.letter}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 700,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+            marginBottom: 2,
+          }}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", lineHeight: 1.35}}>
+              {item.help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>+1</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #9A3412 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🦠</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>qSOFA</div>
+            <div style={{fontSize: 11, opacity: .85}}>Quick SOFA — dépistage rapide sepsis</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note pédagogique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ⚡ <b>Score de dépistage rapide</b> au lit du patient, sans biologie. <b>Seuil critique : ≥ 2</b>.
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <ItemCheckbox
+          key={it.key}
+          item={it}
+          checked={scores[it.key]}
+          onToggle={() => toggle(it.key)}
+        />
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: total >= 2 ? `0 4px 16px ${COLOR}33` : "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE qSOFA</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 3</span>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Alerte sepsis si ≥ 2 */}
+      {total >= 2 && (
+        <div style={{
+          background: COLOR,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${COLOR}44`,
+        }}>
+          🚨 <b>ALERTE SEPSIS</b> — ANTIBIOTHÉRAPIE DANS L'HEURE (bundle "1 hour" de la SSC)
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (Sepsis-3, 2016)</div>
+        • <b>qSOFA ≥ 2</b> = identification d'un patient avec infection à risque accru de mortalité<br/>
+        • <b>Ne pose pas le diagnostic de sepsis</b> mais alerte sur sa probabilité<br/>
+        • <b>Sepsis</b> = infection + dysfonction d'organe (SOFA ≥ 2 par rapport au baseline)<br/>
+        • <b>Choc septique</b> = sepsis + hypotension nécessitant vasopresseurs (PAM ≥ 65) + lactates &gt; 2 mmol/L malgré remplissage<br/>
+        • <b>Bundle "1 hour" SSC</b> : lactates, hémocultures, antibiothérapie large spectre, remplissage 30 mL/kg si hypotension/lactates ≥ 2, vasopresseurs si PAM &lt; 65 malgré remplissage<br/>
+        • <b>Limites</b> : sensibilité modérée — un qSOFA &lt; 2 n'élimine pas un sepsis débutant
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// GeneveEpCalculator : Score de Genève révisé simplifié (embolie pulmonaire)
+// 8 items binaires (1 pt chacun) — total /9
+// Probabilité clinique : faible (0-1) / intermédiaire (2-4) / forte (≥ 5)
+// ────────────────────────────────────────────────────────────────────────────
+function GeneveEpCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0EA5E9";
+
+  // 8 items du score de Genève révisé simplifié
+  // Note : "Âge > 65 ans" = 1 pt, "Douleur palpation MI + œdème unilatéral" = 1 pt (groupé)
+  const ITEMS = [
+    {
+      key: "age",
+      title: "Âge > 65 ans",
+      points: 1,
+    },
+    {
+      key: "atcd_tvp_ep",
+      title: "ATCD de TVP ou d'EP",
+      help: "Antécédent personnel documenté de thrombose veineuse profonde ou embolie pulmonaire",
+      points: 1,
+    },
+    {
+      key: "chirurgie",
+      title: "Chirurgie ou fracture < 1 mois",
+      help: "Chirurgie sous AG ou fracture d'un MI dans le mois précédent",
+      points: 1,
+    },
+    {
+      key: "cancer",
+      title: "Cancer actif",
+      help: "Néoplasie active (en cours de traitement ou diagnostiquée < 1 an, ou en soins palliatifs)",
+      points: 1,
+    },
+    {
+      key: "douleur_mi",
+      title: "Douleur unilatérale d'un MI",
+      help: "Douleur spontanée d'un membre inférieur",
+      points: 1,
+    },
+    {
+      key: "hemoptysie",
+      title: "Hémoptysie",
+      points: 1,
+    },
+    {
+      key: "fc_75_94",
+      title: "FC 75 – 94 bpm",
+      help: "Cocher SOIT cet item SOIT le suivant (FC ≥ 95), pas les deux",
+      points: 1,
+    },
+    {
+      key: "fc_95",
+      title: "FC ≥ 95 bpm",
+      help: "Tachycardie marquée",
+      points: 1,
+    },
+    {
+      key: "palpation",
+      title: "Douleur à la palpation MI + œdème unilatéral",
+      help: "Signes cliniques de TVP au MI",
+      points: 1,
+    },
+  ];
+
+  // État
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = false; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function toggle(key) {
+    setScores(s => {
+      const next = { ...s, [key]: !s[key] };
+      // Logique exclusive FC : si on coche FC 75-94, décoche FC ≥ 95 (et inverse)
+      if (key === "fc_75_94" && next.fc_75_94) next.fc_95 = false;
+      if (key === "fc_95" && next.fc_95) next.fc_75_94 = false;
+      return next;
+    });
+  }
+
+  // Total
+  const total = ITEMS.reduce((acc, it) => acc + (scores[it.key] ? it.points : 0), 0);
+
+  // Probabilité clinique selon le score
+  let sevColor, sevBg, sevLabel, probability, interpretation, action;
+  if (total === 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Faible";
+    probability = "~ 8%";
+    interpretation = "Probabilité clinique faible d'embolie pulmonaire.";
+    action = "D-dimères : si négatifs (< seuil ajusté à l'âge) → EP exclue, pas d'imagerie nécessaire. Considérer le PERC en plus pour exclure sans D-dimères chez sujet jeune sans FdR.";
+  } else if (total <= 1) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Faible";
+    probability = "~ 8%";
+    interpretation = "Probabilité clinique faible d'embolie pulmonaire.";
+    action = "D-dimères en 1re intention : si négatifs (< seuil ajusté à l'âge) → EP exclue. Si positifs → angioTDM thoracique.";
+  } else if (total <= 4) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Intermédiaire";
+    probability = "~ 29%";
+    interpretation = "Probabilité clinique intermédiaire d'embolie pulmonaire.";
+    action = "D-dimères : si négatifs → EP exclue. Si positifs → angioTDM thoracique. Si CI à l'iode → scintigraphie V/Q ou écho-doppler des MI.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#E0F2FE";
+    sevLabel = "Forte";
+    probability = "~ 74%";
+    interpretation = "Probabilité clinique forte d'embolie pulmonaire.";
+    action = "AngioTDM thoracique en 1re intention (sans D-dimères : ils ne permettent pas d'exclure une EP en cas de probabilité forte). Anticoagulation préemptive à dose curative en attendant l'imagerie si pas de CI.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Bouton case à cocher
+  function ItemCheckbox({ item, checked, onToggle }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        {/* Pastille check */}
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        {/* Titre + aide */}
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {item.help}
+            </div>
+          )}
+        </div>
+
+        {/* Points */}
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>+{item.points}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #0369A1 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🫁</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Genève (EP)</div>
+            <div style={{fontSize: 11, opacity: .85}}>Version simplifiée révisée — 8 items objectifs</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note version */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ℹ️ <b>Version simplifiée</b> : chaque critère = 1 point (au lieu de 1 à 5 pts dans la version originale). Plus rapide en pratique, performance équivalente.
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <ItemCheckbox
+          key={it.key}
+          item={it}
+          checked={scores[it.key]}
+          onToggle={() => toggle(it.key)}
+        />
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE GENÈVE</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 9</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              Prévalence EP : <b style={{color: sevColor}}>{probability}</b>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>Probabilité {sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (ESC 2019)</div>
+        • <b>0–1</b> : probabilité faible (~8% d'EP) — D-dimères suffisent en 1re intention<br/>
+        • <b>2–4</b> : probabilité intermédiaire (~29%) — D-dimères, puis angioTDM si positifs<br/>
+        • <b>≥ 5</b> : probabilité forte (~74%) — <b>angioTDM d'emblée</b>, pas de D-dimères<br/>
+        • <b>D-dimères ajustés à l'âge</b> : seuil = âge × 10 (µg/L) au-delà de 50 ans<br/>
+        • <b>Alternative Wells</b> : score plus rapide mais inclut un critère subjectif ("EP plus probable qu'un autre dx")<br/>
+        • <b>PERC</b> (Pulmonary Embolism Rule-out Criteria) : à associer si probabilité faible chez sujet jeune sans FdR — permet d'exclure l'EP sans D-dimères<br/>
+        • Si EP confirmée : stratification de gravité (PESI / sPESI, biomarqueurs, ETT) pour orientation thérapeutique
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// WellsEpCalculator : Score de Wells pour embolie pulmonaire
+// 7 items pondérés (1, 1.5 ou 3 pts) — total max 12.5
+// Interprétations : dichotomique (≤4 vs >4) ou 3 niveaux
+// ────────────────────────────────────────────────────────────────────────────
+function WellsEpCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#6366F1";
+
+  // 7 items du score de Wells pour EP
+  const ITEMS = [
+    {
+      key: "tvp_signes",
+      title: "Signes cliniques de TVP",
+      help: "Œdème unilatéral d'un MI + douleur à la palpation du trajet veineux",
+      points: 3,
+    },
+    {
+      key: "diag_alternatif",
+      title: "EP est le diagnostic le plus probable",
+      help: "Diagnostic alternatif moins probable que l'EP (critère subjectif)",
+      points: 3,
+    },
+    {
+      key: "fc",
+      title: "FC > 100 bpm",
+      points: 1.5,
+    },
+    {
+      key: "immobilisation",
+      title: "Immobilisation > 3j ou chirurgie < 4 sem.",
+      help: "Alitement ≥ 3 jours ou chirurgie sous AG dans les 4 semaines précédentes",
+      points: 1.5,
+    },
+    {
+      key: "atcd_tvp_ep",
+      title: "ATCD de TVP ou d'EP",
+      help: "Antécédent personnel documenté",
+      points: 1.5,
+    },
+    {
+      key: "hemoptysie",
+      title: "Hémoptysie",
+      points: 1,
+    },
+    {
+      key: "cancer",
+      title: "Cancer actif",
+      help: "Néoplasie en cours de traitement, traitée < 6 mois ou en soins palliatifs",
+      points: 1,
+    },
+  ];
+
+  // État
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = false; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+  const [interpretation, setInterpretation] = useState("dichotomique"); // "dichotomique" | "trois-niveaux"
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Total (pondéré)
+  const total = ITEMS.reduce((acc, it) => acc + (scores[it.key] ? it.points : 0), 0);
+
+  // Probabilité clinique selon interprétation choisie
+  let sevColor, sevBg, sevLabel, probability, interpText, action;
+
+  if (interpretation === "dichotomique") {
+    if (total <= 4) {
+      sevColor = C.green;
+      sevBg = C.greenLight;
+      sevLabel = "EP improbable";
+      probability = "~ 12%";
+      interpText = "Score de Wells ≤ 4 : EP improbable.";
+      action = "D-dimères : si négatifs (seuil ajusté à l'âge) → EP exclue, pas d'imagerie nécessaire. Si positifs → angioTDM thoracique. Considérer PERC chez sujet jeune sans FdR.";
+    } else {
+      sevColor = COLOR;
+      sevBg = "#E0E7FF";
+      sevLabel = "EP probable";
+      probability = "~ 37%";
+      interpText = "Score de Wells > 4 : EP probable.";
+      action = "AngioTDM thoracique en 1re intention (les D-dimères ne permettent pas d'exclure l'EP en cas de probabilité forte). Anticoagulation préemptive à dose curative en attendant l'imagerie si pas de CI.";
+    }
+  } else {
+    // Version 3 niveaux
+    if (total < 2) {
+      sevColor = C.green;
+      sevBg = C.greenLight;
+      sevLabel = "Faible";
+      probability = "~ 3%";
+      interpText = "Probabilité clinique faible d'EP.";
+      action = "D-dimères : si négatifs → EP exclue. Considérer PERC chez sujet jeune sans FdR (exclusion sans D-dimères).";
+    } else if (total <= 6) {
+      sevColor = C.amber;
+      sevBg = C.amberLight;
+      sevLabel = "Intermédiaire";
+      probability = "~ 28%";
+      interpText = "Probabilité clinique intermédiaire d'EP.";
+      action = "D-dimères : si négatifs → EP exclue. Si positifs → angioTDM thoracique.";
+    } else {
+      sevColor = COLOR;
+      sevBg = "#E0E7FF";
+      sevLabel = "Forte";
+      probability = "~ 78%";
+      interpText = "Probabilité clinique forte d'EP.";
+      action = "AngioTDM thoracique d'emblée (pas de D-dimères). Anticoagulation préemptive à dose curative en attendant si pas de CI.";
+    }
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Affichage du total avec décimale si .5
+  function fmtScore(n) {
+    return n % 1 === 0 ? n.toString() : n.toFixed(1).replace(".", ",");
+  }
+
+  // Bouton case à cocher
+  function ItemCheckbox({ item, checked, onToggle }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        {/* Pastille check */}
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        {/* Titre + aide */}
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {item.help}
+            </div>
+          )}
+        </div>
+
+        {/* Points (avec décimale si .5) */}
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}>+{fmtScore(item.points)}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #4338CA 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🩺</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Wells (EP)</div>
+            <div style={{fontSize: 11, opacity: .85}}>Probabilité clinique d'embolie pulmonaire</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Toggle interprétation */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "10px 12px",
+        marginBottom: 14,
+      }}>
+        <div style={{fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>
+          MODE D'INTERPRÉTATION
+        </div>
+        <div style={{display: "flex", gap: 6}}>
+          <button
+            onClick={() => setInterpretation("dichotomique")}
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: `1.5px solid ${interpretation === "dichotomique" ? COLOR : C.border}`,
+              background: interpretation === "dichotomique" ? COLOR + "12" : C.white,
+              color: interpretation === "dichotomique" ? COLOR : C.sub,
+              borderRadius: 9,
+              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: 800,
+              touchAction: "manipulation",
+            }}>Dichotomique (≤4 vs &gt;4)</button>
+          <button
+            onClick={() => setInterpretation("trois-niveaux")}
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: `1.5px solid ${interpretation === "trois-niveaux" ? COLOR : C.border}`,
+              background: interpretation === "trois-niveaux" ? COLOR + "12" : C.white,
+              color: interpretation === "trois-niveaux" ? COLOR : C.sub,
+              borderRadius: 9,
+              cursor: "pointer",
+              fontSize: 11,
+              fontWeight: 800,
+              touchAction: "manipulation",
+            }}>3 niveaux</button>
+        </div>
+        <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 6, lineHeight: 1.4}}>
+          💡 La version <b>dichotomique</b> est la plus utilisée en pratique (algorithme YEARS, recommandations ESC).
+        </div>
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <ItemCheckbox
+          key={it.key}
+          item={it}
+          checked={scores[it.key]}
+          onToggle={() => toggle(it.key)}
+        />
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE WELLS</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{fmtScore(total)}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 12,5</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              Prévalence EP : <b style={{color: sevColor}}>{probability}</b>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpText}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (ESC 2019)</div>
+        • <b>Version dichotomique</b> : ≤ 4 = EP improbable (D-dimères) · &gt; 4 = EP probable (angioTDM)<br/>
+        • <b>Version 3 niveaux</b> : &lt; 2 faible · 2–6 intermédiaire · ≥ 7 forte<br/>
+        • <b>D-dimères ajustés à l'âge</b> : seuil = âge × 10 µg/L au-delà de 50 ans<br/>
+        • <b>Particularité Wells</b> : inclut un critère subjectif ("EP plus probable qu'un autre dx") — score plus rapide mais moins reproductible que le Genève<br/>
+        • <b>Algorithme YEARS</b> (alternative) : 3 critères Wells + seuil D-dimères variable selon le nombre de critères présents<br/>
+        • <b>PERC</b> : à associer si probabilité faible chez sujet jeune sans FdR (permet d'exclure l'EP sans biologie)<br/>
+        • Si EP confirmée : stratification PESI/sPESI + biomarqueurs + ETT pour orientation thérapeutique
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// GbsCalculator : Glasgow-Blatchford Score (hémorragie digestive haute)
+// Tri SAU : GBS = 0 → sortie possible · GBS ≥ 1 → endoscopie en hospitalisation
+// 8 critères, total /23
+// ────────────────────────────────────────────────────────────────────────────
+function GbsCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#991B1B";
+
+  // Inputs numériques
+  const [uree, setUree] = useState("");       // mmol/L
+  const [hb, setHb] = useState("");           // g/dL
+  const [pas, setPas] = useState("");         // mmHg
+  const [fc, setFc] = useState("");           // bpm
+  const [sexe, setSexe] = useState("H");      // "H" ou "F" (seuils Hb différents)
+
+  // Cases à cocher
+  const [scores, setScores] = useState({
+    melena: false,
+    syncope: false,
+    ic: false,    // insuffisance cardiaque
+    ih: false,    // insuffisance hépatique
+  });
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Calcul des sous-scores
+  // Urée (mmol/L) : <6.5=0 · 6.5-7.9=2 · 8-9.9=3 · 10-24.9=4 · ≥25=6
+  function ureeScore(u) {
+    if (isNaN(u) || u < 6.5) return 0;
+    if (u < 8) return 2;
+    if (u < 10) return 3;
+    if (u < 25) return 4;
+    return 6;
+  }
+
+  // Hémoglobine (g/dL) — HOMME : ≥13=0 · 12-12.9=1 · 10-11.9=3 · <10=6
+  // Hémoglobine (g/dL) — FEMME : ≥12=0 · 10-11.9=1 · <10=6
+  function hbScore(h, s) {
+    if (isNaN(h)) return 0;
+    if (s === "H") {
+      if (h >= 13) return 0;
+      if (h >= 12) return 1;
+      if (h >= 10) return 3;
+      return 6;
+    } else {
+      if (h >= 12) return 0;
+      if (h >= 10) return 1;
+      return 6;
+    }
+  }
+
+  // PAS (mmHg) : ≥110=0 · 100-109=1 · 90-99=2 · <90=3
+  function pasScore(p) {
+    if (isNaN(p) || p >= 110) return 0;
+    if (p >= 100) return 1;
+    if (p >= 90) return 2;
+    return 3;
+  }
+
+  // FC ≥ 100 bpm = 1 pt
+  function fcScore(f) {
+    if (isNaN(f)) return 0;
+    return f >= 100 ? 1 : 0;
+  }
+
+  // Conversions
+  const ureeNum = parseFloat(uree);
+  const hbNum = parseFloat(hb);
+  const pasNum = parseFloat(pas);
+  const fcNum = parseFloat(fc);
+
+  // Sous-scores
+  const sUree = ureeScore(ureeNum);
+  const sHb = hbScore(hbNum, sexe);
+  const sPas = pasScore(pasNum);
+  const sFc = fcScore(fcNum);
+  const sMelena = scores.melena ? 1 : 0;
+  const sSyncope = scores.syncope ? 2 : 0;
+  const sIc = scores.ic ? 2 : 0;
+  const sIh = scores.ih ? 2 : 0;
+
+  const total = sUree + sHb + sPas + sFc + sMelena + sSyncope + sIc + sIh;
+
+  // Au moins une donnée saisie ?
+  const hasInput = !isNaN(ureeNum) || !isNaN(hbNum) || !isNaN(pasNum) || !isNaN(fcNum)
+    || scores.melena || scores.syncope || scores.ic || scores.ih;
+
+  // Sévérité et conduite à tenir
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (!hasInput) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    interpretation = "Saisis les valeurs biologiques et cochez les items cliniques.";
+    action = null;
+  } else if (total === 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Risque très faible";
+    interpretation = "GBS = 0 : risque très faible (sensibilité 99% pour intervention nécessaire — Stanley 2009).";
+    action = "Sortie possible avec endoscopie ambulatoire programmée si contexte adapté (compliance, accès aux soins). Confirmer absence de signe d'alerte clinique et de comorbidité majeure.";
+  } else if (total <= 5) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Risque faible";
+    interpretation = "Risque faible. Hospitalisation recommandée pour endoscopie.";
+    action = "Hospitalisation pour endoscopie haute. IPP IV (oméprazole 80 mg bolus puis 8 mg/h). Voie veineuse, bilan complet, groupe-RAI. Surveillance hémodynamique.";
+  } else if (total <= 11) {
+    sevColor = COLOR;
+    sevBg = "#FEE2E2";
+    sevLabel = "Risque élevé";
+    interpretation = "Risque élevé d'intervention thérapeutique.";
+    action = "Hospitalisation urgente. Endoscopie haute dans les 24h (idéalement < 12h). IPP IV à pleine dose. 2 VVP gros calibre. Bilan complet, groupe-RAI, commande de CGR. Avis gastro-entérologue. Discuter érythromycine pré-endoscopie (250 mg IV).";
+  } else {
+    sevColor = "#7F1D1D";
+    sevBg = "#FEE2E2";
+    sevLabel = "Risque TRÈS ÉLEVÉ";
+    interpretation = "Risque très élevé. Hémorragie active probable.";
+    action = "Mise en condition immédiate : 2 VVP gros calibre, remplissage par cristalloïdes, transfusion CGR si Hb < 7 g/dL (8 si coronaropathie), correction des troubles de coagulation. IPP IV bolus. Endoscopie en urgence. Si HD ferraillé : embolisation, chirurgie. Avis réanimateur, USI.";
+  }
+
+  function reset() {
+    setUree("");
+    setHb("");
+    setPas("");
+    setFc("");
+    setSexe("H");
+    setScores({ melena: false, syncope: false, ic: false, ih: false });
+  }
+
+  // Style input numérique
+  const numInputStyle = {
+    width: "100%",
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 10,
+    padding: "10px 12px",
+    fontSize: 16,
+    fontWeight: 800,
+    color: C.text,
+    background: C.white,
+    boxSizing: "border-box",
+    outline: "none",
+    textAlign: "center",
+    fontFamily: "inherit",
+  };
+
+  // Composant input + badge sous-score
+  function NumInput({ label, value, onChange, unit, subScore }) {
+    return (
+      <div style={{flex: 1, minWidth: 0}}>
+        <label style={{
+          display: "block",
+          fontSize: 10,
+          fontWeight: 800,
+          color: C.sub,
+          letterSpacing: .5,
+          marginBottom: 4,
+          textAlign: "center",
+        }}>{label} ({unit})</label>
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="—"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={numInputStyle}
+        />
+        <div style={{textAlign: "center", marginTop: 4, fontSize: 11, fontWeight: 800, color: subScore > 0 ? COLOR : C.sub}}>
+          +{subScore} pt{subScore > 1 ? "s" : ""}
+        </div>
+      </div>
+    );
+  }
+
+  // Case à cocher avec points
+  function ItemCheckbox({ title, help, checked, onToggle, points }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "11px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{title}</div>
+          {help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>+{points}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #7F1D1D 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🩸</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Glasgow-Blatchford</div>
+            <div style={{fontSize: 11, opacity: .85}}>Hémorragie digestive haute — tri SAU</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note clé */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        🎯 <b>GBS = 0</b> : possibilité de sortie + endoscopie ambulatoire. <b>GBS ≥ 1</b> : hospitalisation pour endoscopie.
+      </div>
+
+      {/* Sélecteur sexe (pour les seuils Hb) */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "10px 12px",
+        marginBottom: 12,
+      }}>
+        <div style={{fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>
+          SEXE (seuils Hb)
+        </div>
+        <div style={{display: "flex", gap: 6}}>
+          <button
+            onClick={() => setSexe("H")}
+            style={{
+              flex: 1,
+              padding: "8px",
+              border: `1.5px solid ${sexe === "H" ? COLOR : C.border}`,
+              background: sexe === "H" ? COLOR + "12" : C.white,
+              color: sexe === "H" ? COLOR : C.sub,
+              borderRadius: 9,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 800,
+              touchAction: "manipulation",
+            }}>♂ Homme</button>
+          <button
+            onClick={() => setSexe("F")}
+            style={{
+              flex: 1,
+              padding: "8px",
+              border: `1.5px solid ${sexe === "F" ? COLOR : C.border}`,
+              background: sexe === "F" ? COLOR + "12" : C.white,
+              color: sexe === "F" ? COLOR : C.sub,
+              borderRadius: 9,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 800,
+              touchAction: "manipulation",
+            }}>♀ Femme</button>
+        </div>
+      </div>
+
+      {/* Inputs biologiques et constantes */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px",
+        marginBottom: 12,
+      }}>
+        <div style={{fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 10}}>
+          BIOLOGIE & CONSTANTES
+        </div>
+        <div style={{display: "flex", gap: 8, marginBottom: 10}}>
+          <NumInput label="Urée" value={uree} onChange={setUree} unit="mmol/L" subScore={sUree}/>
+          <NumInput label="Hémoglobine" value={hb} onChange={setHb} unit="g/dL" subScore={sHb}/>
+        </div>
+        <div style={{display: "flex", gap: 8}}>
+          <NumInput label="PAS" value={pas} onChange={setPas} unit="mmHg" subScore={sPas}/>
+          <NumInput label="FC" value={fc} onChange={setFc} unit="bpm" subScore={sFc}/>
+        </div>
+      </div>
+
+      {/* Items cliniques */}
+      <ItemCheckbox
+        title="Méléna"
+        help="Selles noires goudronneuses (sang digéré)"
+        checked={scores.melena}
+        onToggle={() => toggle("melena")}
+        points={1}
+      />
+      <ItemCheckbox
+        title="Syncope"
+        help="Perte de connaissance brève (témoin d'instabilité hémodynamique)"
+        checked={scores.syncope}
+        onToggle={() => toggle("syncope")}
+        points={2}
+      />
+      <ItemCheckbox
+        title="Insuffisance hépatique"
+        help="Cirrhose connue ou signes biologiques d'IH"
+        checked={scores.ih}
+        onToggle={() => toggle("ih")}
+        points={2}
+      />
+      <ItemCheckbox
+        title="Insuffisance cardiaque"
+        help="ICC connue ou symptomatique"
+        checked={scores.ic}
+        onToggle={() => toggle("ic")}
+        points={2}
+      />
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: hasInput && total > 5 ? `0 4px 16px ${COLOR}33` : "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE GBS</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>
+                {hasInput ? total : "—"}
+              </span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 23</span>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+      </div>
+
+      {/* Alerte transfusion si Hb basse */}
+      {!isNaN(hbNum) && hbNum < 7 && (
+        <div style={{
+          background: COLOR,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${COLOR}44`,
+        }}>
+          🚨 <b>Hb &lt; 7 g/dL</b> — INDICATION DE TRANSFUSION CGR (cible Hb 7-9 g/dL, ou ≥ 8 si coronaropathie)
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>GBS = 0</b> : sortie + endoscopie ambulatoire possible (Sb 99% — Stanley 2009)<br/>
+        • <b>GBS 1–5</b> : hospitalisation, endoscopie dans les 24h<br/>
+        • <b>GBS 6–11</b> : endoscopie en urgence (&lt; 12-24h), IPP IV pleine dose<br/>
+        • <b>GBS ≥ 12</b> : mise en condition, transfusion si Hb &lt; 7, endoscopie urgente, USI<br/>
+        • <b>IPP IV</b> : oméprazole 80 mg bolus puis 8 mg/h (ou pantoprazole équivalent)<br/>
+        • <b>Érythromycine</b> 250 mg IV 30 min avant endoscopie : améliore la visibilité<br/>
+        • <b>Cirrhose</b> : ajouter antibioprophylaxie (céfotaxime ou ceftriaxone) + somatostatine/terlipressine si suspicion rupture VO<br/>
+        • Score non applicable aux HDH connues hospitalisées
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// AvpuCalculator : Échelle AVPU (Alert / Verbal / Pain / Unresponsive)
+// Évaluation rapide du niveau de conscience avec visuels expressifs
+// ────────────────────────────────────────────────────────────────────────────
+function AvpuCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#9B59B6";
+
+  const [selected, setSelected] = useState(null);
+
+  // Composant : tête SVG expressive selon le niveau
+  function FaceSvg({ level, size = 80, selected = false }) {
+    // Couleurs de fond et de bouche selon le niveau
+    const config = {
+      A: {
+        bg: "#22C55E",      // vert
+        bgDark: "#16A34A",
+        eyeY: 38,
+        eyeOpen: true,
+        mouth: "smile-big", // grand sourire ouvert
+      },
+      V: {
+        bg: "#FBBF24",      // jaune
+        bgDark: "#F59E0B",
+        eyeY: 38,
+        eyeOpen: true,
+        mouth: "smile-light", // sourire léger
+      },
+      P: {
+        bg: "#F97316",      // orange
+        bgDark: "#EA580C",
+        eyeY: 36,
+        eyeOpen: "squint",  // yeux plissés (grimace de douleur)
+        mouth: "grimace",   // grimace (sourcils froncés + bouche tordue)
+      },
+      U: {
+        bg: "#DC2626",      // rouge
+        bgDark: "#991B1B",
+        eyeY: 38,
+        eyeOpen: "closed",  // yeux fermés (X)
+        mouth: "flat",      // bouche fermée droite
+      },
+    };
+
+    const c = config[level];
+
+    // Path de la bouche selon le type
+    const mouthPaths = {
+      "smile-big": "M 32 60 Q 50 78 68 60",       // sourire large
+      "smile-light": "M 36 60 Q 50 70 64 60",     // sourire léger
+      "grimace": "M 34 64 Q 42 56 50 64 Q 58 72 66 64",  // grimace tordue (zigzag)
+      "flat": "M 36 64 L 64 64",                  // ligne droite (mutisme)
+    };
+
+    return (
+      <svg
+        viewBox="0 0 100 100"
+        width={size}
+        height={size}
+        style={{
+          filter: selected ? `drop-shadow(0 4px 12px ${c.bgDark}88)` : "none",
+          transition: "all .2s",
+        }}
+      >
+        {/* Cercle de fond (tête) */}
+        <circle cx="50" cy="50" r="46" fill={c.bg} stroke={c.bgDark} strokeWidth="2.5"/>
+
+        {/* Sourcils (pour la grimace) */}
+        {level === "P" && (
+          <>
+            <path d="M 26 28 L 38 32" stroke="#1F2937" strokeWidth="3" strokeLinecap="round" fill="none"/>
+            <path d="M 74 28 L 62 32" stroke="#1F2937" strokeWidth="3" strokeLinecap="round" fill="none"/>
+          </>
+        )}
+
+        {/* Yeux */}
+        {c.eyeOpen === true && (
+          <>
+            <circle cx="35" cy={c.eyeY} r="4.5" fill="#1F2937"/>
+            <circle cx="65" cy={c.eyeY} r="4.5" fill="#1F2937"/>
+            {/* Petite réflexion lumineuse pour rendre vivant */}
+            <circle cx="36.5" cy={c.eyeY - 1.5} r="1.5" fill="#fff"/>
+            <circle cx="66.5" cy={c.eyeY - 1.5} r="1.5" fill="#fff"/>
+          </>
+        )}
+        {c.eyeOpen === "squint" && (
+          <>
+            {/* Yeux plissés (lignes courbes vers le bas) */}
+            <path d="M 28 38 Q 35 34 42 38" stroke="#1F2937" strokeWidth="3" strokeLinecap="round" fill="none"/>
+            <path d="M 58 38 Q 65 34 72 38" stroke="#1F2937" strokeWidth="3" strokeLinecap="round" fill="none"/>
+          </>
+        )}
+        {c.eyeOpen === "closed" && (
+          <>
+            {/* Yeux fermés en X (signe "non-réactif") */}
+            <path d="M 28 34 L 42 42 M 28 42 L 42 34" stroke="#1F2937" strokeWidth="3" strokeLinecap="round"/>
+            <path d="M 58 34 L 72 42 M 58 42 L 72 34" stroke="#1F2937" strokeWidth="3" strokeLinecap="round"/>
+          </>
+        )}
+
+        {/* Bouche */}
+        <path
+          d={mouthPaths[c.mouth]}
+          stroke="#1F2937"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          fill={c.mouth === "smile-big" ? "#7F1D1D" : "none"}
+        />
+        {/* Petite dent du sourire ouvert */}
+        {c.mouth === "smile-big" && (
+          <rect x="46" y="64" width="8" height="6" rx="1" fill="#fff"/>
+        )}
+      </svg>
+    );
+  }
+
+  // Définition des 4 niveaux
+  const LEVELS = [
+    {
+      id: "A",
+      letter: "A",
+      title: "Alert",
+      subtitle: "Vigilant",
+      bg: "#22C55E",
+      bgLight: "#DCFCE7",
+      description: "Patient éveillé, conscient, orienté. Répond spontanément, ouvre les yeux sans stimulation.",
+      glasgowEquiv: "GCS 15",
+      action: "Conscience normale. Surveillance neurologique standard. Recherche étiologique du motif d'admission.",
+    },
+    {
+      id: "V",
+      letter: "V",
+      title: "Verbal",
+      subtitle: "Répond à la voix",
+      bg: "#FBBF24",
+      bgLight: "#FEF3C7",
+      description: "Patient répond uniquement quand on lui parle. Pas d'ouverture spontanée des yeux, mais réveillable à la voix.",
+      glasgowEquiv: "GCS ~ 12-14",
+      action: "Vigilance modérément altérée. Évaluer GCS complet, glycémie capillaire, rechercher cause (toxique, métabolique, neuro, infectieux). Surveillance rapprochée.",
+    },
+    {
+      id: "P",
+      letter: "P",
+      title: "Pain",
+      subtitle: "Répond à la douleur",
+      bg: "#F97316",
+      bgLight: "#FFEDD5",
+      description: "Patient ne répond pas à la voix mais réagit à la stimulation douloureuse (pression sus-orbitaire, friction sternale).",
+      glasgowEquiv: "GCS ~ 8-9",
+      action: "Trouble de conscience sévère. Glycémie immédiate, libération VAS, position latérale de sécurité si vomissement. Évaluer GCS, scope, voie veineuse. SCANNER cérébral en urgence. Préparer l'IOT si GCS ≤ 8.",
+    },
+    {
+      id: "U",
+      letter: "U",
+      title: "Unresponsive",
+      subtitle: "Aucune réponse",
+      bg: "#DC2626",
+      bgLight: "#FEE2E2",
+      description: "Aucune réponse à la voix ni à la stimulation douloureuse. Patient comateux.",
+      glasgowEquiv: "GCS ≤ 3-5",
+      action: "Coma profond. URGENCE VITALE : libération VAS, oxygénation, IOT et ventilation mécanique. Glycémie, ECG, bilan complet. Scanner cérébral. Recherche étiologique systématique (toxiques, AVC, métabolique, traumatisme). Avis réanimateur immédiat.",
+    },
+  ];
+
+  const selectedLevel = LEVELS.find(l => l.id === selected);
+
+  function reset() {
+    setSelected(null);
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #7E3FA0 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🧠</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Échelle AVPU</div>
+            <div style={{fontSize: 11, opacity: .85}}>Évaluation rapide du niveau de conscience</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note pédagogique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ⚡ Échelle <b>simple et rapide</b> en pré-hospitalier et au tri SAU. <b>Pain et Unresponsive</b> = trouble de conscience grave, équivalent GCS ≤ 8.
+      </div>
+
+      {/* Grille 2×2 des 4 niveaux avec têtes SVG */}
+      <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16}}>
+        {LEVELS.map(level => {
+          const isSelected = selected === level.id;
+          return (
+            <button
+              key={level.id}
+              onClick={() => setSelected(level.id)}
+              style={{
+                background: isSelected ? level.bgLight : C.white,
+                border: `2.5px solid ${isSelected ? level.bg : C.border}`,
+                borderRadius: 16,
+                padding: "16px 10px",
+                cursor: "pointer",
+                textAlign: "center",
+                transition: "all .2s",
+                touchAction: "manipulation",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 8,
+                transform: isSelected ? "scale(1.02)" : "scale(1)",
+              }}
+            >
+              {/* Tête SVG */}
+              <FaceSvg level={level.id} size={isSelected ? 88 : 80} selected={isSelected}/>
+
+              {/* Lettre + titre */}
+              <div>
+                <div style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: level.bg,
+                  color: "#fff",
+                  width: 28, height: 28,
+                  borderRadius: "50%",
+                  fontSize: 16,
+                  fontWeight: 900,
+                  marginBottom: 4,
+                }}>{level.letter}</div>
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: isSelected ? level.bg : C.text,
+                  lineHeight: 1.2,
+                }}>{level.title}</div>
+                <div style={{
+                  fontSize: 10,
+                  color: C.sub,
+                  marginTop: 2,
+                }}>{level.subtitle}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Carte résultat — visible quand un niveau est sélectionné */}
+      {selectedLevel && (
+        <div style={{
+          background: C.white,
+          borderRadius: 16,
+          padding: 18,
+          marginBottom: 12,
+          border: `1px solid ${C.border}`,
+          borderLeft: `5px solid ${selectedLevel.bg}`,
+          boxShadow: selected === "U" || selected === "P"
+            ? `0 4px 16px ${selectedLevel.bg}33`
+            : "0 2px 12px rgba(26,58,92,.10)",
+        }}>
+          <div style={{display: "flex", alignItems: "center", gap: 14, marginBottom: 14}}>
+            <FaceSvg level={selectedLevel.id} size={64}/>
+            <div style={{flex: 1, minWidth: 0}}>
+              <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>NIVEAU AVPU</div>
+              <div style={{fontSize: 20, fontWeight: 900, color: selectedLevel.bg, lineHeight: 1.1}}>
+                {selectedLevel.letter} — {selectedLevel.title}
+              </div>
+              <div style={{
+                display: "inline-block",
+                marginTop: 6,
+                background: selectedLevel.bgLight,
+                color: selectedLevel.bg,
+                padding: "3px 10px",
+                borderRadius: 14,
+                fontSize: 11,
+                fontWeight: 800,
+              }}>≈ {selectedLevel.glasgowEquiv}</div>
+            </div>
+          </div>
+
+          <div style={{
+            padding: "10px 12px",
+            background: selectedLevel.bgLight,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+            marginBottom: 10,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: selectedLevel.bg, letterSpacing: .5, marginBottom: 4}}>
+              DESCRIPTION
+            </div>
+            {selectedLevel.description}
+          </div>
+
+          <div style={{
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${selectedLevel.bg}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: selectedLevel.bg, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {selectedLevel.action}
+          </div>
+        </div>
+      )}
+
+      {/* Alerte si P ou U */}
+      {(selected === "P" || selected === "U") && (
+        <div style={{
+          background: selectedLevel.bg,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${selectedLevel.bg}55`,
+        }}>
+          🚨 <b>URGENCE NEUROLOGIQUE</b> — Évaluer le GCS, glycémie capillaire, libérer les VAS, scope. Scanner cérébral en urgence.
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>Échelle simplifiée</b> du niveau de conscience — utilisée en pré-hospitalier, tri SAU, surveillance post-op<br/>
+        • <b>A</b> (Alert) : éveil spontané, GCS 15<br/>
+        • <b>V</b> (Verbal) : réveillable à la voix, GCS ≈ 12-14<br/>
+        • <b>P</b> (Pain) : réponse uniquement à la douleur, GCS ≈ 8-9 — <b>VAS à risque</b><br/>
+        • <b>U</b> (Unresponsive) : aucune réponse, GCS ≤ 3-5 — <b>indication d'IOT</b><br/>
+        • À <b>compléter par un GCS</b> dès que possible (plus précis pour le suivi)<br/>
+        • <b>P et U</b> = passage en GCS ≤ 8 = libération VAS impérative + IOT à discuter<br/>
+        • Utilisable chez l'<b>enfant</b> à partir de 2 ans (sinon AVPU pédiatrique modifié)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// RamsayCalculator : Score de Ramsay (sédation, 6 niveaux)
+// Cible thérapeutique courante : R2-R3 (patient calme, coopératif)
+// ────────────────────────────────────────────────────────────────────────────
+function RamsayCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0D9488";
+
+  const [selected, setSelected] = useState(null);
+
+  // Définition des 6 niveaux de Ramsay
+  // Codé du plus éveillé (R1) au plus profond (R6)
+  // Cible thérapeutique = R2-R3 (vert)
+  const LEVELS = [
+    {
+      id: 1,
+      title: "Anxieux, agité",
+      subtitle: "Sur-stimulé",
+      icon: "😤",
+      color: "#DC2626",      // rouge - agitation
+      bgLight: "#FEE2E2",
+      isTarget: false,
+      description: "Patient anxieux, agité, ou en désordre. Mouvements incontrôlés possibles.",
+      action: "Sédation insuffisante. Augmenter le débit de sédation (midazolam, propofol, dexmédétomidine). Rechercher cause organique (douleur, hypoxie, globe vésical, sevrage). Évaluer la nécessité d'une contention selon protocole.",
+    },
+    {
+      id: 2,
+      title: "Coopérant, orienté, tranquille",
+      subtitle: "🎯 Cible thérapeutique",
+      icon: "🙂",
+      color: "#22C55E",      // vert - cible
+      bgLight: "#DCFCE7",
+      isTarget: true,
+      description: "Patient éveillé, calme, coopératif, orienté.",
+      action: "Niveau de sédation idéal pour la majorité des patients en réanimation conscients. Maintenir l'analgésie. Encourager la communication. Pas de modification de la sédation.",
+    },
+    {
+      id: 3,
+      title: "Répond aux ordres",
+      subtitle: "🎯 Cible thérapeutique",
+      icon: "😌",
+      color: "#22C55E",      // vert - cible
+      bgLight: "#DCFCE7",
+      isTarget: true,
+      description: "Patient répond uniquement aux ordres simples. Somnolent mais éveillable.",
+      action: "Niveau de sédation acceptable pour patient intubé ventilé en phase aiguë. Évaluer la tolérance de la ventilation, l'asynchronie patient-ventilateur. Réévaluer toutes les heures.",
+    },
+    {
+      id: 4,
+      title: "Endormi, répond vivement à la stimulation",
+      subtitle: "Sédation modérée",
+      icon: "😴",
+      color: "#FBBF24",      // jaune - modéré
+      bgLight: "#FEF3C7",
+      isTarget: false,
+      description: "Patient endormi, répond rapidement à un stimulus auditif fort ou à la stimulation glabellaire (tape légère entre les sourcils).",
+      action: "Sédation modérée. Acceptable en phase aiguë (premières 24-48h) ou si curarisation. Au-delà, envisager d'alléger pour faciliter le sevrage ventilatoire (protocole d'arrêt quotidien de sédation).",
+    },
+    {
+      id: 5,
+      title: "Endormi, répond faiblement à la stimulation",
+      subtitle: "Sédation profonde",
+      icon: "😪",
+      color: "#F97316",      // orange - profond
+      bgLight: "#FFEDD5",
+      isTarget: false,
+      description: "Réponse faible et retardée à la stimulation glabellaire ou auditive forte.",
+      action: "Sédation profonde. À réserver aux situations spécifiques : SDRA sévère, HIC, curarisation, état de mal convulsif. Ailleurs : diminuer la sédation. Surveillance hémodynamique étroite (risque hypotension).",
+    },
+    {
+      id: 6,
+      title: "Aucune réponse",
+      subtitle: "Coma toxique",
+      icon: "😶",
+      color: "#7F1D1D",      // rouge foncé - coma
+      bgLight: "#FEE2E2",
+      isTarget: false,
+      description: "Aucune réponse aux stimulations auditives, tactiles ou douloureuses.",
+      action: "Sur-sédation. Diminuer immédiatement le débit de sédation (sauf indication précise : EME, HIC, curarisation impossible à arrêter). Risque de prolongation de la durée de ventilation et de delirium. Vérifier hémodynamique, BAVU prête, surveillance neuro.",
+    },
+  ];
+
+  const selectedLevel = LEVELS.find(l => l.id === selected);
+
+  function reset() {
+    setSelected(null);
+  }
+
+  // Bouton de niveau dans la liste verticale
+  function LevelBtn({ level }) {
+    const isSelected = selected === level.id;
+    return (
+      <button
+        onClick={() => setSelected(level.id)}
+        style={{
+          width: "100%",
+          background: isSelected ? level.bgLight : C.white,
+          border: `2px solid ${isSelected ? level.color : C.border}`,
+          borderRadius: 12,
+          padding: "11px 14px",
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .2s",
+          touchAction: "manipulation",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 6,
+          transform: isSelected ? "scale(1.01)" : "scale(1)",
+          position: "relative",
+        }}
+      >
+        {/* Badge niveau */}
+        <div style={{
+          background: level.color,
+          color: "#fff",
+          borderRadius: "50%",
+          width: 36, height: 36,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+          boxShadow: isSelected ? `0 2px 8px ${level.color}66` : "none",
+        }}>R{level.id}</div>
+
+        {/* Emoji */}
+        <span style={{fontSize: 28, flexShrink: 0}}>{level.icon}</span>
+
+        {/* Texte */}
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 12,
+            fontWeight: isSelected ? 800 : 700,
+            color: isSelected ? level.color : C.text,
+            lineHeight: 1.3,
+          }}>{level.title}</div>
+          <div style={{
+            fontSize: 10,
+            color: isSelected ? level.color : C.sub,
+            marginTop: 2,
+            fontWeight: level.isTarget ? 800 : 500,
+          }}>{level.subtitle}</div>
+        </div>
+
+        {/* Indicateur "cible" */}
+        {level.isTarget && (
+          <div style={{
+            position: "absolute",
+            top: 6,
+            right: 8,
+            background: "#22C55E",
+            color: "#fff",
+            fontSize: 9,
+            fontWeight: 800,
+            padding: "1px 6px",
+            borderRadius: 8,
+            letterSpacing: .3,
+          }}>CIBLE</div>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #134E4A 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>💤</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Ramsay</div>
+            <div style={{fontSize: 11, opacity: .85}}>Évaluation de la sédation — 6 niveaux</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note pédagogique */}
+      <div style={{
+        background: "#DCFCE7",
+        border: `1px solid #22C55E33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        🎯 <b>Cible thérapeutique : Ramsay 2-3</b> (patient calme, coopératif, somnolent éveillable). Réévaluer toutes les heures.
+      </div>
+
+      {/* Échelle visuelle (thermomètre horizontal) */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "14px 14px 12px",
+        marginBottom: 14,
+      }}>
+        <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 12}}>
+          ÉCHELLE DE SÉDATION
+        </div>
+
+        {/* Barre + curseur */}
+        <div style={{position: "relative", marginBottom: 8, paddingTop: 18}}>
+          {/* Curseur (badge + flèche) */}
+          {selected !== null && (
+            <div style={{
+              position: "absolute",
+              top: 0,
+              left: `${((selected - 1) / 5) * 100}%`,
+              transform: "translateX(-50%)",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              transition: "left .3s ease-out",
+              pointerEvents: "none",
+            }}>
+              <div style={{
+                background: selectedLevel.color,
+                color: "#fff",
+                fontSize: 11,
+                fontWeight: 900,
+                padding: "2px 9px",
+                borderRadius: 10,
+                boxShadow: `0 2px 6px ${selectedLevel.color}66`,
+                whiteSpace: "nowrap",
+              }}>R{selected}</div>
+              <div style={{
+                width: 0, height: 0,
+                borderLeft: "6px solid transparent",
+                borderRight: "6px solid transparent",
+                borderTop: `7px solid ${selectedLevel.color}`,
+                marginTop: -1,
+              }}/>
+            </div>
+          )}
+
+          {/* Barre colorée (6 segments avec leur couleur respective) */}
+          <div style={{display: "flex", gap: 0, height: 12, borderRadius: 6, overflow: "hidden"}}>
+            <div style={{flex: 1, background: "#DC2626"}}/>       {/* R1 rouge */}
+            <div style={{flex: 1, background: "#22C55E"}}/>       {/* R2 vert */}
+            <div style={{flex: 1, background: "#22C55E"}}/>       {/* R3 vert */}
+            <div style={{flex: 1, background: "#FBBF24"}}/>       {/* R4 jaune */}
+            <div style={{flex: 1, background: "#F97316"}}/>       {/* R5 orange */}
+            <div style={{flex: 1, background: "#7F1D1D"}}/>       {/* R6 rouge foncé */}
+          </div>
+
+          {/* Numéros R1-R6 sous la barre */}
+          <div style={{position: "relative", height: 16, marginTop: 4}}>
+            {[1, 2, 3, 4, 5, 6].map((n, i) => (
+              <div key={n} style={{
+                position: "absolute",
+                left: `${(i / 5) * 100}%`,
+                transform: "translateX(-50%)",
+                fontSize: 10,
+                fontWeight: 800,
+                color: C.sub,
+              }}>R{n}</div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{fontSize: 10, color: C.sub, marginTop: 8, lineHeight: 1.4}}>
+          <span style={{color: "#DC2626", fontWeight: 700}}>Agitation</span> · <span style={{color: "#22C55E", fontWeight: 800}}>Cible</span> · <span style={{color: "#FBBF24", fontWeight: 700}}>Modéré</span> · <span style={{color: "#F97316", fontWeight: 700}}>Profond</span> · <span style={{color: "#7F1D1D", fontWeight: 700}}>Coma</span>
+        </div>
+      </div>
+
+      {/* Liste des 6 niveaux */}
+      <div style={{marginBottom: 12}}>
+        {LEVELS.map(level => (
+          <LevelBtn key={level.id} level={level}/>
+        ))}
+      </div>
+
+      {/* Carte résultat — visible quand un niveau est sélectionné */}
+      {selectedLevel && (
+        <div style={{
+          background: C.white,
+          borderRadius: 16,
+          padding: 18,
+          marginBottom: 12,
+          border: `1px solid ${C.border}`,
+          borderLeft: `5px solid ${selectedLevel.color}`,
+          boxShadow: (selected === 1 || selected === 6)
+            ? `0 4px 16px ${selectedLevel.color}33`
+            : "0 2px 12px rgba(26,58,92,.10)",
+        }}>
+          <div style={{display: "flex", alignItems: "center", gap: 14, marginBottom: 14}}>
+            <div style={{
+              background: selectedLevel.color,
+              color: "#fff",
+              borderRadius: "50%",
+              width: 58, height: 58,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 22,
+              fontWeight: 900,
+              flexShrink: 0,
+              boxShadow: `0 4px 12px ${selectedLevel.color}55`,
+            }}>R{selectedLevel.id}</div>
+            <div style={{flex: 1, minWidth: 0}}>
+              <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>NIVEAU DE SÉDATION</div>
+              <div style={{fontSize: 16, fontWeight: 900, color: selectedLevel.color, lineHeight: 1.2}}>
+                {selectedLevel.title}
+              </div>
+              {selectedLevel.isTarget && (
+                <div style={{
+                  display: "inline-block",
+                  marginTop: 6,
+                  background: "#DCFCE7",
+                  color: "#22C55E",
+                  padding: "3px 10px",
+                  borderRadius: 14,
+                  fontSize: 11,
+                  fontWeight: 800,
+                }}>🎯 Cible thérapeutique</div>
+              )}
+            </div>
+            <span style={{fontSize: 40, flexShrink: 0}}>{selectedLevel.icon}</span>
+          </div>
+
+          <div style={{
+            padding: "10px 12px",
+            background: selectedLevel.bgLight,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+            marginBottom: 10,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: selectedLevel.color, letterSpacing: .5, marginBottom: 4}}>
+              DESCRIPTION
+            </div>
+            {selectedLevel.description}
+          </div>
+
+          <div style={{
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${selectedLevel.color}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: selectedLevel.color, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {selectedLevel.action}
+          </div>
+        </div>
+      )}
+
+      {/* Alerte si R1 (agitation) ou R6 (coma) */}
+      {(selected === 1 || selected === 6) && (
+        <div style={{
+          background: selectedLevel.color,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${selectedLevel.color}55`,
+        }}>
+          {selected === 1
+            ? "⚠️ AGITATION — Rechercher cause organique (douleur, hypoxie, globe, sevrage). Adapter la sédation/analgésie."
+            : "⚠️ SUR-SÉDATION — Diminuer immédiatement le débit (sauf indication précise). Vérifier hémodynamique, BAVU prête."}
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>R1</b> : agitation — augmenter sédation ou traiter cause (douleur ++)<br/>
+        • <b>R2–R3</b> : <b>CIBLE thérapeutique</b> en réanimation pour patient conscient<br/>
+        • <b>R4</b> : acceptable en phase aiguë (24-48h) ou si curarisation<br/>
+        • <b>R5</b> : à réserver à des indications précises (SDRA sévère, HIC, EME)<br/>
+        • <b>R6</b> : sur-sédation, diminuer le débit (sauf indication impérative)<br/>
+        • <b>Réévaluation horaire</b> recommandée (avec retentissement hémodynamique)<br/>
+        • <b>Protocole d'arrêt quotidien</b> de sédation (Spontaneous Awakening Trial) : raccourcit la durée de ventilation<br/>
+        • <b>Alternatives</b> : <b>RASS</b> (-5 à +4, plus précis) ou <b>SAS</b> — Ramsay reste très utilisé pour sa simplicité
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// BattCalculator : BATT score (Bleeding Acute Trauma Triage)
+// Triage pré-hospitalier des traumatisés à risque hémorragique élevé
+// Critères avec choix exclusifs pour Âge, PAS, GCS, et FR/SpO2
+// ────────────────────────────────────────────────────────────────────────────
+function BattCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#7F1D1D";
+
+  // États : pour les critères à choix exclusifs, on stocke la valeur sélectionnée (ou null)
+  const [age, setAge] = useState(null);       // null | "65" | "75"
+  const [pas, setPas] = useState(null);       // null | "<60" | "60-99"
+  const [gcs, setGcs] = useState(null);       // null | "<=8" | "9-12"
+  const [respi, setRespi] = useState(null);   // null | "fr" | "spo2"  (les 2 valent +2)
+  const [fc, setFc] = useState(false);        // bool : FC > 100
+  const [penetrant, setPenetrant] = useState(false);
+  const [highVelocity, setHighVelocity] = useState(false);
+
+  // Calcul du total
+  const sAge = age === "75" ? 2 : age === "65" ? 1 : 0;
+  const sPas = pas === "<60" ? 14 : pas === "60-99" ? 5 : 0;
+  const sGcs = gcs === "<=8" ? 4 : gcs === "9-12" ? 3 : 0;
+  const sRespi = respi ? 2 : 0;
+  const sFc = fc ? 1 : 0;
+  const sPenetrant = penetrant ? 2 : 0;
+  const sHighVel = highVelocity ? 2 : 0;
+
+  const total = sAge + sPas + sGcs + sRespi + sFc + sPenetrant + sHighVel;
+  const hasInput = age !== null || pas !== null || gcs !== null || respi !== null || fc || penetrant || highVelocity;
+
+  // Stratification du risque (selon validation du score)
+  // 0-3 : faible · 4-7 : intermédiaire · ≥ 8 : élevé · ≥ 14 : très élevé
+  let sevColor, sevBg, sevLabel, riskMortality, interpretation, action;
+  if (!hasInput) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    riskMortality = null;
+    interpretation = "Cote les critères selon l'évaluation du patient traumatisé.";
+    action = null;
+  } else if (total <= 3) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Risque FAIBLE";
+    riskMortality = "< 5 %";
+    interpretation = "Risque hémorragique faible.";
+    action = "Prise en charge selon les standards habituels du traumatisé. Bilan complet (NFS, coag, groupe-RAI, lactates), imagerie selon clinique. Réévaluation régulière.";
+  } else if (total <= 7) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Risque INTERMÉDIAIRE";
+    riskMortality = "10-20 %";
+    interpretation = "Risque hémorragique intermédiaire. Vigilance renforcée.";
+    action = "Orientation vers centre de traumatologie. 2 VVP gros calibre. Bilan complet + commande de CGR. Body-scanner injecté en urgence. Acide tranexamique 1g IV (dans les 3h). Avis chirurgien viscéral / orthopédiste selon mécanisme.";
+  } else if (total < 14) {
+    sevColor = COLOR;
+    sevBg = "#FEE2E2";
+    sevLabel = "Risque ÉLEVÉ";
+    riskMortality = "30-50 %";
+    interpretation = "Risque hémorragique élevé. Orientation vers trauma center.";
+    action = "ORIENTATION TRAUMA CENTER niveau 1. Activation transfusion massive (ratio 1:1:1 CGR/PFC/plaquettes). Acide tranexamique 1g IV immédiat. Damage control resuscitation : hypotension permissive (PAS 80-90 sauf TC), réchauffement, correction acidose et coagulopathie. Body-scanner dès stabilisation initiale.";
+  } else {
+    sevColor = "#450A0A";
+    sevBg = "#FEE2E2";
+    sevLabel = "Risque CRITIQUE";
+    riskMortality = "> 50 %";
+    interpretation = "Risque hémorragique majeur. Pronostic vital engagé.";
+    action = "URGENCE VITALE — TRAUMA CENTER niveau 1 immédiat. Protocole transfusion massive d'emblée. Damage control surgery si saignement non contrôlable (laparotomie écourtée, packing, embolisation, REBOA si disponible). Avis réa + chir traumato + radiologue interventionnel. Acide tranexamique IV. PAS de retard à l'orientation pour bilan exhaustif.";
+  }
+
+  function reset() {
+    setAge(null);
+    setPas(null);
+    setGcs(null);
+    setRespi(null);
+    setFc(false);
+    setPenetrant(false);
+    setHighVelocity(false);
+  }
+
+  // Bouton de choix exclusif (radio-like)
+  function ChoiceBtn({ label, value, currentValue, onSelect, points }) {
+    const isSelected = currentValue === value;
+    return (
+      <button
+        onClick={() => onSelect(isSelected ? null : value)}
+        style={{
+          flex: 1,
+          padding: "10px 8px",
+          border: `1.5px solid ${isSelected ? COLOR : C.border}`,
+          background: isSelected ? COLOR + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "center",
+          transition: "all .15s",
+          touchAction: "manipulation",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          minHeight: 56,
+        }}
+      >
+        <span style={{
+          fontSize: 11,
+          fontWeight: isSelected ? 800 : 600,
+          color: isSelected ? COLOR : C.text,
+          lineHeight: 1.3,
+        }}>{label}</span>
+        <span style={{
+          background: isSelected ? COLOR : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          padding: "2px 8px",
+          borderRadius: 10,
+          fontSize: 11,
+          fontWeight: 900,
+        }}>+{points}</span>
+      </button>
+    );
+  }
+
+  // Bouton case à cocher simple
+  function ItemCheckbox({ title, help, checked, onToggle, points }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "11px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{title}</div>
+          {help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>+{points}</span>
+      </button>
+    );
+  }
+
+  // Section avec titre + choix exclusifs côte à côte
+  function ChoiceSection({ title, children, currentScore }) {
+    return (
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 10,
+      }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 8,
+        }}>
+          <span style={{fontSize: 12, fontWeight: 800, color: C.navy}}>{title}</span>
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: currentScore > 0 ? COLOR : C.sub,
+          }}>+{currentScore} pt{currentScore > 1 ? "s" : ""}</span>
+        </div>
+        <div style={{display: "flex", gap: 6}}>
+          {children}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #450A0A 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🚑</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>BATT score</div>
+            <div style={{fontSize: 11, opacity: .85}}>Triage du traumatisé — risque hémorragique</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note pédagogique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ⚡ Identifie le <b>risque hémorragique élevé</b> chez le traumatisé en pré-hospitalier. Permet d'orienter vers le bon plateau technique (trauma center).
+      </div>
+
+      {/* Âge : choix exclusif */}
+      <ChoiceSection title="Âge" currentScore={sAge}>
+        <ChoiceBtn label="≥ 65 ans" value="65" currentValue={age} onSelect={setAge} points={1}/>
+        <ChoiceBtn label="≥ 75 ans" value="75" currentValue={age} onSelect={setAge} points={2}/>
+      </ChoiceSection>
+
+      {/* PAS : choix exclusif */}
+      <ChoiceSection title="Pression artérielle systolique" currentScore={sPas}>
+        <ChoiceBtn label="60 – 99 mmHg" value="60-99" currentValue={pas} onSelect={setPas} points={5}/>
+        <ChoiceBtn label="< 60 mmHg" value="<60" currentValue={pas} onSelect={setPas} points={14}/>
+      </ChoiceSection>
+
+      {/* GCS : choix exclusif */}
+      <ChoiceSection title="Score de Glasgow" currentScore={sGcs}>
+        <ChoiceBtn label="9 – 12" value="9-12" currentValue={gcs} onSelect={setGcs} points={3}/>
+        <ChoiceBtn label="≤ 8" value="<=8" currentValue={gcs} onSelect={setGcs} points={4}/>
+      </ChoiceSection>
+
+      {/* FR ou SpO2 : choix exclusif (un seul critère suffit pour +2) */}
+      <ChoiceSection title="Respiration" currentScore={sRespi}>
+        <ChoiceBtn label="FR < 10 ou ≥ 30/min" value="fr" currentValue={respi} onSelect={setRespi} points={2}/>
+        <ChoiceBtn label="SpO₂ < 90 %" value="spo2" currentValue={respi} onSelect={setRespi} points={2}/>
+      </ChoiceSection>
+
+      {/* Cases simples */}
+      <ItemCheckbox
+        title="Fréquence cardiaque > 100/min"
+        checked={fc}
+        onToggle={() => setFc(!fc)}
+        points={1}
+      />
+      <ItemCheckbox
+        title="Plaie pénétrante"
+        help="Lésion par arme blanche, arme à feu, empalement…"
+        checked={penetrant}
+        onToggle={() => setPenetrant(!penetrant)}
+        points={2}
+      />
+      <ItemCheckbox
+        title="Cinétique à haute vélocité"
+        help="AVP > 60 km/h, éjection, décès dans le même véhicule, chute > 6 m, piéton renversé"
+        checked={highVelocity}
+        onToggle={() => setHighVelocity(!highVelocity)}
+        points={2}
+      />
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: hasInput && total >= 8 ? `0 4px 16px ${sevColor}44` : "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE BATT</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>
+                {hasInput ? total : "—"}
+              </span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>pts</span>
+            </div>
+            {riskMortality && (
+              <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+                Mortalité estimée : <b style={{color: sevColor}}>{riskMortality}</b>
+              </div>
+            )}
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+      </div>
+
+      {/* Alerte pour scores élevés */}
+      {hasInput && total >= 8 && (
+        <div style={{
+          background: sevColor,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${sevColor}55`,
+        }}>
+          🚨 <b>ORIENTATION TRAUMA CENTER</b> — Acide tranexamique 1g IV, activation protocole transfusion massive si signes de choc hémorragique
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>0–3</b> : risque faible — prise en charge standard<br/>
+        • <b>4–7</b> : risque intermédiaire — orientation trauma center + acide tranexamique<br/>
+        • <b>8–13</b> : risque élevé — <b>activation transfusion massive</b> 1:1:1, damage control<br/>
+        • <b>≥ 14</b> : risque critique — TC niveau 1 immédiat, damage control surgery<br/>
+        • <b>Acide tranexamique</b> (Exacyl®) 1g IV en bolus dans les <b>3h</b> du traumatisme (CRASH-2)<br/>
+        • <b>Transfusion massive</b> : ratio 1:1:1 (CGR/PFC/plaquettes), maintenir fibrinogène &gt; 1.5 g/L<br/>
+        • <b>Hypotension permissive</b> : PAS cible 80-90 mmHg (sauf TC où PAS ≥ 110)<br/>
+        • <b>Pièges</b> : sujet jeune peut maintenir longtemps une PAS normale malgré hémorragie active — penser au Shock Index !
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// SilvermanCalculator : Score de Silverman (détresse respiratoire du nouveau-né)
+// 5 signes de lutte respiratoire, chacun coté 0-1-2, total /10
+// ATTENTION : plus le score est élevé, plus la détresse est sévère
+// ────────────────────────────────────────────────────────────────────────────
+function SilvermanCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#EC4899";
+
+  // Définition des 5 signes du Silverman
+  const ITEMS = [
+    {
+      key: "balancement",
+      letter: "B",
+      title: "Balancement thoraco-abdominal",
+      help: "Mouvements thorax/abdomen à l'inspiration",
+      options: [
+        { value: 0, label: "Mouvements synchrones" },
+        { value: 1, label: "Thorax immobile, abdomen mobile" },
+        { value: 2, label: "Respiration paradoxale (sens inverse)" },
+      ],
+    },
+    {
+      key: "tirage",
+      letter: "T",
+      title: "Tirage intercostal",
+      help: "Dépression des espaces intercostaux à l'inspiration",
+      options: [
+        { value: 0, label: "Absent" },
+        { value: 1, label: "Modéré" },
+        { value: 2, label: "Intense, sus-claviculaire" },
+      ],
+    },
+    {
+      key: "entonnoir",
+      letter: "E",
+      title: "Entonnoir xiphoïdien",
+      help: "Dépression de la région xiphoïdienne à l'inspiration",
+      options: [
+        { value: 0, label: "Absent" },
+        { value: 1, label: "Modéré" },
+        { value: 2, label: "Intense" },
+      ],
+    },
+    {
+      key: "battement",
+      letter: "BAN",
+      title: "Battement des ailes du nez",
+      help: "Mouvement des ailes du nez à chaque inspiration",
+      options: [
+        { value: 0, label: "Absent" },
+        { value: 1, label: "Modéré" },
+        { value: 2, label: "Intense" },
+      ],
+    },
+    {
+      key: "geignement",
+      letter: "G",
+      title: "Geignement expiratoire",
+      help: "Plainte audible à l'expiration",
+      options: [
+        { value: 0, label: "Absent" },
+        { value: 1, label: "Audible au stéthoscope" },
+        { value: 2, label: "Audible à distance, continu" },
+      ],
+    },
+  ];
+
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = null; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function setItem(key, value) {
+    setScores(s => ({ ...s, [key]: value }));
+  }
+
+  const total = Object.values(scores).reduce((acc, v) => acc + (v === null ? 0 : v), 0);
+  const evaluatedCount = Object.values(scores).filter(v => v !== null).length;
+  const totalItems = ITEMS.length;
+  const complete = evaluatedCount === totalItems;
+
+  // Sévérité (RAPPEL : plus le score est haut, plus c'est grave)
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (evaluatedCount === 0) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    interpretation = "Évalue les 5 signes pour obtenir le score.";
+    action = null;
+  } else if (total === 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Pas de détresse";
+    interpretation = "Aucun signe de lutte respiratoire. Adaptation néonatale normale.";
+    action = "Surveillance standard. Soins de routine. Encourager le peau-à-peau et l'allaitement.";
+  } else if (total <= 3) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Détresse légère";
+    interpretation = "Détresse respiratoire légère.";
+    action = "Surveillance rapprochée (FR, SpO2, FC). Maintenir la chaleur. Pas d'oxygénothérapie d'emblée si SpO2 satisfaisante. Réévaluer toutes les 15-30 min.";
+  } else if (total <= 6) {
+    sevColor = "#F97316";
+    sevBg = "#FFEDD5";
+    sevLabel = "Détresse modérée";
+    interpretation = "Détresse respiratoire modérée nécessitant un traitement.";
+    action = "Oxygénothérapie au masque ou lunettes (objectif SpO2 90-95%). Sonde gastrique si dyspnée importante. Voie veineuse périphérique. Bilan : gaz, glycémie, NFS, CRP, RP. Discuter CPAP nasale. Avis pédiatre/néonatologue.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#FCE7F3";
+    sevLabel = "Détresse SÉVÈRE";
+    interpretation = "Détresse respiratoire sévère. Risque d'épuisement et de décompensation.";
+    action = "RÉANIMATION NÉONATALE. Ventilation au masque (BAVU) puis discuter intubation orotrachéale. CPAP ou ventilation mécanique. Voie veineuse (ombilicale si besoin), surfactant si suspicion MMH. Bilan complet, antibiothérapie probabiliste si suspicion sepsis. Transfert en réanimation néonatale.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Bouton 0/1/2
+  function ScoreBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          flex: 1,
+          padding: "8px 6px",
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "center",
+          transition: "all .15s",
+          touchAction: "manipulation",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          minHeight: 70,
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{option.value}</span>
+        <span style={{
+          fontSize: 10,
+          lineHeight: 1.25,
+          fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? color : C.text,
+        }}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #BE185D 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🫁</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Silverman</div>
+            <div style={{fontSize: 11, opacity: .85}}>Détresse respiratoire du nouveau-né</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Avertissement : sens du score inversé / Apgar */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ⚠️ <b>Attention</b> : à l'inverse de l'Apgar, <b>plus le score est élevé, plus la détresse est sévère</b>.
+      </div>
+
+      {/* Indicateur progression */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}>
+        <span style={{fontSize: 11, fontWeight: 700, color: C.sub}}>PROGRESSION</span>
+        <div style={{flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden"}}>
+          <div style={{
+            width: `${(evaluatedCount / totalItems) * 100}%`,
+            height: "100%",
+            background: COLOR,
+            transition: "width .3s ease-out",
+          }}/>
+        </div>
+        <span style={{fontSize: 11, fontWeight: 800, color: COLOR}}>{evaluatedCount}/{totalItems}</span>
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <div key={it.key} style={{marginBottom: 12}}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}>
+            <span style={{
+              background: COLOR + "18",
+              color: COLOR,
+              borderRadius: 8,
+              padding: "3px 8px",
+              fontSize: 12,
+              fontWeight: 900,
+              minWidth: 28,
+              textAlign: "center",
+            }}>{it.letter}</span>
+            <span style={{fontSize: 12, fontWeight: 800, color: C.navy, flex: 1}}>{it.title}</span>
+            <span style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: scores[it.key] !== null ? COLOR : C.sub,
+            }}>{scores[it.key] !== null ? `${scores[it.key]}/2` : "—"}</span>
+          </div>
+          {it.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginBottom: 6, paddingLeft: 2}}>
+              💬 {it.help}
+            </div>
+          )}
+          <div style={{display: "flex", gap: 5}}>
+            {it.options.map(o => (
+              <ScoreBtn key={o.value} option={o} selected={scores[it.key]} onSelect={(v) => setItem(it.key, v)} color={COLOR}/>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: complete && total >= 7 ? `0 4px 16px ${sevColor}44` : "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE SILVERMAN</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 10</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              {evaluatedCount}/{totalItems} signe{totalItems > 1 ? "s" : ""} évalué{evaluatedCount > 1 ? "s" : ""}
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+
+        {evaluatedCount > 0 && !complete && (
+          <div style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            background: C.amberLight,
+            border: `1px solid ${C.amber}40`,
+            borderRadius: 8,
+            fontSize: 11,
+            color: C.text,
+            lineHeight: 1.4,
+          }}>
+            ⚠️ Évaluation incomplète — {totalItems - evaluatedCount} signe{totalItems - evaluatedCount > 1 ? "s" : ""} restant{totalItems - evaluatedCount > 1 ? "s" : ""}
+          </div>
+        )}
+      </div>
+
+      {/* Alerte si détresse sévère */}
+      {complete && total >= 7 && (
+        <div style={{
+          background: sevColor,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${sevColor}55`,
+        }}>
+          🚨 <b>DÉTRESSE SÉVÈRE</b> — Réanimation néonatale immédiate. Discuter intubation, CPAP, transfert en réa néonatale.
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>0</b> : pas de détresse, surveillance standard<br/>
+        • <b>1–3</b> : détresse légère — surveillance rapprochée<br/>
+        • <b>4–6</b> : détresse modérée — oxygénothérapie, CPAP à discuter, bilan<br/>
+        • <b>≥ 7</b> : détresse sévère — <b>réanimation néonatale</b>, intubation/CPAP, transfert<br/>
+        • <b>À évaluer dès la naissance</b> et à répéter aux mêmes temps que l'Apgar (1, 5, 10 min) en cas de détresse<br/>
+        • <b>Étiologies fréquentes</b> : MMH (prématuré), tachypnée transitoire (césarienne), inhalation méconiale, infection materno-fœtale, pneumothorax<br/>
+        • <b>Objectifs SpO2</b> : 60-80% à 1 min, 85-95% à 10 min (selon recommandations ILCOR)<br/>
+        • Surveillance combinée avec l'<b>Apgar</b> et la <b>FR</b> pour une évaluation néonatale complète
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CarvajalCalculator : Formule de Carvajal (remplissage du brûlé pédiatrique)
+// V24h = 5000 mL × SCB% × SC(m²) + 2000 mL × SC(m²) (apports de base)
+// SC = √(Poids × Taille / 3600) — formule de Mosteller
+// 50% H0-H8 (depuis brûlure), 50% H8-H24, débit ×2 la 1ère heure
+// ────────────────────────────────────────────────────────────────────────────
+function CarvajalCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#DB2777";
+
+  const [poids, setPoids] = useState("");      // kg
+  const [taille, setTaille] = useState("");    // cm
+  const [scb, setScb] = useState("");          // %
+  const [heureBrulure, setHeureBrulure] = useState(""); // "HH:MM" optionnel
+
+  const poidsNum = parseFloat(poids);
+  const tailleNum = parseFloat(taille);
+  const scbNum = parseFloat(scb);
+  const valid = !isNaN(poidsNum) && !isNaN(tailleNum) && !isNaN(scbNum)
+    && poidsNum > 0 && tailleNum > 0 && scbNum > 0;
+
+  // Surface corporelle (m²) — formule de Mosteller
+  const sc = valid ? Math.sqrt((poidsNum * tailleNum) / 3600) : null;
+
+  // Volumes calculés
+  const volBrulure = valid ? 5000 * scbNum * sc : null;   // remplissage du brûlé
+  const volBase = valid ? 2000 * sc : null;                // apports de base
+  const vol24h = valid ? volBrulure + volBase : null;
+
+  // Répartition 50/50
+  const volH0H8 = valid ? volBrulure / 2 : null;           // 1ère moitié du remplissage brûlure
+  const volH8H24 = valid ? volBrulure / 2 : null;          // 2e moitié du remplissage brûlure
+  const debitBaseH = valid ? volBase / 24 : null;          // apports de base en mL/h continu
+
+  // Débits
+  const debitH0H8 = valid ? (volH0H8 / 8) + debitBaseH : null;     // débit horaire moyen H0-H8 (RL + G5)
+  const debitH8H24 = valid ? (volH8H24 / 16) + debitBaseH : null;  // débit horaire H8-H24
+  const debit1ereHeure = valid ? (volH0H8 / 8) * 2 + debitBaseH : null;  // 1ère heure : débit ×2 pour le RL
+
+  // Heure de brûlure : calcul du temps écoulé et de la phase
+  let heuresEcoulees = null;
+  let phaseActuelle = null;
+  let debitActuel = null;
+  let volumeRestant = null;
+
+  if (valid && heureBrulure) {
+    const now = new Date();
+    const [h, m] = heureBrulure.split(":").map(s => parseInt(s, 10));
+    if (!isNaN(h) && !isNaN(m)) {
+      const brulure = new Date(now);
+      brulure.setHours(h, m, 0, 0);
+      if (brulure > now) brulure.setDate(brulure.getDate() - 1);
+      heuresEcoulees = (now - brulure) / (1000 * 60 * 60);
+
+      if (heuresEcoulees < 0) {
+        phaseActuelle = null;
+      } else if (heuresEcoulees < 1) {
+        phaseActuelle = "1ère heure (×2)";
+        debitActuel = debit1ereHeure;
+        volumeRestant = vol24h - (debit1ereHeure * heuresEcoulees);
+      } else if (heuresEcoulees < 8) {
+        phaseActuelle = "H0-H8";
+        debitActuel = debitH0H8;
+        // Premier H : débit ×2 + base, suite : débit moyen + base
+        volumeRestant = vol24h - (debit1ereHeure * 1) - (debitH0H8 * (heuresEcoulees - 1));
+      } else if (heuresEcoulees < 24) {
+        phaseActuelle = "H8-H24";
+        debitActuel = debitH8H24;
+        volumeRestant = vol24h - (debit1ereHeure * 1) - (debitH0H8 * 7) - (debitH8H24 * (heuresEcoulees - 8));
+      } else {
+        phaseActuelle = "Terminé";
+        debitActuel = 0;
+        volumeRestant = 0;
+      }
+    }
+  }
+
+  function reset() {
+    setPoids("");
+    setTaille("");
+    setScb("");
+    setHeureBrulure("");
+  }
+
+  // Helpers
+  function fmtVol(v) {
+    if (v === null || isNaN(v)) return "—";
+    return Math.round(v).toLocaleString("fr-FR") + " mL";
+  }
+  function fmtDebit(v) {
+    if (v === null || isNaN(v)) return "—";
+    return Math.round(v) + " mL/h";
+  }
+
+  const numInputStyle = {
+    width: "100%",
+    border: `1.5px solid ${C.border}`,
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 20,
+    fontWeight: 800,
+    color: C.text,
+    background: C.white,
+    boxSizing: "border-box",
+    outline: "none",
+    textAlign: "center",
+    fontFamily: "inherit",
+  };
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #9D174D 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🔥</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Formule de Carvajal</div>
+            <div style={{fontSize: 11, opacity: .85}}>Remplissage du brûlé pédiatrique</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Formule pédagogique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 12,
+        color: C.text,
+        textAlign: "center",
+        lineHeight: 1.6,
+      }}>
+        <b style={{color: COLOR}}>V₂₄ₕ</b> = <b>5000 × SCB × SC</b> <span style={{color: C.sub}}>(brûlure)</span> + <b>2000 × SC</b> <span style={{color: C.sub}}>(base)</span><br/>
+        <span style={{fontSize: 11, color: C.sub}}>Ringer Lactate · 50% H0-H8, 50% H8-H24 · <b>1ère h ×2</b></span>
+      </div>
+
+      {/* Inputs */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px",
+        marginBottom: 12,
+      }}>
+        <div style={{fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 10}}>
+          DONNÉES DE L'ENFANT
+        </div>
+        <div style={{display: "flex", gap: 8, marginBottom: 10}}>
+          <div style={{flex: 1}}>
+            <label style={{display: "block", fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 4, textAlign: "center"}}>POIDS (kg)</label>
+            <input type="number" inputMode="decimal" placeholder="—" value={poids} onChange={e => setPoids(e.target.value)} style={numInputStyle}/>
+          </div>
+          <div style={{flex: 1}}>
+            <label style={{display: "block", fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 4, textAlign: "center"}}>TAILLE (cm)</label>
+            <input type="number" inputMode="decimal" placeholder="—" value={taille} onChange={e => setTaille(e.target.value)} style={numInputStyle}/>
+          </div>
+        </div>
+        <div>
+          <label style={{display: "block", fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 4, textAlign: "center"}}>SCB (%)</label>
+          <input type="number" inputMode="decimal" placeholder="—" value={scb} onChange={e => setScb(e.target.value)} style={numInputStyle}/>
+        </div>
+
+        {/* SC calculée affichée en direct */}
+        {sc && (
+          <div style={{
+            marginTop: 10,
+            padding: "8px 12px",
+            background: COLOR + "10",
+            borderRadius: 8,
+            fontSize: 12,
+            color: C.text,
+            textAlign: "center",
+          }}>
+            Surface corporelle : <b style={{color: COLOR}}>{sc.toFixed(2)} m²</b> <span style={{color: C.sub, fontSize: 10}}>(Mosteller)</span>
+          </div>
+        )}
+      </div>
+
+      {/* Règle des 9 adaptée pédiatrique (Lund-Browder simplifiée) */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 12,
+      }}>
+        <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>
+          🩹 SCB ENFANT (% adapté à l'âge — Lund-Browder simplifié)
+        </div>
+        <div style={{fontSize: 11, lineHeight: 1.5, color: C.text}}>
+          La règle des 9 adulte <b>ne s'applique pas</b> chez l'enfant : la tête est proportionnellement plus grande, les MI plus petits.
+        </div>
+        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, fontSize: 10, lineHeight: 1.5, marginTop: 8}}>
+          <div style={{padding: "6px 8px", background: "#F1F5F9", borderRadius: 6}}>
+            <div style={{fontWeight: 800, color: COLOR}}>&lt; 1 an</div>
+            Tête <b>19%</b> · MI <b>13%</b><br/>Tronc av/ar 18%
+          </div>
+          <div style={{padding: "6px 8px", background: "#F1F5F9", borderRadius: 6}}>
+            <div style={{fontWeight: 800, color: COLOR}}>5 ans</div>
+            Tête <b>13%</b> · MI <b>16%</b><br/>Tronc av/ar 18%
+          </div>
+          <div style={{padding: "6px 8px", background: "#F1F5F9", borderRadius: 6}}>
+            <div style={{fontWeight: 800, color: COLOR}}>10 ans</div>
+            Tête <b>11%</b> · MI <b>17%</b><br/>Tronc av/ar 18%
+          </div>
+        </div>
+        <div style={{fontSize: 10, color: C.sub, marginTop: 8, fontStyle: "italic"}}>
+          💡 <b>Astuce</b> : paume de l'enfant = 1% de SCB (valable à tout âge)
+        </div>
+      </div>
+
+      {/* Heure de brûlure */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 12,
+      }}>
+        <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8}}>
+          ⏱️ HEURE DE LA BRÛLURE (optionnel)
+        </div>
+        <input
+          type="time"
+          value={heureBrulure}
+          onChange={e => setHeureBrulure(e.target.value)}
+          style={{
+            width: "100%",
+            border: `1.5px solid ${C.border}`,
+            borderRadius: 10,
+            padding: "10px 12px",
+            fontSize: 16,
+            fontWeight: 700,
+            color: C.text,
+            background: C.white,
+            boxSizing: "border-box",
+            outline: "none",
+            fontFamily: "inherit",
+          }}
+        />
+      </div>
+
+      {/* CARTE 1ère HEURE — la plus importante ! */}
+      {valid && (
+        <div style={{
+          background: `linear-gradient(135deg, ${COLOR} 0%, #BE185D 100%)`,
+          borderRadius: 16,
+          padding: 18,
+          marginBottom: 12,
+          color: "#fff",
+          boxShadow: `0 4px 16px ${COLOR}44`,
+        }}>
+          <div style={{fontSize: 11, fontWeight: 800, letterSpacing: .5, marginBottom: 6, opacity: .9}}>
+            🚨 DÉBIT 1ÈRE HEURE (×2)
+          </div>
+          <div style={{display: "flex", alignItems: "baseline", gap: 6}}>
+            <span style={{fontSize: 42, fontWeight: 900, lineHeight: 1}}>
+              {Math.round(debit1ereHeure).toLocaleString("fr-FR")}
+            </span>
+            <span style={{fontSize: 18, fontWeight: 700}}>mL/h</span>
+          </div>
+          <div style={{fontSize: 11, marginTop: 6, opacity: .9, lineHeight: 1.5}}>
+            Débit accéléré pour la 1ère heure de PEC (Ringer Lactate ×2 + apports de base G5)
+          </div>
+        </div>
+      )}
+
+      {/* Carte résultat global */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${COLOR}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 6}}>VOLUME TOTAL 24H</div>
+        <div style={{display: "flex", alignItems: "baseline", gap: 4, marginBottom: 12}}>
+          <span style={{fontSize: 36, fontWeight: 900, color: COLOR, lineHeight: 1}}>
+            {vol24h !== null ? Math.round(vol24h).toLocaleString("fr-FR") : "—"}
+          </span>
+          <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>mL</span>
+        </div>
+
+        {/* Détail brûlure + base */}
+        {valid && (
+          <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10}}>
+            <div style={{padding: "8px 10px", background: COLOR + "10", borderRadius: 8}}>
+              <div style={{fontSize: 10, fontWeight: 800, color: COLOR, marginBottom: 2}}>BRÛLURE (RL)</div>
+              <div style={{fontSize: 14, fontWeight: 800, color: C.text}}>{fmtVol(volBrulure)}</div>
+            </div>
+            <div style={{padding: "8px 10px", background: "#F1F5F9", borderRadius: 8}}>
+              <div style={{fontSize: 10, fontWeight: 800, color: C.sub, marginBottom: 2}}>BASE (G5)</div>
+              <div style={{fontSize: 14, fontWeight: 800, color: C.text}}>{fmtVol(volBase)}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Découpage en 2 phases */}
+        {valid && (
+          <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8}}>
+            <div style={{
+              background: phaseActuelle === "H0-H8" || phaseActuelle === "1ère heure (×2)" ? COLOR + "18" : "#FCE7F3",
+              border: `1.5px solid ${phaseActuelle === "H0-H8" || phaseActuelle === "1ère heure (×2)" ? COLOR : "transparent"}`,
+              borderRadius: 10,
+              padding: "8px 10px",
+            }}>
+              <div style={{fontSize: 10, fontWeight: 800, color: COLOR, marginBottom: 2}}>H0 → H8 (RL 50%)</div>
+              <div style={{fontSize: 14, fontWeight: 800, color: C.text}}>{fmtVol(volH0H8)}</div>
+              <div style={{fontSize: 11, color: C.sub, marginTop: 2}}>≈ <b style={{color: COLOR}}>{fmtDebit(debitH0H8)}</b> total</div>
+            </div>
+            <div style={{
+              background: phaseActuelle === "H8-H24" ? COLOR + "18" : "#FCE7F3",
+              border: `1.5px solid ${phaseActuelle === "H8-H24" ? COLOR : "transparent"}`,
+              borderRadius: 10,
+              padding: "8px 10px",
+            }}>
+              <div style={{fontSize: 10, fontWeight: 800, color: COLOR, marginBottom: 2}}>H8 → H24 (RL 50%)</div>
+              <div style={{fontSize: 14, fontWeight: 800, color: C.text}}>{fmtVol(volH8H24)}</div>
+              <div style={{fontSize: 11, color: C.sub, marginTop: 2}}>≈ <b style={{color: COLOR}}>{fmtDebit(debitH8H24)}</b> total</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Carte phase actuelle (si heure brûlure renseignée) */}
+      {valid && heureBrulure && phaseActuelle && (
+        <div style={{
+          background: C.white,
+          borderRadius: 16,
+          padding: 16,
+          marginBottom: 12,
+          border: `2px solid ${COLOR}`,
+          boxShadow: `0 2px 12px ${COLOR}22`,
+        }}>
+          <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10}}>
+            <div style={{fontSize: 11, fontWeight: 800, color: COLOR, letterSpacing: .5}}>⏱️ ÉTAT ACTUEL</div>
+            <div style={{
+              background: COLOR,
+              color: "#fff",
+              padding: "3px 10px",
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 800,
+            }}>{phaseActuelle === "Terminé" ? "24h achevées" : phaseActuelle}</div>
+          </div>
+
+          <div style={{fontSize: 12, color: C.text, lineHeight: 1.6}}>
+            <div>⏰ Brûlure il y a <b>{heuresEcoulees !== null ? heuresEcoulees.toFixed(1) : "—"} h</b></div>
+            {phaseActuelle !== "Terminé" && (
+              <>
+                <div>💧 Débit actuel : <b style={{color: COLOR, fontSize: 14}}>{fmtDebit(debitActuel)}</b></div>
+                <div style={{marginTop: 6, padding: "8px 10px", background: "#FCE7F3", borderRadius: 8, fontSize: 11}}>
+                  Reste à perfuser : <b style={{color: COLOR}}>{fmtVol(volumeRestant)}</b>
+                </div>
+              </>
+            )}
+            {phaseActuelle === "Terminé" && (
+              <div style={{marginTop: 6, padding: "8px 10px", background: C.greenLight, borderRadius: 8, fontSize: 11, color: C.green, fontWeight: 700}}>
+                ✅ Protocole 24h achevé — adapter selon diurèse et clinique
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Objectifs cliniques */}
+      {valid && (
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+        }}>
+          <div style={{fontSize: 11, fontWeight: 800, color: C.navy, letterSpacing: .5, marginBottom: 8}}>
+            🎯 OBJECTIFS CLINIQUES (PÉDIATRIE)
+          </div>
+          <div style={{fontSize: 12, color: C.text, lineHeight: 1.7}}>
+            • <b>Diurèse</b> : 1–2 mL/kg/h (nourrisson) ou 0,5–1 mL/kg/h (grand enfant)<br/>
+            <span style={{color: C.sub, fontSize: 11}}>  → soit <b>{poidsNum ? Math.round(0.5 * poidsNum) + "–" + Math.round(2 * poidsNum) + " mL/h" : "—"}</b></span><br/>
+            • <b>PAM</b> adaptée à l'âge (cible PAS ≈ 70 + 2×âge)<br/>
+            • <b>Glycémie</b> à surveiller (risque hypoglycémie chez le petit enfant)<br/>
+            • <b>Température</b> centrale : éviter l'hypothermie (couverture, salle chauffée)<br/>
+            • Adapter <b>±20%</b> selon diurèse horaire
+          </div>
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (brûlé pédiatrique)</div>
+        • <b>Indication Carvajal</b> : enfant brûlé avec SCB &gt; 10% (ou &gt; 5% si nourrisson)<br/>
+        • <b>Spécificité pédiatrique</b> : <b>apports de base toujours ajoutés</b> (G5 + électrolytes), contrairement à l'adulte<br/>
+        • <b>1ère heure</b> : débit ×2 pour compenser le retard initial. Si retard &gt; 1h : rattraper le volume manquant<br/>
+        • <b>Lund-Browder</b> ou tables pédiatriques : SCB plus précise que la règle des 9 chez l'enfant<br/>
+        • <b>Ne pas inclure le 1er degré</b> (érythème simple) dans la SCB<br/>
+        • <b>Voies d'abord</b> : 2 VVP si possible, sinon voie intra-osseuse, voie centrale à discuter<br/>
+        • <b>Surveillance</b> : diurèse horaire (sonde urinaire si SCB &gt; 15%), température centrale, glycémie<br/>
+        • <b>Antalgie</b> : morphine IV titrée ; <b>ne jamais oublier la couverture thermique</b><br/>
+        • <b>Centre spécialisé</b> : transfert vers centre des brûlés pédiatrique si SCB &gt; 10%, brûlures profondes, ou localisations critiques (face, mains, périnée)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// TripCastCalculator : Score TRiP(cast)
+// Thrombosis Risk Prediction in patients with Cast Immobilization
+// Évalue le risque MTEV lors d'immobilisation du MI — indication anticoagulation si ≥ 7
+// 14 critères, total /36
+// ────────────────────────────────────────────────────────────────────────────
+function TripCastCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0F766E";
+
+  // Sections à choix exclusif (radio)
+  const [trauma, setTrauma] = useState(null);      // null | "haut" | "inter" | "bas"
+  const [immo, setImmo] = useState(null);          // null | "cruro" | "botte" | "pied" | "autre"
+  const [age, setAge] = useState(null);            // null | "<35" | "35-54" | "55-74" | ">=75"
+  const [imc, setImc] = useState(null);            // null | "<25" | "25-34" | ">=35"
+
+  // Critères binaires
+  const [scores, setScores] = useState({
+    sexe_h: false,         // +1
+    atcd_fam: false,       // +2
+    atcd_perso: false,     // +4
+    contracep: false,      // +4
+    cancer: false,         // +3
+    grossesse: false,      // +3
+    immo_3mois: false,     // +2
+    chir_3mois: false,     // +2
+    comorb: false,         // +1
+    iv_chr: false,         // +1
+  });
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Calcul des sous-scores
+  const sTrauma = trauma === "haut" ? 3 : trauma === "inter" ? 2 : trauma === "bas" ? 1 : 0;
+  const sImmo = immo === "cruro" ? 3 : immo === "botte" ? 2 : immo === "pied" ? 1 : 0;
+  const sAge = age === ">=75" ? 3 : age === "55-74" ? 2 : age === "35-54" ? 1 : 0;
+  const sImc = imc === ">=35" ? 2 : imc === "25-34" ? 1 : 0;
+  const sSexe = scores.sexe_h ? 1 : 0;
+  const sAtcdFam = scores.atcd_fam ? 2 : 0;
+  const sAtcdPerso = scores.atcd_perso ? 4 : 0;
+  const sContracep = scores.contracep ? 4 : 0;
+  const sCancer = scores.cancer ? 3 : 0;
+  const sGross = scores.grossesse ? 3 : 0;
+  const sImmo3 = scores.immo_3mois ? 2 : 0;
+  const sChir3 = scores.chir_3mois ? 2 : 0;
+  const sComorb = scores.comorb ? 1 : 0;
+  const sIv = scores.iv_chr ? 1 : 0;
+
+  const total = sTrauma + sImmo + sAge + sImc + sSexe + sAtcdFam + sAtcdPerso
+    + sContracep + sCancer + sGross + sImmo3 + sChir3 + sComorb + sIv;
+
+  const hasInput = trauma !== null || immo !== null || age !== null || imc !== null
+    || Object.values(scores).some(v => v);
+
+  // Sévérité
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (!hasInput) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    interpretation = "Cote les critères pour obtenir le score.";
+    action = null;
+  } else if (total < 7) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Risque FAIBLE";
+    interpretation = "Risque thromboembolique faible (taux MTEV symptomatique à 3 mois ~ 0,7%).";
+    action = "Pas d'anticoagulation prophylactique recommandée. Mobilisation précoce encouragée. Information du patient sur les signes de TVP/EP. Reconsultation si signes d'alerte.";
+  } else if (total <= 11) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Risque INTERMÉDIAIRE";
+    interpretation = "Risque thromboembolique intermédiaire (taux MTEV ~ 2,6%).";
+    action = "Anticoagulation prophylactique recommandée. HBPM (énoxaparine 40 mg/j SC — ajuster à 20 mg si poids <50 kg, 60 mg si >100 kg) ou fondaparinux 2,5 mg/j SC. À poursuivre jusqu'au retrait de l'immobilisation et reprise de la marche.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#CCFBF1";
+    sevLabel = "Risque ÉLEVÉ";
+    interpretation = "Risque thromboembolique élevé.";
+    action = "Anticoagulation prophylactique fortement recommandée. HBPM ou fondaparinux dose préventive. Surveillance clinique étroite. Évaluer la balance bénéfice/risque hémorragique. Considérer information renforcée du patient + numéro d'urgence.";
+  }
+
+  function reset() {
+    setTrauma(null);
+    setImmo(null);
+    setAge(null);
+    setImc(null);
+    setScores({
+      sexe_h: false, atcd_fam: false, atcd_perso: false, contracep: false,
+      cancer: false, grossesse: false, immo_3mois: false, chir_3mois: false,
+      comorb: false, iv_chr: false,
+    });
+  }
+
+  // Bouton de choix exclusif (radio)
+  function ChoiceBtn({ label, sublabel, value, currentValue, onSelect, points }) {
+    const isSelected = currentValue === value;
+    return (
+      <button
+        onClick={() => onSelect(isSelected ? null : value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 12px",
+          marginBottom: 5,
+          border: `1.5px solid ${isSelected ? COLOR : C.border}`,
+          background: isSelected ? COLOR + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        {/* Pastille radio */}
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 20, height: 20,
+          borderRadius: "50%",
+          background: isSelected ? COLOR : "transparent",
+          border: `2px solid ${isSelected ? COLOR : C.border}`,
+          flexShrink: 0,
+        }}>
+          {isSelected && <span style={{
+            width: 8, height: 8, borderRadius: "50%", background: "#fff",
+          }}/>}
+        </span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 12,
+            fontWeight: isSelected ? 800 : 600,
+            color: isSelected ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{label}</div>
+          {sublabel && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {sublabel}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: isSelected ? COLOR : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          borderRadius: 12,
+          padding: "2px 9px",
+          fontSize: 11,
+          fontWeight: 900,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}>+{points}</span>
+      </button>
+    );
+  }
+
+  // Case à cocher binaire
+  function ItemCheckbox({ title, help, checked, onToggle, points }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "11px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{title}</div>
+          {help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>+{points}</span>
+      </button>
+    );
+  }
+
+  // Section avec titre + sous-score
+  function Section({ title, subtitle, currentScore, children }) {
+    return (
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 10,
+      }}>
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: subtitle ? 4 : 8,
+        }}>
+          <span style={{fontSize: 12, fontWeight: 800, color: C.navy}}>{title}</span>
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: currentScore > 0 ? COLOR : C.sub,
+          }}>+{currentScore} pt{currentScore > 1 ? "s" : ""}</span>
+        </div>
+        {subtitle && (
+          <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginBottom: 8, lineHeight: 1.4}}>
+            {subtitle}
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #134E4A 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🦴</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>TRiP(cast)</div>
+            <div style={{fontSize: 11, opacity: .85}}>Risque MTEV — immobilisation membre inférieur</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Note pédagogique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ℹ️ Validé chez l'<b>adulte (≥ 18 ans)</b>. Si plusieurs traumatismes ou immobilisations : <b>sélectionner l'item le plus à risque</b>.
+      </div>
+
+      {/* 1. Traumatisme */}
+      <Section title="1. Nature du traumatisme" currentScore={sTrauma}>
+        <ChoiceBtn
+          label="Haut risque"
+          sublabel="Fracture diaphyse fibulaire/tibiale, plateau tibial, rupture tendon d'Achille"
+          value="haut" currentValue={trauma} onSelect={setTrauma} points={3}/>
+        <ChoiceBtn
+          label="Risque intermédiaire"
+          sublabel="Fracture bi/trimalléolaire, patellaire, luxation cheville/arrière-pied, entorse genou sévère, entorse cheville stade 3"
+          value="inter" currentValue={trauma} onSelect={setTrauma} points={2}/>
+        <ChoiceBtn
+          label="Bas risque"
+          sublabel="Fracture unimalléolaire, luxation patellaire, fracture tarse/avant-pied, entorse stade 1-2, lésion musculaire"
+          value="bas" currentValue={trauma} onSelect={setTrauma} points={1}/>
+      </Section>
+
+      {/* 2. Immobilisation */}
+      <Section title="2. Type d'immobilisation" currentScore={sImmo}>
+        <ChoiceBtn
+          label="Plâtre cruropédieux"
+          sublabel="Incluant genou et cheville"
+          value="cruro" currentValue={immo} onSelect={setImmo} points={3}/>
+        <ChoiceBtn
+          label="Botte plâtrée ou résine"
+          value="botte" currentValue={immo} onSelect={setImmo} points={2}/>
+        <ChoiceBtn
+          label="Plâtre du pied (cheville libre)"
+          sublabel="Ou immobilisation semi-rigide sans appui plantaire"
+          value="pied" currentValue={immo} onSelect={setImmo} points={1}/>
+        <ChoiceBtn
+          label="Immobilisation rigide/semi-rigide avec appui"
+          sublabel="Vacoped, Walker, Aircast…"
+          value="autre" currentValue={immo} onSelect={setImmo} points={0}/>
+      </Section>
+
+      {/* 3. Âge */}
+      <Section title="3. Âge" currentScore={sAge}>
+        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5}}>
+          <ChoiceBtn label="< 35 ans" value="<35" currentValue={age} onSelect={setAge} points={0}/>
+          <ChoiceBtn label="35 – 54 ans" value="35-54" currentValue={age} onSelect={setAge} points={1}/>
+          <ChoiceBtn label="55 – 74 ans" value="55-74" currentValue={age} onSelect={setAge} points={2}/>
+          <ChoiceBtn label="≥ 75 ans" value=">=75" currentValue={age} onSelect={setAge} points={3}/>
+        </div>
+      </Section>
+
+      {/* 4. IMC */}
+      <Section title="4. IMC" subtitle="Poids (kg) / Taille² (m²)" currentScore={sImc}>
+        <ChoiceBtn label="< 25 kg/m²" value="<25" currentValue={imc} onSelect={setImc} points={0}/>
+        <ChoiceBtn label="25 – 34 kg/m²" value="25-34" currentValue={imc} onSelect={setImc} points={1}/>
+        <ChoiceBtn label="≥ 35 kg/m²" value=">=35" currentValue={imc} onSelect={setImc} points={2}/>
+      </Section>
+
+      {/* 5-14. Critères binaires */}
+      <div style={{fontSize: 11, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 8, marginTop: 14}}>
+        FACTEURS DE RISQUE PATIENT
+      </div>
+
+      <ItemCheckbox title="Sexe masculin" checked={scores.sexe_h} onToggle={() => toggle("sexe_h")} points={1}/>
+
+      <ItemCheckbox
+        title="Antécédent personnel de MTEV"
+        help="Ou thrombophilie majeure connue"
+        checked={scores.atcd_perso} onToggle={() => toggle("atcd_perso")} points={4}/>
+
+      <ItemCheckbox
+        title="Contraception œstrogénique ou THS"
+        help="Pilule combinée, anneau, patch ou traitement hormonal substitutif"
+        checked={scores.contracep} onToggle={() => toggle("contracep")} points={4}/>
+
+      <ItemCheckbox
+        title="Cancer actif (5 dernières années)"
+        help="En cours de traitement ou diagnostiqué < 5 ans"
+        checked={scores.cancer} onToggle={() => toggle("cancer")} points={3}/>
+
+      <ItemCheckbox
+        title="Grossesse ou post-partum < 6 semaines"
+        checked={scores.grossesse} onToggle={() => toggle("grossesse")} points={3}/>
+
+      <ItemCheckbox
+        title="ATCD familiaux de MTEV (1er degré)"
+        checked={scores.atcd_fam} onToggle={() => toggle("atcd_fam")} points={2}/>
+
+      <ItemCheckbox
+        title="Immobilisation dans les 3 derniers mois"
+        help="Hospitalisation, alitement prolongé, vol > 6h, paralysie MI"
+        checked={scores.immo_3mois} onToggle={() => toggle("immo_3mois")} points={2}/>
+
+      <ItemCheckbox
+        title="Chirurgie dans les 3 mois précédents"
+        checked={scores.chir_3mois} onToggle={() => toggle("chir_3mois")} points={2}/>
+
+      <ItemCheckbox
+        title="Comorbidités"
+        help="Insuffisance cardiaque, BPCO, MICI, rhumatisme inflammatoire chronique, IRC (clairance < 30)"
+        checked={scores.comorb} onToggle={() => toggle("comorb")} points={1}/>
+
+      <ItemCheckbox
+        title="Insuffisance veineuse chronique"
+        checked={scores.iv_chr} onToggle={() => toggle("iv_chr")} points={1}/>
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: hasInput && total >= 7 ? `0 4px 16px ${sevColor}33` : "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE TRiP(cast)</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>
+                {hasInput ? total : "—"}
+              </span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 36</span>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+      </div>
+
+      {/* Alerte anticoagulation si ≥ 7 */}
+      {hasInput && total >= 7 && (
+        <div style={{
+          background: sevColor,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${sevColor}55`,
+        }}>
+          💉 <b>ANTICOAGULATION INDIQUÉE</b> — HBPM (énoxaparine 40 mg/j SC) ou fondaparinux 2,5 mg/j SC jusqu'au retrait de l'immobilisation
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (SFMU 2024)</div>
+        • <b>&lt; 7</b> : risque faible — pas d'anticoagulation (MTEV ~ 0,7% à 3 mois)<br/>
+        • <b>7–11</b> : risque intermédiaire — <b>anticoagulation recommandée</b><br/>
+        • <b>≥ 12</b> : risque élevé — anticoagulation fortement recommandée<br/>
+        • <b>HBPM</b> : énoxaparine 40 mg/j SC (ajuster : 20 mg si poids &lt;50 kg, 60 mg si &gt;100 kg)<br/>
+        • <b>Fondaparinux</b> 2,5 mg/j SC en alternative<br/>
+        • <b>Durée</b> : jusqu'au retrait de l'immobilisation et reprise de la marche<br/>
+        • <b>Étude CASTING</b> (Lancet 2024) : usage du TRiP(cast) → -26% de prescription d'anticoagulants sans majoration des MTEV<br/>
+        • Toujours évaluer le <b>risque hémorragique</b> et les CI (allergie, IR sévère, thrombopénie...) avant prescription<br/>
+        • Si plusieurs traumatismes/immobilisations : <b>sélectionner l'item le plus à risque</b>
+      </div>
+    </div>
+  );
+}
+
 const SCORES_LIST = [
-  // Les calculateurs seront ajoutés un par un ici
-  // Exemple de structure pour quand on ajoutera Glasgow :
-  // { id:"glasgow", category:"neuro", title:"Score de Glasgow", subtitle:"Évaluation du coma (GCS)", icon:"🧠", color:"#9B59B6", tags:["#neuro","#coma"] },
+  {
+    id: "glasgow",
+    category: "neuro",
+    title: "Score de Glasgow",
+    subtitle: "Évaluation du coma (GCS)",
+    icon: "🧠",
+    color: "#9B59B6",
+    tags: ["#neuro", "#coma", "#TC", "#urgence"],
+  },
+  {
+    id: "shock-index",
+    category: "urg",
+    title: "Shock Index",
+    subtitle: "Indice de choc (FC / PAS)",
+    icon: "🫀",
+    color: "#DC2626",
+    tags: ["#hémodynamique", "#choc", "#hypovolémie", "#trauma"],
+  },
+  {
+    id: "apgar",
+    category: "pedia",
+    title: "Score d'Apgar",
+    subtitle: "Adaptation néonatale (1 min / 5 min)",
+    icon: "👶",
+    color: "#EC4899",
+    tags: ["#néonatal", "#nouveau-né", "#naissance", "#réanimation"],
+  },
+  {
+    id: "nihss",
+    category: "neuro",
+    title: "NIHSS",
+    subtitle: "Évaluation AVC (Stroke Scale)",
+    icon: "🧠",
+    color: "#7C3AED",
+    tags: ["#AVC", "#stroke", "#neuro", "#thrombolyse"],
+  },
+  {
+    id: "heart",
+    category: "cardio",
+    title: "Score HEART",
+    subtitle: "Douleur thoracique – risque SCA",
+    icon: "❤️",
+    color: "#4338CA",
+    tags: ["#DT", "#douleur-thoracique", "#SCA", "#cardio"],
+  },
+  {
+    id: "cha2ds2va",
+    category: "cardio",
+    title: "CHA₂DS₂-VA",
+    subtitle: "Risque thrombo-embolique dans la FA (ESC 2024)",
+    icon: "💓",
+    color: "#2563EB",
+    tags: ["#FA", "#fibrillation", "#anticoagulation", "#cardio"],
+  },
+  {
+    id: "hasbled",
+    category: "cardio",
+    title: "HAS-BLED",
+    subtitle: "Risque hémorragique sous anticoagulation",
+    icon: "🩸",
+    color: "#BE123C",
+    tags: ["#FA", "#anticoagulation", "#hémorragie", "#saignement"],
+  },
+  {
+    id: "parkland",
+    category: "urg",
+    title: "Parkland (brûlé grave)",
+    subtitle: "Remplissage adulte – SCB > 10–20%",
+    icon: "🔥",
+    color: "#C2410C",
+    tags: ["#brûlure", "#remplissage", "#parkland", "#réa"],
+  },
+  {
+    id: "cushman",
+    category: "autres",
+    title: "Score de Cushman",
+    subtitle: "Sevrage alcoolique – titration BZD",
+    icon: "🍷",
+    color: "#0891B2",
+    tags: ["#sevrage", "#alcool", "#addictologie", "#BZD"],
+  },
+  {
+    id: "qsofa",
+    category: "infect",
+    title: "qSOFA",
+    subtitle: "Dépistage rapide du sepsis (3 items)",
+    icon: "🦠",
+    color: "#EA580C",
+    tags: ["#sepsis", "#infection", "#infectieux", "#dépistage"],
+  },
+  {
+    id: "geneve-ep",
+    category: "respi",
+    title: "Score de Genève (EP)",
+    subtitle: "Probabilité clinique d'embolie pulmonaire",
+    icon: "🫁",
+    color: "#0EA5E9",
+    tags: ["#EP", "#embolie", "#dyspnée", "#thrombose"],
+  },
+  {
+    id: "wells-ep",
+    category: "cardio",
+    title: "Score de Wells (EP)",
+    subtitle: "Probabilité clinique d'embolie pulmonaire",
+    icon: "🩺",
+    color: "#6366F1",
+    tags: ["#EP", "#embolie", "#dyspnée", "#thrombose"],
+  },
+  {
+    id: "gbs",
+    category: "urg",
+    title: "Glasgow-Blatchford (GBS)",
+    subtitle: "Hémorragie digestive haute – tri SAU",
+    icon: "🩸",
+    color: "#991B1B",
+    tags: ["#HDH", "#hémorragie-digestive", "#mélaena", "#endoscopie"],
+  },
+  {
+    id: "avpu",
+    category: "neuro",
+    title: "AVPU",
+    subtitle: "Évaluation rapide de la conscience",
+    icon: "🧠",
+    color: "#9B59B6",
+    tags: ["#conscience", "#neuro", "#triage", "#rapide"],
+  },
+  {
+    id: "ramsay",
+    category: "autres",
+    title: "Score de Ramsay",
+    subtitle: "Évaluation de la sédation (6 niveaux)",
+    icon: "💤",
+    color: "#0D9488",
+    tags: ["#sédation", "#réa", "#anesthésie", "#monitoring"],
+  },
+  {
+    id: "batt",
+    category: "urg",
+    title: "BATT score",
+    subtitle: "Risque hémorragique – traumatisé",
+    icon: "🚑",
+    color: "#7F1D1D",
+    tags: ["#trauma", "#hémorragie", "#triage", "#pré-hospitalier"],
+  },
+  {
+    id: "silverman",
+    category: "pedia",
+    title: "Score de Silverman",
+    subtitle: "Détresse respiratoire du nouveau-né",
+    icon: "🫁",
+    color: "#EC4899",
+    tags: ["#néonatal", "#détresse-respi", "#nouveau-né", "#pédia"],
+  },
+  {
+    id: "carvajal",
+    category: "pedia",
+    title: "Carvajal (brûlé enfant)",
+    subtitle: "Remplissage pédiatrique – SCB",
+    icon: "🔥",
+    color: "#DB2777",
+    tags: ["#brûlure", "#pédia", "#remplissage", "#enfant"],
+  },
+  {
+    id: "tripcast",
+    category: "cardio",
+    title: "TRiP(cast)",
+    subtitle: "Risque MTEV – immobilisation MI",
+    icon: "🦴",
+    color: "#0F766E",
+    tags: ["#thrombose", "#MTEV", "#plâtre", "#anticoagulation"],
+  },
 ];
 
 const SCORES_CATEGORIES = [
@@ -4309,8 +11980,26 @@ function ScoresScreen() {
 
   // Routing vers le calculateur sélectionné
   if (selected) {
-    // Les calculateurs seront branchés ici un par un
-    // Exemple : if (selected.id === "glasgow") return <GlasgowCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "glasgow") return <GlasgowCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "shock-index") return <ShockIndexCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "apgar") return <ApgarCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "nihss") return <NIHSSCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "heart") return <HeartCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "cha2ds2va") return <Cha2ds2VaCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "hasbled") return <HasBledCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "parkland") return <ParklandCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "cushman") return <CushmanCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "qsofa") return <QsofaCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "geneve-ep") return <GeneveEpCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "wells-ep") return <WellsEpCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "gbs") return <GbsCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "avpu") return <AvpuCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "ramsay") return <RamsayCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "batt") return <BattCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "silverman") return <SilvermanCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "carvajal") return <CarvajalCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "tripcast") return <TripCastCalculator onBack={() => setSelected(null)}/>;
+    // Les autres calculateurs seront branchés ici un par un
     return (
       <div>
         <BackBtn onClick={() => setSelected(null)}/>
