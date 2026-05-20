@@ -57,6 +57,9 @@ function rowToItem(table, row) {
   if ("dilution_standard" in r) { r.dilutionStandard = r.dilution_standard; delete r.dilution_standard; }
   if ("has_second_ecg" in r) { r.hasSecondEcg = r.has_second_ecg; delete r.has_second_ecg; }
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
+  if ("has_second_image" in r) { r.hasSecondImage = r.has_second_image; delete r.has_second_image; }
+  if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
+  if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
   if ("is_pinned"   in r) { r.isPinned   = r.is_pinned;   delete r.is_pinned; }
   // Reco Flash : mapping spécifique
@@ -69,6 +72,18 @@ function rowToItem(table, row) {
       r.tags = r.tags.split(",").map(t => t.trim()).filter(Boolean);
     } else {
       r.tags = [];
+    }
+  }
+  // Filet de sécurité : tout champ snake_case restant est auto-converti en camelCase
+  // (utile pour les colonnes ajoutées en DB sans mapping explicite — sauf created_at/updated_at)
+  const SNAKE_PRESERVE = new Set(["created_at", "updated_at", "created_by"]);
+  for (const key of Object.keys(r)) {
+    if (key.includes("_") && !SNAKE_PRESERVE.has(key)) {
+      const camel = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      if (camel !== key && !(camel in r)) {
+        r[camel] = r[key];
+        delete r[key];
+      }
     }
   }
   return r;
@@ -96,6 +111,9 @@ function itemToRow(table, item) {
   if ("dilutionStandard" in r) { r.dilution_standard  = r.dilutionStandard; delete r.dilutionStandard; }
   if ("hasSecondEcg"     in r) { r.has_second_ecg     = r.hasSecondEcg;     delete r.hasSecondEcg; }
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
+  if ("hasSecondImage"   in r) { r.has_second_image   = r.hasSecondImage;   delete r.hasSecondImage; }
+  if ("videoUrl"         in r) { r.video_url          = r.videoUrl;         delete r.videoUrl; }
+  if ("isVideo"          in r) { r.is_video           = r.isVideo;          delete r.isVideo; }
   if ("lienUrl"          in r) { r.lien_url           = r.lienUrl;          delete r.lienUrl; }
   if ("isPinned"         in r) { r.is_pinned          = r.isPinned;         delete r.isPinned; }
   // Reco Flash : mapping spécifique
@@ -103,6 +121,17 @@ function itemToRow(table, item) {
   if ("urlPdf"           in r) { r.url_pdf            = r.urlPdf;           delete r.urlPdf; }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
+  // Filet de sécurité : tout champ camelCase restant est auto-converti en snake_case
+  // (utile si un nouveau champ est ajouté en DB sans mapping explicite)
+  for (const key of Object.keys(r)) {
+    if (/[A-Z]/.test(key)) {
+      const snake = key.replace(/[A-Z]/g, c => "_" + c.toLowerCase());
+      if (snake !== key && !(snake in r)) {
+        r[snake] = r[key];
+        delete r[key];
+      }
+    }
+  }
   return r;
 }
 
@@ -2547,39 +2576,6 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
         </div>
       </div>
 
-      {/* Vidéo YouTube — lien direct */}
-      {ytId && (
-        <a
-          href={`https://www.youtube.com/watch?v=${ytId}`}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display:"flex", alignItems:"center", gap:14,
-            background:C.white, border:`1px solid ${C.border}`,
-            borderRadius:14, padding:"14px 16px", marginBottom:16,
-            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
-          }}>
-          <div style={{
-            background:"#FF0000", borderRadius:10,
-            width:46, height:46, flexShrink:0,
-            display:"flex", alignItems:"center", justifyContent:"center",
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
-            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
-      )}
-
       {/* Image principale si disponible */}
       {(geste.imageData||geste.imageUrl) && (
         <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
@@ -2720,6 +2716,39 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           </div>
         )}
       </div>
+
+      {/* Vidéo YouTube — lien direct en bas de page */}
+      {ytId && (
+        <a
+          href={`https://www.youtube.com/watch?v=${ytId}`}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display:"flex", alignItems:"center", gap:14,
+            background:C.white, border:`1px solid ${C.border}`,
+            borderRadius:14, padding:"14px 16px", marginTop:16, marginBottom:16,
+            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
+          }}>
+          <div style={{
+            background:"#FF0000", borderRadius:10,
+            width:46, height:46, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
+            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
+            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </a>
+      )}
     </div>
   );
 }
@@ -11861,6 +11890,337 @@ function TripCastCalculator({ onBack }) {
   );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// PercCalculator : Pulmonary Embolism Rule-out Criteria (PERC)
+// 8 critères binaires — TOUS doivent être NÉGATIFS pour exclure l'EP
+// À utiliser uniquement si probabilité clinique faible (Wells ≤ 4 / Genève ≤ 1)
+// PERC = 0 → EP exclue sans D-dimères ni imagerie
+// ────────────────────────────────────────────────────────────────────────────
+function PercCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#14B8A6";
+
+  // 8 critères du PERC (chaque "oui" = 1 point d'inquiétude)
+  const ITEMS = [
+    {
+      key: "age",
+      title: "Âge ≥ 50 ans",
+      help: "Au-delà de 50 ans, la prévalence d'EP augmente significativement",
+    },
+    {
+      key: "fc",
+      title: "FC ≥ 100 bpm",
+      help: "Tachycardie au repos",
+    },
+    {
+      key: "spo2",
+      title: "SpO₂ < 95 % en air ambiant",
+      help: "Saturation pulsée en oxygène basse",
+    },
+    {
+      key: "oedeme",
+      title: "Œdème unilatéral d'un membre inférieur",
+      help: "Différence cliniquement visible entre les 2 mollets",
+    },
+    {
+      key: "hemoptysie",
+      title: "Hémoptysie",
+      help: "Crachat sanglant, même minime",
+    },
+    {
+      key: "chir_trauma",
+      title: "Chirurgie ou traumatisme < 4 semaines",
+      help: "Sous anesthésie générale ou ayant nécessité une hospitalisation",
+    },
+    {
+      key: "atcd_mtev",
+      title: "ATCD personnel de TVP ou d'EP",
+      help: "Antécédent documenté d'événement thromboembolique veineux",
+    },
+    {
+      key: "hormones",
+      title: "Traitement hormonal (œstrogènes)",
+      help: "Contraception œstroprogestative, THS, traitement hormonal",
+    },
+  ];
+
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = false; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Compte le nombre de critères présents
+  const positifs = ITEMS.filter(it => scores[it.key]).length;
+  const allNegative = positifs === 0;
+  const hasInput = Object.values(scores).some(v => v) || true; // toujours considérer qu'il y a un résultat
+
+  // Interprétation
+  let sevColor, sevBg, sevLabel, interpretation, action;
+  if (allNegative) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "PERC NÉGATIF";
+    interpretation = "Tous les critères sont à « non ». EP exclue chez un patient à probabilité clinique faible.";
+    action = "EP EXCLUE — pas besoin de D-dimères ni d'imagerie. Recherche d'un autre diagnostic. Information du patient sur les signes d'alerte. Reconsultation si symptômes évoluent.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#CCFBF1";
+    sevLabel = "PERC POSITIF";
+    interpretation = `${positifs} critère${positifs > 1 ? "s" : ""} présent${positifs > 1 ? "s" : ""}. PERC ne permet pas d'exclure l'EP.`;
+    action = "Poursuivre l'algorithme diagnostique : D-dimères → si positifs (ou ≥ seuil ajusté à l'âge) → angioTDM thoracique. Si CI à l'iode → scintigraphie V/Q.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Case à cocher
+  function ItemCheckbox({ item, checked, onToggle }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {item.help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 9px",
+          fontSize: 11,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "OUI" : "NON"}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #0F766E 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🫁</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score PERC</div>
+            <div style={{fontSize: 11, opacity: .85}}>Pulmonary Embolism Rule-out Criteria</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ⚠️ Note critique : indication d'utilisation */}
+      <div style={{
+        background: "#FEF3C7",
+        border: `1px solid ${C.amber}66`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        ⚠️ <b>À utiliser uniquement si probabilité clinique faible</b> (Wells ≤ 4 / Genève ≤ 1 / gestalt clinique &lt; 15%). <b>Inadapté en cas de probabilité intermédiaire ou forte.</b>
+      </div>
+
+      {/* Note pédagogique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 10,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.5,
+      }}>
+        🎯 <b>Tous les critères à « NON »</b> → EP exclue sans D-dimères ni imagerie. <b>Un seul « OUI »</b> → poursuivre l'algorithme.
+      </div>
+
+      {/* Items */}
+      {ITEMS.map(it => (
+        <ItemCheckbox
+          key={it.key}
+          item={it}
+          checked={scores[it.key]}
+          onToggle={() => toggle(it.key)}
+        />
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: allNegative ? `0 4px 16px ${C.green}33` : "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>PERC</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{positifs}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 8</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              critère{positifs > 1 ? "s" : ""} positif{positifs > 1 ? "s" : ""}
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Bandeau d'alerte vert si PERC négatif */}
+      {allNegative && (
+        <div style={{
+          background: C.green,
+          color: "#fff",
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 12,
+          fontSize: 12,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          boxShadow: `0 4px 12px ${C.green}55`,
+        }}>
+          ✅ <b>EP EXCLUE</b> — Pas de D-dimères, pas d'imagerie. Rechercher un autre diagnostic.
+        </div>
+      )}
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques (Kline 2004, validation PERC-EU)</div>
+        • <b>Indication</b> : patient à probabilité clinique faible d'EP (Wells ≤ 4 / Genève ≤ 1 ou gestalt &lt; 15%)<br/>
+        • <b>Tous les critères à NON</b> + probabilité faible → <b>EP exclue</b> (risque résiduel &lt; 1,5%)<br/>
+        • <b>Au moins un critère à OUI</b> → D-dimères (avec seuil ajusté à l'âge si &gt; 50 ans)<br/>
+        • <b>Algorithme YEARS</b> (alternative) : critères Wells + seuil D-dimères variable<br/>
+        • <b>Performance</b> : sensibilité 97%, spécificité 22% — outil de « rule-out » seulement<br/>
+        • <b>Inadapté</b> en probabilité intermédiaire/forte, et si suspicion d'EP très évoquée par la clinique<br/>
+        • <b>D-dimères ajustés à l'âge</b> : seuil = âge × 10 µg/L au-delà de 50 ans<br/>
+        • Étude française PROPER (Freund 2018, JAMA) : PERC validé en Europe sur 1916 patients
+      </div>
+    </div>
+  );
+}
+
 const SCORES_LIST = [
   {
     id: "glasgow",
@@ -12033,6 +12393,15 @@ const SCORES_LIST = [
     color: "#0F766E",
     tags: ["#thrombose", "#MTEV", "#plâtre", "#anticoagulation"],
   },
+  {
+    id: "perc",
+    category: "cardio",
+    title: "PERC",
+    subtitle: "Exclusion EP – probabilité faible",
+    icon: "🫁",
+    color: "#14B8A6",
+    tags: ["#EP", "#embolie", "#exclusion", "#rule-out"],
+  },
 ];
 
 const SCORES_CATEGORIES = [
@@ -12076,6 +12445,7 @@ function ScoresScreen() {
     if (selected.id === "silverman") return <SilvermanCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "carvajal") return <CarvajalCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "tripcast") return <TripCastCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "perc") return <PercCalculator onBack={() => setSelected(null)}/>;
     // Les autres calculateurs seront branchés ici un par un
     return (
       <div>
