@@ -16,6 +16,7 @@ const TABLE_MAP = {
   retex_submissions:  "retex",
   admin_contacts:     "contacts",
   admin_recoflash:    "reco_flash",
+  admin_quizzes:      "quizzes",
 };
 
 // Requête REST Supabase générique
@@ -65,6 +66,8 @@ function rowToItem(table, row) {
   // Reco Flash : mapping spécifique
   if ("date_publication" in r) { r.datePublication = r.date_publication; delete r.date_publication; }
   if ("url_pdf"     in r) { r.urlPdf     = r.url_pdf;     delete r.url_pdf; }
+  // Quiz : mapping spécifique
+  if ("estimated_min" in r) { r.estimatedMin = r.estimated_min; delete r.estimated_min; }
   // Normalise tags : on garde un ARRAY pour que .map() fonctionne partout en lecture
   // (la conversion string→array pour le formulaire d'édition se fait à l'init du form)
   if (!Array.isArray(r.tags)) {
@@ -119,6 +122,14 @@ function itemToRow(table, item) {
   // Reco Flash : mapping spécifique
   if ("datePublication"  in r) { r.date_publication   = r.datePublication;  delete r.datePublication; }
   if ("urlPdf"           in r) { r.url_pdf            = r.urlPdf;           delete r.urlPdf; }
+  // Quiz : mapping spécifique
+  if ("estimatedMin"     in r) { r.estimated_min      = r.estimatedMin;     delete r.estimatedMin; }
+  // Strings vides → null (sinon PostgreSQL rejette pour les colonnes typées date, integer, etc.)
+  // Liste blanche des colonnes connues qui doivent passer en null si vides
+  const NULLABLE_IF_EMPTY = ["date_publication", "url_pdf", "video_url", "lien_url", "schema_url", "photo_url", "image_url", "image_url2", "second_title", "credit", "credit_photo", "icon", "color", "subtitle", "category", "description", "context", "question", "diag", "type", "emoji"];
+  for (const k of NULLABLE_IF_EMPTY) {
+    if (k in r && (r[k] === "" || r[k] === undefined)) r[k] = null;
+  }
   // tags : string→array pour Supabase
   if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   // Filet de sécurité : tout champ camelCase restant est auto-converti en snake_case
@@ -191,7 +202,7 @@ function DataProvider({ children }) {
   const [store, setStore] = React.useState({
     ecgs: [], imagerie: [], agenda: [],
     divers: [], dilutions: [], gestes: [], retex: [],
-    contacts: [], recoflash: [], loaded: false
+    contacts: [], recoflash: [], quizzes: [], loaded: false
   });
 
   React.useEffect(() => { loadAll(); }, []);
@@ -246,6 +257,9 @@ function DataProvider({ children }) {
     const rrf = await safeGet("admin_recoflash");
     next.recoflash = rrf ? JSON.parse(rrf.value) : [];
 
+    const rq = await safeGet("admin_quizzes");
+    next.quizzes = rq ? JSON.parse(rq.value) : [];
+
     next.loaded = true;
     setStore(next);
   }
@@ -281,17 +295,20 @@ function DataProvider({ children }) {
     // Si la clé pointe vers une table Supabase → vrai INSERT POST
     if (TABLE_MAP[storageKey]) {
       const row = itemToRow(TABLE_MAP[storageKey], item);
+      console.log("[addItem] POST /" + TABLE_MAP[storageKey], row);
       try {
         const rows = await supaFetch("/" + TABLE_MAP[storageKey], "POST", row);
         const newItem = rowToItem(TABLE_MAP[storageKey], Array.isArray(rows) ? rows[0] : rows);
+        console.log("[addItem] success, newItem=", newItem);
         setStore(prev => ({
           ...prev,
           [storeKey]: [...(prev[storeKey] || []), newItem],
         }));
         return newItem;
       } catch(e) {
-        console.error("addItem Supabase", storageKey, e);
-        alert("Erreur lors de l'enregistrement : " + e.message);
+        console.error("[addItem] Supabase error on " + storageKey, e);
+        console.error("[addItem] payload was", row);
+        alert("Erreur lors de l'enregistrement :\n\n" + e.message + "\n\n(Ouvre la console F12 pour les détails)");
         throw e;
       }
     }
@@ -1050,6 +1067,7 @@ function HomeScreen({onNav}) {
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
     {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
+    {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
     {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
@@ -3243,6 +3261,7 @@ function AdminScreen({ onNewItem }) {
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"", tags:"" });
+  const [qzForm, setQzForm] = useState({ title:"", theme:"", description:"", icon:"🧠", color:"#6366F1", estimatedMin:5, sources:"", takeaways:"", questions:[], tags:"" });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
@@ -3251,6 +3270,7 @@ function AdminScreen({ onNewItem }) {
   const [editingDil, setEditingDil] = useState(null);
   const [editingG, setEditingG] = useState(null);
   const [editingRf, setEditingRf] = useState(null);
+  const [editingQz, setEditingQz] = useState(null);
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
@@ -3391,19 +3411,64 @@ function AdminScreen({ onNewItem }) {
   }
 
   async function addRecoflash() {
-    if(!rfForm.titre.trim()) return;
+    if(!rfForm.titre || !rfForm.titre.trim()) { alert("Le titre de la reco est obligatoire."); return; }
     const tags = (rfForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    if(editingRf !== null) {
-      const item = {...rfForm, id:editingRf, tags};
-      await updateItem("recoflash","admin_recoflash",item,[]);
-      setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
-      showSaved("Reco modifiée !");
-    } else {
-      const item = {...rfForm, id:Date.now(), tags};
-      await addItem("recoflash","admin_recoflash",item,[]);
-      setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
-      showSaved("Reco ajoutée !");
-      if(onNewItem) onNewItem({id:item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
+    try {
+      if(editingRf !== null) {
+        const item = {...rfForm, id:editingRf, tags};
+        await updateItem("recoflash","admin_recoflash",item,[]);
+        setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
+        showSaved("Reco modifiée !");
+      } else {
+        const item = {...rfForm, id:Date.now(), tags};
+        await addItem("recoflash","admin_recoflash",item,[]);
+        setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
+        showSaved("Reco ajoutée !");
+        if(onNewItem) onNewItem({id:item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
+      }
+    } catch(e) {
+      console.error("addRecoflash error", e);
+      alert("Erreur lors de l'enregistrement de la reco : " + e.message);
+    }
+  }
+
+  async function addQuiz() {
+    if(!qzForm.title || !qzForm.title.trim()) { alert("Le titre du quiz est obligatoire."); return; }
+    if(!qzForm.questions || qzForm.questions.length === 0) { alert("Ajoutez au moins 1 question."); return; }
+    const tags = (qzForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+    const sources = (qzForm.sources||"").split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+      // Format attendu : "Nom de la reco (2024)" → parse l'année si présente
+      const m = line.match(/^(.*?)\s*\((\d{4})\)\s*$/);
+      return m ? { name: m[1].trim(), year: parseInt(m[2], 10) } : { name: line };
+    });
+    const takeaways = (qzForm.takeaways||"").split("\n").map(l => l.trim()).filter(Boolean);
+    const payload = {
+      title: (qzForm.title||"").trim(),
+      theme: (qzForm.theme||"").trim(),
+      description: (qzForm.description||"").trim(),
+      icon: qzForm.icon || "🧠",
+      color: qzForm.color || "#6366F1",
+      estimatedMin: parseInt(qzForm.estimatedMin, 10) || 5,
+      sources, takeaways,
+      questions: qzForm.questions,
+      tags,
+    };
+    try {
+      if(editingQz !== null) {
+        await updateItem("quizzes","admin_quizzes",{...payload, id:editingQz},[]);
+        setEditingQz(null);
+        setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""});
+        showSaved("Quiz modifié !");
+      } else {
+        const item = {...payload, id:Date.now()};
+        await addItem("quizzes","admin_quizzes",item,[]);
+        setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""});
+        showSaved("Quiz ajouté !");
+        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🧠",color:"#6366F1",nav:"quiz"});
+      }
+    } catch(e) {
+      console.error("addQuiz error", e);
+      alert("Erreur lors de l'enregistrement du quiz : " + e.message);
     }
   }
 
@@ -3436,7 +3501,7 @@ function AdminScreen({ onNewItem }) {
       )}
 
       <div style={{display:"flex", gap:6, marginBottom:20, background:"#eef2f7", borderRadius:12, padding:4, overflowX:"auto", WebkitOverflowScrolling:"touch", scrollbarWidth:"none"}}>
-        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"recoflash",label:"⚡ Reco Flash"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
+        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"recoflash",label:"⚡ Reco Flash"},{id:"quiz",label:"🧠 Quiz"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{
             flexShrink:0, border:"none", borderRadius:9, padding:"8px 10px", cursor:"pointer",
             background:tab===t.id?C.white:"transparent",
@@ -4130,6 +4195,125 @@ function AdminScreen({ onNewItem }) {
                     <button onClick={()=>{ if(window.confirm("Supprimer cette reco ?")) deleteItem("recoflash","admin_recoflash",r.id); }}
                       style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==="quiz" && (
+        <div>
+          {/* Formulaire ajout/édition quiz */}
+          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
+            <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingQz ? "✏️ Modifier le quiz" : "+ Nouveau Quiz"}</div>
+
+            <label style={lbl}>Titre du quiz *</label>
+            <input style={inp} placeholder="Ex: Embolie pulmonaire — diagnostic" value={qzForm.title} onChange={e=>setQzForm({...qzForm, title:e.target.value})}/>
+
+            <label style={lbl}>Thème</label>
+            <input style={inp} placeholder="Ex: Cardiologie / Pneumologie" value={qzForm.theme} onChange={e=>setQzForm({...qzForm, theme:e.target.value})}/>
+
+            <label style={lbl}>Description (courte intro)</label>
+            <textarea style={{...inp, minHeight:60, resize:"vertical"}} placeholder="Quiz court sur la démarche diagnostique..." value={qzForm.description} onChange={e=>setQzForm({...qzForm, description:e.target.value})}/>
+
+            <div style={{display:"grid", gridTemplateColumns:"80px 1fr 100px", gap:8, marginBottom:0}}>
+              <div>
+                <label style={lbl}>Icône</label>
+                <input style={{...inp, textAlign:"center", fontSize:18}} placeholder="🧠" value={qzForm.icon} onChange={e=>setQzForm({...qzForm, icon:e.target.value})}/>
+              </div>
+              <div>
+                <label style={lbl}>Couleur</label>
+                <div style={{display:"flex", gap:6}}>
+                  <input type="color" value={qzForm.color} onChange={e=>setQzForm({...qzForm, color:e.target.value})} style={{width:42, height:42, border:`1px solid ${C.border}`, borderRadius:8, padding:2, cursor:"pointer", background:C.white}}/>
+                  <input style={{...inp, marginBottom:0, fontSize:11}} value={qzForm.color} onChange={e=>setQzForm({...qzForm, color:e.target.value})}/>
+                </div>
+              </div>
+              <div>
+                <label style={lbl}>Durée (min)</label>
+                <input type="number" min="1" max="60" style={{...inp, textAlign:"center"}} value={qzForm.estimatedMin} onChange={e=>setQzForm({...qzForm, estimatedMin:e.target.value})}/>
+              </div>
+            </div>
+
+            <label style={lbl}>Sources (une par ligne — format "Nom (année)")</label>
+            <textarea style={{...inp, minHeight:60, resize:"vertical", fontFamily:"monospace", fontSize:12}} placeholder="ESC 2019 Guidelines Pulmonary Embolism (2019)&#10;SFMU Recommandations EP (2023)" value={qzForm.sources} onChange={e=>setQzForm({...qzForm, sources:e.target.value})}/>
+
+            <label style={lbl}>📌 À retenir (3-5 points clés, un par ligne)</label>
+            <textarea style={{...inp, minHeight:80, resize:"vertical"}} placeholder="Probabilité clinique d'abord (Wells / Genève)&#10;D-dimères ajustés à l'âge si proba faible/intermédiaire&#10;AngioTDM en 1re intention si proba forte" value={qzForm.takeaways} onChange={e=>setQzForm({...qzForm, takeaways:e.target.value})}/>
+
+            <label style={lbl}>Tags (séparés par espace)</label>
+            <input style={inp} placeholder="#EP #cardio" value={qzForm.tags} onChange={e=>setQzForm({...qzForm, tags:e.target.value})}/>
+
+            {/* Éditeur des questions */}
+            <div style={{marginTop:16, marginBottom:14}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
+                <div style={{fontSize:13, fontWeight:800, color:C.navy}}>Questions <span style={{color:C.sub, fontWeight:600}}>({qzForm.questions.length}/10)</span></div>
+                {qzForm.questions.length < 10 && (
+                  <div style={{display:"flex", gap:5}}>
+                    <button onClick={()=>setQzForm(f=>({...f, questions:[...f.questions, {id:"q"+Date.now(), type:"single", stem:"", options:[{id:"a",text:"",correct:false},{id:"b",text:"",correct:false}], explanation:""}]}))}
+                      style={{background:"#6366F1", color:"#fff", border:"none", borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:800, cursor:"pointer", touchAction:"manipulation"}}>+ QCM</button>
+                    <button onClick={()=>setQzForm(f=>({...f, questions:[...f.questions, {id:"q"+Date.now(), type:"multiple", stem:"", options:[{id:"a",text:"",correct:false},{id:"b",text:"",correct:false}], explanation:""}]}))}
+                      style={{background:"#F59E0B", color:"#fff", border:"none", borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:800, cursor:"pointer", touchAction:"manipulation"}}>+ Multi</button>
+                    <button onClick={()=>setQzForm(f=>({...f, questions:[...f.questions, {id:"q"+Date.now(), type:"case", stem:"", context:"", subQuestions:[{id:"sq"+Date.now(), type:"single", stem:"", options:[{id:"a",text:"",correct:false},{id:"b",text:"",correct:false}], explanation:""}]}]}))}
+                      style={{background:"#10B981", color:"#fff", border:"none", borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:800, cursor:"pointer", touchAction:"manipulation"}}>+ Cas</button>
+                  </div>
+                )}
+              </div>
+
+              {qzForm.questions.length === 0 && (
+                <div style={{padding:"20px 16px", textAlign:"center", color:C.sub, background:"#F8FAFC", borderRadius:10, border:`1px dashed ${C.border}`, fontSize:12}}>
+                  Aucune question. Ajoute-en une avec les boutons ci-dessus.
+                </div>
+              )}
+
+              {qzForm.questions.map((q, qIdx) => (
+                <QuizQuestionEditor
+                  key={q.id}
+                  question={q}
+                  index={qIdx}
+                  total={qzForm.questions.length}
+                  onChange={(updated) => setQzForm(f => ({...f, questions: f.questions.map((x,i) => i===qIdx ? updated : x)}))}
+                  onDelete={() => { if(window.confirm("Supprimer cette question ?")) setQzForm(f => ({...f, questions: f.questions.filter((_,i)=>i!==qIdx)})); }}
+                  onMoveUp={qIdx > 0 ? () => setQzForm(f => { const arr=[...f.questions]; [arr[qIdx-1],arr[qIdx]]=[arr[qIdx],arr[qIdx-1]]; return {...f, questions:arr}; }) : null}
+                  onMoveDown={qIdx < qzForm.questions.length - 1 ? () => setQzForm(f => { const arr=[...f.questions]; [arr[qIdx+1],arr[qIdx]]=[arr[qIdx],arr[qIdx+1]]; return {...f, questions:arr}; }) : null}
+                />
+              ))}
+            </div>
+
+            <Btn onClick={addQuiz} color="#6366F1" style={{width:"100%"}}>{editingQz ? "💾 Enregistrer les modifications" : "✅ Créer le quiz"}</Btn>
+            {editingQz && <Btn onClick={()=>{ setEditingQz(null); setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""}); }} color={C.sub} style={{width:"100%", marginTop:6}}>Annuler la modification</Btn>}
+          </div>
+
+          {/* Liste des quiz existants */}
+          {Array.isArray(store.quizzes) && store.quizzes.length > 0 && (
+            <div>
+              <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:10}}>📋 Quiz existants ({store.quizzes.length})</div>
+              {store.quizzes.map(q => (
+                <div key={q.id} style={{background:C.white, border:`1px solid ${C.border}`, borderLeft:`4px solid ${q.color||"#6366F1"}`, borderRadius:12, padding:"12px 14px", marginBottom:8, display:"flex", alignItems:"center", gap:12}}>
+                  <span style={{fontSize:24, flexShrink:0}}>{q.icon||"🧠"}</span>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:13, fontWeight:800, color:C.text, lineHeight:1.3}}>{q.title}</div>
+                    <div style={{fontSize:10, color:C.sub, marginTop:2}}>{q.theme} • {countQuestions(q)} question{countQuestions(q)>1?"s":""}</div>
+                  </div>
+                  <button onClick={()=>{
+                    setEditingQz(q.id);
+                    setQzForm({
+                      title: q.title||"",
+                      theme: q.theme||"",
+                      description: q.description||"",
+                      icon: q.icon||"🧠",
+                      color: q.color||"#6366F1",
+                      estimatedMin: q.estimatedMin||5,
+                      sources: Array.isArray(q.sources) ? q.sources.map(s => s.year ? `${s.name} (${s.year})` : s.name).join("\n") : "",
+                      takeaways: Array.isArray(q.takeaways) ? q.takeaways.join("\n") : "",
+                      questions: q.questions || [],
+                      tags: Array.isArray(q.tags) ? q.tags.join(" ") : (q.tags||""),
+                    });
+                    window.scrollTo(0,0);
+                  }}
+                    style={{background:"#6366F1", color:"#fff", border:"none", borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:800, cursor:"pointer", touchAction:"manipulation"}}>✏️</button>
+                  <button onClick={async()=>{ if(window.confirm("Supprimer ce quiz ?")) { await removeItem("quizzes","admin_quizzes",q.id,[]); showSaved("Quiz supprimé !"); } }}
+                    style={{background:"none", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:700, color:"#E05260", cursor:"pointer", touchAction:"manipulation"}}>🗑</button>
                 </div>
               ))}
             </div>
@@ -12415,6 +12599,971 @@ const SCORES_CATEGORIES = [
   { id:"autres", label:"Autres",      icon:"⚙️", color:"#6B7280" },
 ];
 
+// ── QuizQuestionEditor : éditeur d'une question (récursif pour cas cliniques) ─
+function QuizQuestionEditor({ question, index, total, onChange, onDelete, onMoveUp, onMoveDown, isSub = false }) {
+  // useC est appelé via le hook React - on récupère le contexte couleurs depuis le DOM ambient
+  // (on duplique localement les valeurs minimales pour rester autonome)
+  const C = {
+    text: "#1A3A5C", navy: "#1A3A5C", sub: "#94A3B8",
+    border: "#E2E8F0", white: "#FFFFFF",
+    green: "#10B981", greenLight: "#DCFCE7",
+    amber: "#F59E0B", amberLight: "#FEF3C7",
+  };
+
+  const inp = {width:"100%", border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 10px", fontSize:12, color:C.text, background:C.white, boxSizing:"border-box", outline:"none", fontFamily:"inherit", marginBottom:8};
+
+  const typeColors = {
+    single: {bg:"#E0E7FF", color:"#6366F1", label:"QCM"},
+    multiple: {bg:"#FEF3C7", color:"#F59E0B", label:"MULTIPLE"},
+    case: {bg:"#D1FAE5", color:"#10B981", label:"CAS CLINIQUE"},
+  };
+  const tc = typeColors[question.type] || typeColors.single;
+
+  function updateOption(optIdx, field, value) {
+    const newOpts = [...question.options];
+    newOpts[optIdx] = {...newOpts[optIdx], [field]: value};
+    // En QCM single, si on coche une option, on décoche les autres
+    if (field === "correct" && value === true && question.type === "single") {
+      newOpts.forEach((o, i) => { if (i !== optIdx) o.correct = false; });
+    }
+    onChange({...question, options: newOpts});
+  }
+
+  function addOption() {
+    if (question.options.length >= 4) return;
+    const letters = ["a","b","c","d","e"];
+    onChange({...question, options:[...question.options, {id:letters[question.options.length], text:"", correct:false}]});
+  }
+
+  function removeOption(idx) {
+    if (question.options.length <= 2) return;
+    onChange({...question, options: question.options.filter((_,i) => i !== idx)});
+  }
+
+  // Pour les cas cliniques : gestion des sous-questions
+  function updateSubQ(sqIdx, updated) {
+    onChange({...question, subQuestions: question.subQuestions.map((sq, i) => i === sqIdx ? updated : sq)});
+  }
+  function addSubQ() {
+    onChange({...question, subQuestions:[...(question.subQuestions||[]), {id:"sq"+Date.now(), type:"single", stem:"", options:[{id:"a",text:"",correct:false},{id:"b",text:"",correct:false}], explanation:""}]});
+  }
+  function removeSubQ(sqIdx) {
+    if ((question.subQuestions||[]).length <= 1) { alert("Un cas clinique doit avoir au moins 1 sous-question."); return; }
+    onChange({...question, subQuestions: question.subQuestions.filter((_,i)=>i!==sqIdx)});
+  }
+
+  return (
+    <div style={{
+      background: isSub ? "#F8FAFC" : C.white,
+      border: `1.5px solid ${tc.color}33`,
+      borderLeft: `4px solid ${tc.color}`,
+      borderRadius: 12,
+      padding: "12px 14px",
+      marginBottom: 10,
+    }}>
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10, gap:8}}>
+        <div style={{display:"flex", alignItems:"center", gap:8, flex:1, minWidth:0}}>
+          <span style={{
+            background: tc.bg, color: tc.color,
+            fontSize: 10, fontWeight: 900, padding: "3px 8px", borderRadius: 8, letterSpacing: .3,
+          }}>{tc.label}</span>
+          <span style={{fontSize: 11, color: C.sub, fontWeight: 700}}>#{index + 1}</span>
+        </div>
+        <div style={{display:"flex", gap:4, flexShrink:0}}>
+          {onMoveUp && <button onClick={onMoveUp} style={{background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"3px 8px", fontSize:10, cursor:"pointer", color:C.sub}}>↑</button>}
+          {onMoveDown && <button onClick={onMoveDown} style={{background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"3px 8px", fontSize:10, cursor:"pointer", color:C.sub}}>↓</button>}
+          <button onClick={onDelete} style={{background:"none", border:`1px solid #FCA5A5`, borderRadius:6, padding:"3px 8px", fontSize:10, cursor:"pointer", color:"#DC2626"}}>🗑</button>
+        </div>
+      </div>
+
+      {/* Énoncé */}
+      <textarea
+        style={{...inp, minHeight: 50, resize:"vertical"}}
+        placeholder={question.type === "case" ? "Présentation du cas (ex: « Patient 55 ans, dyspnée brutale... »)" : "Énoncé de la question"}
+        value={question.stem || ""}
+        onChange={e => onChange({...question, stem: e.target.value})}
+      />
+
+      {/* Pour les cas : contexte supplémentaire */}
+      {question.type === "case" && (
+        <textarea
+          style={{...inp, minHeight: 36, resize:"vertical", fontStyle:"italic"}}
+          placeholder="Contexte / détails complémentaires (optionnel)"
+          value={question.context || ""}
+          onChange={e => onChange({...question, context: e.target.value})}
+        />
+      )}
+
+      {/* Options (sauf pour cas, qui a des sous-questions) */}
+      {question.type !== "case" && (
+        <>
+          <div style={{fontSize:10, fontWeight:800, color:C.sub, letterSpacing:.3, marginBottom:6}}>
+            PROPOSITIONS · cocher la/les bonne(s) réponse(s)
+          </div>
+          {question.options.map((opt, optIdx) => (
+            <div key={optIdx} style={{display:"flex", alignItems:"center", gap:6, marginBottom:5}}>
+              <button
+                onClick={() => updateOption(optIdx, "correct", !opt.correct)}
+                style={{
+                  background: opt.correct ? C.green : C.white,
+                  border: `1.5px solid ${opt.correct ? C.green : C.border}`,
+                  borderRadius: 6,
+                  width: 26, height: 26,
+                  cursor: "pointer",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: 14,
+                  flexShrink: 0,
+                  touchAction: "manipulation",
+                }}>{opt.correct ? "✓" : ""}</button>
+              <input
+                style={{...inp, marginBottom:0, fontSize:12}}
+                placeholder={`Réponse ${String.fromCharCode(65 + optIdx)}`}
+                value={opt.text}
+                onChange={e => updateOption(optIdx, "text", e.target.value)}
+              />
+              {question.options.length > 2 && (
+                <button onClick={() => removeOption(optIdx)} style={{background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"4px 8px", fontSize:10, cursor:"pointer", color:C.sub, flexShrink:0}}>✕</button>
+              )}
+            </div>
+          ))}
+          {question.options.length < 4 && (
+            <button onClick={addOption} style={{background:"none", border:`1px dashed ${C.border}`, borderRadius:6, padding:"6px", fontSize:11, color:C.sub, cursor:"pointer", width:"100%", marginBottom:8, marginTop:2, fontWeight:700, touchAction:"manipulation"}}>+ Ajouter une proposition</button>
+          )}
+
+          {/* Explication */}
+          <div style={{fontSize:10, fontWeight:800, color:C.sub, letterSpacing:.3, marginBottom:4, marginTop:8}}>
+            EXPLICATION PÉDAGOGIQUE
+          </div>
+          <textarea
+            style={{...inp, minHeight: 50, resize:"vertical", marginBottom:0}}
+            placeholder="Pourquoi la bonne réponse est correcte..."
+            value={question.explanation || ""}
+            onChange={e => onChange({...question, explanation: e.target.value})}
+          />
+        </>
+      )}
+
+      {/* Sous-questions pour cas clinique */}
+      {question.type === "case" && (
+        <div style={{marginTop:10}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.sub, letterSpacing:.3}}>SOUS-QUESTIONS ({(question.subQuestions||[]).length})</div>
+            <button onClick={addSubQ} style={{background:"#10B981", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:10, fontWeight:800, cursor:"pointer", touchAction:"manipulation"}}>+ Question</button>
+          </div>
+          {(question.subQuestions || []).map((sq, sqIdx) => (
+            <QuizQuestionEditor
+              key={sq.id}
+              question={sq}
+              index={sqIdx}
+              total={(question.subQuestions||[]).length}
+              isSub={true}
+              onChange={(updated) => updateSubQ(sqIdx, updated)}
+              onDelete={() => removeSubQ(sqIdx)}
+              onMoveUp={sqIdx > 0 ? () => { const arr=[...question.subQuestions]; [arr[sqIdx-1],arr[sqIdx]]=[arr[sqIdx],arr[sqIdx-1]]; onChange({...question, subQuestions:arr}); } : null}
+              onMoveDown={sqIdx < (question.subQuestions||[]).length - 1 ? () => { const arr=[...question.subQuestions]; [arr[sqIdx+1],arr[sqIdx]]=[arr[sqIdx],arr[sqIdx+1]]; onChange({...question, subQuestions:arr}); } : null}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ── QuizScreen : module de quiz médicaux interactifs ────────────────────────
+// 3 vues : liste → intro → jeu (+ résultats à la fin)
+// Score sauvegardé localement (localStorage) pour affichage du "déjà fait"
+// ════════════════════════════════════════════════════════════════════════════
+
+// Clé localStorage pour les scores
+const QUIZ_SCORES_KEY = "quiz_scores_v1";
+
+function getQuizScores() {
+  try {
+    return JSON.parse(localStorage.getItem(QUIZ_SCORES_KEY) || "{}");
+  } catch { return {}; }
+}
+function saveQuizScore(quizId, score, total) {
+  const all = getQuizScores();
+  all[quizId] = { score, total, ts: Date.now() };
+  localStorage.setItem(QUIZ_SCORES_KEY, JSON.stringify(all));
+}
+
+function QuizScreen() {
+  const C = useC();
+  const { store } = useData();
+  const [view, setView] = useState("list"); // list | intro | play | result
+  const [selected, setSelected] = useState(null);
+  const [search, setSearch] = useState("");
+  const scores = getQuizScores();
+
+  const quizzes = Array.isArray(store.quizzes) ? store.quizzes : [];
+  const filtered = quizzes.filter(q =>
+    !search ||
+    q.title?.toLowerCase().includes(search.toLowerCase()) ||
+    q.theme?.toLowerCase().includes(search.toLowerCase()) ||
+    (q.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase()))
+  );
+
+  // Routage des sous-écrans
+  if (selected && view === "intro") {
+    return <QuizIntro quiz={selected} onStart={() => setView("play")} onBack={() => { setSelected(null); setView("list"); }} previousScore={scores[selected.id]}/>;
+  }
+  if (selected && view === "play") {
+    return <QuizPlay quiz={selected} onFinish={(score, total, answers) => { saveQuizScore(selected.id, score, total); setView("result"); window._quizLastResult = { score, total, answers }; }} onAbandon={() => { setSelected(null); setView("list"); }}/>;
+  }
+  if (selected && view === "result") {
+    const result = window._quizLastResult || { score:0, total:0, answers:[] };
+    return <QuizResult quiz={selected} score={result.score} total={result.total} answers={result.answers} onRestart={() => setView("intro")} onBack={() => { setSelected(null); setView("list"); }}/>;
+  }
+
+  // Vue principale : liste des quiz
+  const COLOR = "#6366F1";
+  return (
+    <div>
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #4338CA 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10}}>
+          <span style={{fontSize: 24}}>🧠</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Quiz médical</div>
+            <div style={{fontSize: 11, opacity: .85}}>Pédagogie active — raisonnement clinique</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recherche */}
+      <input
+        type="text"
+        placeholder="🔍 Rechercher un quiz..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{
+          width: "100%",
+          padding: "10px 14px",
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          fontSize: 13,
+          marginBottom: 14,
+          boxSizing: "border-box",
+          background: C.white,
+          color: C.text,
+          fontFamily: "inherit",
+          outline: "none",
+        }}
+      />
+
+      {filtered.length === 0 && (
+        <div style={{
+          padding: 32,
+          textAlign: "center",
+          color: C.sub,
+          background: C.white,
+          borderRadius: 14,
+          border: `1px dashed ${C.border}`,
+          fontSize: 13,
+        }}>
+          {quizzes.length === 0 ? "Aucun quiz disponible pour le moment." : "Aucun résultat."}
+          <div style={{fontSize: 11, marginTop: 6, color: C.sub}}>
+            {quizzes.length === 0 && "Les quiz seront ajoutés par l'admin du service."}
+          </div>
+        </div>
+      )}
+
+      {/* Liste des quiz */}
+      {filtered.map(quiz => {
+        const nbQ = countQuestions(quiz);
+        const prev = scores[quiz.id];
+        const pct = prev ? Math.round((prev.score / prev.total) * 100) : null;
+        const quizColor = quiz.color || COLOR;
+        return (
+          <button
+            key={quiz.id}
+            onClick={() => { setSelected(quiz); setView("intro"); }}
+            style={{
+              width: "100%",
+              background: C.white,
+              border: `1px solid ${C.border}`,
+              borderLeft: `4px solid ${quizColor}`,
+              borderRadius: 14,
+              padding: "14px 16px",
+              marginBottom: 10,
+              cursor: "pointer",
+              textAlign: "left",
+              boxShadow: "0 2px 8px rgba(26,58,92,.06)",
+              touchAction: "manipulation",
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+            }}
+          >
+            <div style={{
+              background: quizColor + "22",
+              borderRadius: 12,
+              width: 48, height: 48,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 26,
+              flexShrink: 0,
+            }}>{quiz.icon || "🧠"}</div>
+            <div style={{flex: 1, minWidth: 0}}>
+              <div style={{fontSize: 14, fontWeight: 800, color: C.text, lineHeight: 1.3, marginBottom: 3}}>{quiz.title}</div>
+              {quiz.theme && (
+                <div style={{fontSize: 11, color: C.sub, marginBottom: 5}}>{quiz.theme}</div>
+              )}
+              <div style={{display: "flex", alignItems: "center", gap: 10, fontSize: 10, color: C.sub}}>
+                <span>📝 {nbQ} question{nbQ > 1 ? "s" : ""}</span>
+                <span>•</span>
+                <span>⏱ ~{quiz.estimatedMin || 5} min</span>
+                {prev && (
+                  <>
+                    <span>•</span>
+                    <span style={{
+                      color: pct >= 60 ? C.green : C.amber,
+                      fontWeight: 800,
+                    }}>✓ {prev.score}/{prev.total} ({pct}%)</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <span style={{color: C.sub, fontSize: 18}}>›</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Compte le nombre total de questions (en incluant les sous-questions des cas cliniques)
+function countQuestions(quiz) {
+  if (!quiz || !Array.isArray(quiz.questions)) return 0;
+  return quiz.questions.reduce((acc, q) => {
+    if (q.type === "case" && Array.isArray(q.subQuestions)) return acc + q.subQuestions.length;
+    return acc + 1;
+  }, 0);
+}
+
+// ── QuizIntro : écran avant lancement ───────────────────────────────────────
+function QuizIntro({ quiz, onStart, onBack, previousScore }) {
+  const C = useC();
+  const nbQ = countQuestions(quiz);
+  const quizColor = quiz.color || "#6366F1";
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête héro */}
+      <div style={{
+        background: `linear-gradient(135deg, ${quizColor} 0%, ${shadeColor(quizColor, -20)} 100%)`,
+        borderRadius: 20,
+        padding: "30px 20px 26px",
+        marginTop: 8,
+        marginBottom: 18,
+        color: "#fff",
+        textAlign: "center",
+        boxShadow: `0 8px 24px ${quizColor}33`,
+      }}>
+        <div style={{fontSize: 60, lineHeight: 1, marginBottom: 12}}>{quiz.icon || "🧠"}</div>
+        <div style={{fontSize: 20, fontWeight: 900, marginBottom: 6, lineHeight: 1.25}}>{quiz.title}</div>
+        {quiz.theme && (
+          <div style={{fontSize: 12, opacity: .9, fontWeight: 600}}>{quiz.theme}</div>
+        )}
+      </div>
+
+      {/* Description */}
+      {quiz.description && (
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 14,
+          padding: "14px 16px",
+          marginBottom: 14,
+          fontSize: 13,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{quiz.description}</div>
+      )}
+
+      {/* Métadonnées en grille */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 10,
+        marginBottom: 14,
+      }}>
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "14px",
+          textAlign: "center",
+        }}>
+          <div style={{fontSize: 22, fontWeight: 900, color: quizColor}}>{nbQ}</div>
+          <div style={{fontSize: 10, color: C.sub, fontWeight: 700, letterSpacing: .3, textTransform: "uppercase"}}>Question{nbQ > 1 ? "s" : ""}</div>
+        </div>
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "14px",
+          textAlign: "center",
+        }}>
+          <div style={{fontSize: 22, fontWeight: 900, color: quizColor}}>~{quiz.estimatedMin || 5}<span style={{fontSize: 14}}> min</span></div>
+          <div style={{fontSize: 10, color: C.sub, fontWeight: 700, letterSpacing: .3, textTransform: "uppercase"}}>Durée estimée</div>
+        </div>
+      </div>
+
+      {/* Score précédent si dispo */}
+      {previousScore && (
+        <div style={{
+          background: C.greenLight,
+          border: `1px solid ${C.green}33`,
+          borderRadius: 12,
+          padding: "10px 14px",
+          marginBottom: 14,
+          fontSize: 12,
+          color: C.text,
+          textAlign: "center",
+        }}>
+          ✓ Score précédent : <b style={{color: C.green}}>{previousScore.score}/{previousScore.total}</b>
+          <span style={{color: C.sub, marginLeft: 6}}>({Math.round((previousScore.score / previousScore.total) * 100)}%)</span>
+        </div>
+      )}
+
+      {/* Sources */}
+      {Array.isArray(quiz.sources) && quiz.sources.length > 0 && (
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 16,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .5, marginBottom: 6}}>📚 SOURCES</div>
+          {quiz.sources.map((s, i) => (
+            <div key={i} style={{fontSize: 11, color: C.text, lineHeight: 1.5}}>
+              • {s.name}{s.year ? <span style={{color: C.sub}}> ({s.year})</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Bouton démarrer */}
+      <button
+        onClick={onStart}
+        style={{
+          width: "100%",
+          background: `linear-gradient(135deg, ${quizColor} 0%, ${shadeColor(quizColor, -15)} 100%)`,
+          color: "#fff",
+          border: "none",
+          borderRadius: 14,
+          padding: "16px",
+          fontSize: 15,
+          fontWeight: 900,
+          cursor: "pointer",
+          touchAction: "manipulation",
+          letterSpacing: .3,
+          boxShadow: `0 4px 14px ${quizColor}66`,
+          marginBottom: 20,
+        }}>
+        ▶ DÉMARRER LE QUIZ
+      </button>
+    </div>
+  );
+}
+
+// Petite fonction pour assombrir une couleur hex
+function shadeColor(color, percent) {
+  const num = parseInt(color.replace("#",""),16);
+  const amt = Math.round(2.55 * percent);
+  const R = (num >> 16) + amt;
+  const G = (num >> 8 & 0x00FF) + amt;
+  const B = (num & 0x0000FF) + amt;
+  return "#" + (0x1000000 + (Math.max(0,Math.min(255,R))<<16) + (Math.max(0,Math.min(255,G))<<8) + Math.max(0,Math.min(255,B))).toString(16).slice(1);
+}
+
+// ── QuizPlay : moteur de jeu ────────────────────────────────────────────────
+function QuizPlay({ quiz, onFinish, onAbandon }) {
+  const C = useC();
+  const quizColor = quiz.color || "#6366F1";
+
+  // Aplatir les questions (les sous-questions des cas cliniques deviennent des questions à part entière, avec un parent commun)
+  const flat = [];
+  (quiz.questions || []).forEach((q, qi) => {
+    if (q.type === "case" && Array.isArray(q.subQuestions)) {
+      q.subQuestions.forEach((sq, si) => {
+        flat.push({ ...sq, parentStem: q.stem, parentContext: q.context, caseIndex: qi, isSubFirst: si === 0, isSubLast: si === q.subQuestions.length - 1 });
+      });
+    } else {
+      flat.push({ ...q });
+    }
+  });
+
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [selectedOptions, setSelectedOptions] = useState([]); // ids des options cochées
+  const [validated, setValidated] = useState(false);
+  const [answers, setAnswers] = useState([]); // historique des réponses
+
+  const q = flat[currentIdx];
+  const isMultiple = q?.type === "multiple";
+
+  function toggleOption(optId) {
+    if (validated) return;
+    if (isMultiple) {
+      setSelectedOptions(prev => prev.includes(optId) ? prev.filter(x => x !== optId) : [...prev, optId]);
+    } else {
+      setSelectedOptions([optId]);
+    }
+  }
+
+  function validate() {
+    if (selectedOptions.length === 0) return;
+    setValidated(true);
+    const correctIds = q.options.filter(o => o.correct).map(o => o.id);
+    const selectedSet = new Set(selectedOptions);
+    const correctSet = new Set(correctIds);
+    let status = "incorrect";
+    if (isMultiple) {
+      const allCorrect = correctIds.every(id => selectedSet.has(id));
+      const noneIncorrect = selectedOptions.every(id => correctSet.has(id));
+      if (allCorrect && noneIncorrect) status = "correct";
+      else if (selectedOptions.some(id => correctSet.has(id))) status = "partial";
+    } else {
+      status = correctIds.includes(selectedOptions[0]) ? "correct" : "incorrect";
+    }
+    setAnswers(prev => [...prev, { questionId: q.id, selected: selectedOptions, status }]);
+  }
+
+  function next() {
+    if (currentIdx + 1 >= flat.length) {
+      // Calcul du score : 1 point par "correct", 0.5 par "partial"
+      const finalAnswers = answers;
+      let score = 0;
+      finalAnswers.forEach(a => {
+        if (a.status === "correct") score += 1;
+        else if (a.status === "partial") score += 0.5;
+      });
+      // Arrondi à 1 décimale si nécessaire
+      onFinish(Math.round(score * 2) / 2, flat.length, finalAnswers);
+    } else {
+      setCurrentIdx(currentIdx + 1);
+      setSelectedOptions([]);
+      setValidated(false);
+    }
+  }
+
+  if (!q) return null;
+
+  const correctIds = q.options.filter(o => o.correct).map(o => o.id);
+  const lastAnswer = answers[answers.length - 1];
+
+  return (
+    <div>
+      {/* Header : progression + abandon */}
+      <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14}}>
+        <button onClick={onAbandon} style={{background:"none", border:"none", cursor:"pointer", color: C.sub, fontSize: 13, fontWeight: 700, padding: 0}}>
+          ✕ Quitter
+        </button>
+        <div style={{fontSize: 12, fontWeight: 800, color: C.sub}}>
+          {currentIdx + 1} / {flat.length}
+        </div>
+      </div>
+
+      {/* Barre de progression */}
+      <div style={{height: 6, background: C.border, borderRadius: 3, overflow: "hidden", marginBottom: 18}}>
+        <div style={{
+          width: `${((currentIdx + (validated ? 1 : 0)) / flat.length) * 100}%`,
+          height: "100%",
+          background: quizColor,
+          transition: "width .3s ease-out",
+        }}/>
+      </div>
+
+      {/* Cas clinique : contexte parent */}
+      {q.parentStem && (
+        <div style={{
+          background: quizColor + "10",
+          borderLeft: `4px solid ${quizColor}`,
+          borderRadius: 10,
+          padding: "12px 14px",
+          marginBottom: 14,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: quizColor, letterSpacing: .5, marginBottom: 4}}>🩺 CAS CLINIQUE</div>
+          <div style={{fontSize: 12, color: C.text, lineHeight: 1.5}}>{q.parentStem}</div>
+          {q.parentContext && (
+            <div style={{fontSize: 11, color: C.sub, marginTop: 6, fontStyle: "italic", lineHeight: 1.4}}>{q.parentContext}</div>
+          )}
+        </div>
+      )}
+
+      {/* Énoncé */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 14,
+        padding: "16px",
+        marginBottom: 12,
+      }}>
+        {isMultiple && (
+          <div style={{
+            display: "inline-block",
+            background: "#FEF3C7",
+            color: "#92400E",
+            fontSize: 10,
+            fontWeight: 800,
+            padding: "2px 8px",
+            borderRadius: 8,
+            marginBottom: 8,
+            letterSpacing: .3,
+          }}>RÉPONSES MULTIPLES POSSIBLES</div>
+        )}
+        <div style={{fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.5}}>{q.stem}</div>
+      </div>
+
+      {/* Options */}
+      {q.options.map((opt, i) => {
+        const letter = String.fromCharCode(65 + i); // A, B, C, D
+        const isSelected = selectedOptions.includes(opt.id);
+        const isCorrect = correctIds.includes(opt.id);
+        let bg = C.white;
+        let border = C.border;
+        let textColor = C.text;
+        let icon = null;
+        if (validated) {
+          if (isCorrect) {
+            bg = C.greenLight;
+            border = C.green;
+            textColor = C.text;
+            icon = "✓";
+          } else if (isSelected) {
+            bg = "#FEE2E2";
+            border = "#DC2626";
+            textColor = C.text;
+            icon = "✗";
+          }
+        } else if (isSelected) {
+          bg = quizColor + "12";
+          border = quizColor;
+        }
+        return (
+          <button
+            key={opt.id}
+            onClick={() => toggleOption(opt.id)}
+            disabled={validated}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: "13px 14px",
+              marginBottom: 8,
+              border: `2px solid ${border}`,
+              background: bg,
+              borderRadius: 12,
+              cursor: validated ? "default" : "pointer",
+              textAlign: "left",
+              transition: "all .15s",
+              touchAction: "manipulation",
+            }}
+          >
+            <span style={{
+              background: validated && isCorrect ? C.green : (validated && isSelected ? "#DC2626" : (isSelected ? quizColor : C.border)),
+              color: (validated && (isCorrect || isSelected)) || isSelected ? "#fff" : C.sub,
+              borderRadius: "50%",
+              width: 28, height: 28,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 13,
+              fontWeight: 900,
+              flexShrink: 0,
+            }}>{icon || letter}</span>
+            <span style={{
+              flex: 1,
+              fontSize: 13,
+              color: textColor,
+              fontWeight: isSelected ? 700 : 500,
+              lineHeight: 1.4,
+            }}>{opt.text}</span>
+          </button>
+        );
+      })}
+
+      {/* Feedback après validation */}
+      {validated && lastAnswer && (
+        <div style={{
+          marginTop: 16,
+          background: C.white,
+          borderLeft: `5px solid ${lastAnswer.status === "correct" ? C.green : lastAnswer.status === "partial" ? C.amber : "#DC2626"}`,
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "14px 16px",
+        }}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 900,
+            color: lastAnswer.status === "correct" ? C.green : lastAnswer.status === "partial" ? C.amber : "#DC2626",
+            marginBottom: 8,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}>
+            {lastAnswer.status === "correct" && <>✅ Bonne réponse !</>}
+            {lastAnswer.status === "partial" && <>🔶 Presque !</>}
+            {lastAnswer.status === "incorrect" && <>💡 À revoir</>}
+          </div>
+          {q.explanation && (
+            <div style={{fontSize: 12, color: C.text, lineHeight: 1.55}}>{q.explanation}</div>
+          )}
+        </div>
+      )}
+
+      {/* Bouton bas */}
+      {!validated ? (
+        <button
+          onClick={validate}
+          disabled={selectedOptions.length === 0}
+          style={{
+            width: "100%",
+            background: selectedOptions.length === 0 ? C.border : quizColor,
+            color: selectedOptions.length === 0 ? C.sub : "#fff",
+            border: "none",
+            borderRadius: 12,
+            padding: "14px",
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: selectedOptions.length === 0 ? "not-allowed" : "pointer",
+            touchAction: "manipulation",
+            marginTop: 16,
+            marginBottom: 20,
+            letterSpacing: .3,
+          }}>VALIDER</button>
+      ) : (
+        <button
+          onClick={next}
+          style={{
+            width: "100%",
+            background: quizColor,
+            color: "#fff",
+            border: "none",
+            borderRadius: 12,
+            padding: "14px",
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: "pointer",
+            touchAction: "manipulation",
+            marginTop: 12,
+            marginBottom: 20,
+            letterSpacing: .3,
+          }}>
+          {currentIdx + 1 >= flat.length ? "🎉 VOIR LES RÉSULTATS" : "QUESTION SUIVANTE ›"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── QuizResult : écran de résultats ─────────────────────────────────────────
+function QuizResult({ quiz, score, total, answers, onRestart, onBack }) {
+  const C = useC();
+  const quizColor = quiz.color || "#6366F1";
+  const pct = total > 0 ? Math.round((score / total) * 100) : 0;
+  const ratio = total > 0 ? score / total : 0;
+
+  // Feedback bienveillant
+  let feedbackEmoji, feedbackText, feedbackColor, feedbackBg;
+  if (ratio >= 0.9) {
+    feedbackEmoji = "🎉";
+    feedbackText = "Excellent niveau. Les notions semblent très bien maîtrisées.";
+    feedbackColor = C.green;
+    feedbackBg = C.greenLight;
+  } else if (ratio >= 0.6) {
+    feedbackEmoji = "👏";
+    feedbackText = "Bon raisonnement global. Quelques points méritent consolidation.";
+    feedbackColor = "#0EA5E9";
+    feedbackBg = "#E0F2FE";
+  } else if (ratio >= 0.3) {
+    feedbackEmoji = "💪";
+    feedbackText = "Les bases sont présentes. Une nouvelle tentative permettra de renforcer la mémorisation.";
+    feedbackColor = C.amber;
+    feedbackBg = C.amberLight;
+  } else {
+    feedbackEmoji = "📘";
+    feedbackText = "Sujet technique et exigeant. Le résumé final aide à revoir les notions essentielles rapidement.";
+    feedbackColor = "#8B5CF6";
+    feedbackBg = "#F3E8FF";
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* Header score */}
+      <div style={{
+        background: `linear-gradient(135deg, ${quizColor} 0%, ${shadeColor(quizColor, -20)} 100%)`,
+        borderRadius: 20,
+        padding: "26px 20px",
+        marginTop: 8,
+        marginBottom: 16,
+        color: "#fff",
+        textAlign: "center",
+        boxShadow: `0 8px 24px ${quizColor}33`,
+      }}>
+        <div style={{fontSize: 60, marginBottom: 6}}>{feedbackEmoji}</div>
+        <div style={{fontSize: 12, fontWeight: 700, letterSpacing: .5, opacity: .85, marginBottom: 8}}>VOTRE SCORE</div>
+        <div style={{display: "flex", alignItems: "baseline", justifyContent: "center", gap: 4}}>
+          <span style={{fontSize: 48, fontWeight: 900, lineHeight: 1}}>{score}</span>
+          <span style={{fontSize: 22, fontWeight: 700, opacity: .9}}>/ {total}</span>
+        </div>
+        <div style={{fontSize: 14, fontWeight: 800, marginTop: 6, opacity: .95}}>{pct}% de réussite</div>
+      </div>
+
+      {/* Feedback bienveillant */}
+      <div style={{
+        background: feedbackBg,
+        border: `1px solid ${feedbackColor}33`,
+        borderRadius: 14,
+        padding: "14px 16px",
+        marginBottom: 14,
+        fontSize: 13,
+        color: C.text,
+        lineHeight: 1.55,
+        textAlign: "center",
+        fontStyle: "italic",
+      }}>« {feedbackText} »</div>
+
+      {/* Détail bonnes / partielles / incorrectes */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr",
+        gap: 8,
+        marginBottom: 16,
+      }}>
+        {[
+          {label:"Correctes", count: answers.filter(a => a.status === "correct").length, color: C.green, bg: C.greenLight, icon: "✓"},
+          {label:"Partielles", count: answers.filter(a => a.status === "partial").length, color: C.amber, bg: C.amberLight, icon: "◐"},
+          {label:"À revoir", count: answers.filter(a => a.status === "incorrect").length, color: "#DC2626", bg: "#FEE2E2", icon: "💡"},
+        ].map((stat, i) => (
+          <div key={i} style={{
+            background: C.white,
+            border: `1px solid ${C.border}`,
+            borderRadius: 10,
+            padding: "10px 8px",
+            textAlign: "center",
+          }}>
+            <div style={{
+              background: stat.bg,
+              color: stat.color,
+              borderRadius: "50%",
+              width: 28, height: 28,
+              margin: "0 auto 4px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 14,
+              fontWeight: 900,
+            }}>{stat.icon}</div>
+            <div style={{fontSize: 17, fontWeight: 900, color: stat.color, lineHeight: 1}}>{stat.count}</div>
+            <div style={{fontSize: 9, color: C.sub, fontWeight: 700, marginTop: 3, letterSpacing: .3}}>{stat.label.toUpperCase()}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* À retenir */}
+      {Array.isArray(quiz.takeaways) && quiz.takeaways.length > 0 && (
+        <div style={{
+          background: C.white,
+          border: `1px solid ${C.border}`,
+          borderLeft: `4px solid ${quizColor}`,
+          borderRadius: 14,
+          padding: "14px 16px",
+          marginBottom: 14,
+        }}>
+          <div style={{fontSize: 11, fontWeight: 900, color: quizColor, letterSpacing: .5, marginBottom: 10, display: "flex", alignItems: "center", gap: 6}}>
+            📌 À RETENIR
+          </div>
+          {quiz.takeaways.map((t, i) => (
+            <div key={i} style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              padding: "6px 0",
+              borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+              fontSize: 12,
+              color: C.text,
+              lineHeight: 1.5,
+            }}>
+              <span style={{color: quizColor, fontWeight: 900, marginTop: 1}}>•</span>
+              <span style={{flex: 1}}>{t}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Sources */}
+      {Array.isArray(quiz.sources) && quiz.sources.length > 0 && (
+        <div style={{
+          background: "#F8FAFC",
+          border: `1px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 14px",
+          marginBottom: 14,
+          fontSize: 10,
+          color: C.sub,
+          lineHeight: 1.6,
+        }}>
+          <div style={{fontWeight: 800, color: C.sub, marginBottom: 4, letterSpacing: .3}}>📚 SOURCES</div>
+          {quiz.sources.map((s, i) => (
+            <div key={i}>• {s.name}{s.year ? ` (${s.year})` : ""}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Boutons */}
+      <button
+        onClick={onRestart}
+        style={{
+          width: "100%",
+          background: quizColor,
+          color: "#fff",
+          border: "none",
+          borderRadius: 12,
+          padding: "13px",
+          fontSize: 13,
+          fontWeight: 800,
+          cursor: "pointer",
+          touchAction: "manipulation",
+          marginBottom: 8,
+          letterSpacing: .3,
+        }}>↻ REFAIRE CE QUIZ</button>
+      <button
+        onClick={onBack}
+        style={{
+          width: "100%",
+          background: C.white,
+          color: C.sub,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "13px",
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: "pointer",
+          touchAction: "manipulation",
+          marginBottom: 20,
+        }}>← Retour aux quiz</button>
+    </div>
+  );
+}
+
 function ScoresScreen() {
   const C = useC();
   const [selectedCat, setSelectedCat] = useState("all");
@@ -12677,6 +13826,7 @@ function AppInner() {
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion}/>}
+        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif}/>}
