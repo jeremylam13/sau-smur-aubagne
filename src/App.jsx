@@ -2596,12 +2596,26 @@ const GESTES = [
 
 
 // - GestesScreen -
+// Catégories de gestes urgents (cohérent avec la valeur stockée en DB)
+const GESTES_CATEGORIES = [
+  { id: "all",            label: "Tous",          icon: "📋",  color: "#475569" },
+  { id: "traumatique",    label: "Traumato",      icon: "🦴",  color: "#DC2626" },
+  { id: "respiratoire",   label: "Respi",         icon: "🫁",  color: "#0EA5E9" },
+  { id: "hemodynamique",  label: "Hémodynamique", icon: "💉",  color: "#991B1B" },
+  { id: "orl",            label: "ORL",           icon: "👂",  color: "#9333EA" },
+  { id: "urologie",       label: "Urologie",      icon: "💧",  color: "#D97706" },
+  { id: "neuro",          label: "Neuro",         icon: "🧠",  color: "#6366F1" },
+  { id: "digestif",       label: "Digestif",      icon: "🩺",  color: "#EA580C" },
+  { id: "autre",          label: "Autre",         icon: "⚡",  color: "#64748B" },
+];
+
 function GestesScreen({ deepLinkId }) {
   const C = useC();
   const { store } = useData();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [activeTab, setActiveTab] = useState("indications");
+  const [selectedCategory, setSelectedCategory] = useState("all");
   const { toggleFavori, isFavori } = useFavoris();
 
   const allGestes = [...GESTES, ...store.gestes];
@@ -2610,9 +2624,22 @@ function GestesScreen({ deepLinkId }) {
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
 
   const filtered = allGestes.filter(g => {
+    // Filtre catégorie
+    if (selectedCategory !== "all") {
+      const gCat = (g.category || g.categorie || "").toLowerCase().trim();
+      if (gCat !== selectedCategory) return false;
+    }
+    // Filtre recherche
     const q = search.toLowerCase();
     if(!q) return true;
     return (g.title + (Array.isArray(g.tags)?g.tags:[]).join(" ") + (g.indications||"")).toLowerCase().includes(q);
+  });
+
+  // Compte le nb de gestes par catégorie (utile pour les chips)
+  const categoryCounts = {};
+  allGestes.forEach(g => {
+    const cat = (g.category || g.categorie || "autre").toLowerCase().trim();
+    categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
   });
 
   if(selected) {
@@ -2647,6 +2674,59 @@ function GestesScreen({ deepLinkId }) {
           <button onClick={()=>setSearch("")}
             style={{background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:15, padding:0}}>✕</button>
         )}
+      </div>
+
+      {/* Chips de catégories — scroll horizontal */}
+      <div style={{
+        display: "flex",
+        gap: 6,
+        marginBottom: 16,
+        overflowX: "auto",
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: 4,
+      }}>
+        {GESTES_CATEGORIES.map(cat => {
+          const count = cat.id === "all" ? allGestes.length : (categoryCounts[cat.id] || 0);
+          if (cat.id !== "all" && count === 0) return null;
+          const active = selectedCategory === cat.id;
+          return (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              style={{
+                flexShrink: 0,
+                background: active ? cat.color : C.white,
+                color: active ? "#fff" : C.text,
+                border: `1.5px solid ${active ? cat.color : C.border}`,
+                borderRadius: 18,
+                padding: "7px 12px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+                touchAction: "manipulation",
+                transition: "all .15s",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span style={{fontSize: 13}}>{cat.icon}</span>
+              <span>{cat.label}</span>
+              <span style={{
+                background: active ? "rgba(255,255,255,.25)" : C.border,
+                color: active ? "#fff" : C.sub,
+                fontSize: 10,
+                fontWeight: 800,
+                padding: "1px 6px",
+                borderRadius: 9,
+                marginLeft: 2,
+              }}>{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Liste */}
@@ -3406,7 +3486,7 @@ function AdminScreen({ onNewItem }) {
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
-  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
+  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"", tags:"" });
   const [qzForm, setQzForm] = useState({ title:"", theme:"", description:"", icon:"🧠", color:"#6366F1", estimatedMin:5, sources:"", takeaways:"", questions:[], tags:"" });
@@ -3530,12 +3610,12 @@ function AdminScreen({ onNewItem }) {
     if(editingG !== null) {
       const item = {...gForm, id:editingG, tags, ...parsed};
       await updateItem("gestes","admin_gestes",item,["image"]);
-      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste modifié !");
     } else {
       const item = {...gForm, id:Date.now(), tags, ...parsed};
       await addItem("gestes","admin_gestes",item,["image"]);
-      setGForm({title:"",icon:"✂️",color:"#C0392B",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
@@ -4236,6 +4316,33 @@ function AdminScreen({ onNewItem }) {
               ))}
             </div>
 
+            <label style={lbl}>Catégorie</label>
+            <div style={{display:"flex", gap:5, marginBottom:10, flexWrap:"wrap"}}>
+              {GESTES_CATEGORIES.filter(c => c.id !== "all").map(cat => {
+                const active = (gForm.category || "autre") === cat.id;
+                return (
+                  <button key={cat.id} onClick={()=>setGForm({...gForm, category: cat.id})} style={{
+                    background: active ? cat.color : C.white,
+                    color: active ? "#fff" : C.text,
+                    border: `1.5px solid ${active ? cat.color : C.border}`,
+                    borderRadius: 16,
+                    padding: "6px 11px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    touchAction: "manipulation",
+                    transition: "all .15s",
+                  }}>
+                    <span style={{fontSize: 13}}>{cat.icon}</span>
+                    <span>{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             <label style={lbl}>Tags (separes par virgule)</label>
             <input style={inp} placeholder="airway, IOT, urgence" value={gForm.tags} onChange={e=>setGForm({...gForm,tags:e.target.value})}/>
 
@@ -4267,7 +4374,7 @@ function AdminScreen({ onNewItem }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
@@ -13724,10 +13831,19 @@ function QuizResult({ quiz, score, total, answers, onRestart, onBack }) {
   );
 }
 
-function ScoresScreen() {
+function ScoresScreen({ deepLinkId }) {
   const C = useC();
   const [selectedCat, setSelectedCat] = useState("all");
   const [selected, setSelected] = useState(null);
+  const { toggleFavori, isFavori } = useFavoris();
+
+  // Deep link : si un id arrive depuis les favoris, ouvre direct le score
+  useEffect(() => {
+    if (deepLinkId && !selected) {
+      const s = SCORES_LIST.find(x => x.id === deepLinkId);
+      if (s) setSelected(s);
+    }
+  }, [deepLinkId]);
 
   const filtered = selectedCat === "all"
     ? SCORES_LIST
@@ -13804,12 +13920,17 @@ function ScoresScreen() {
 
       {/* Liste des scores */}
       <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {filtered.map(s => (
-          <button key={s.id} onClick={() => setSelected(s)}
-            style={{background:C.white, border:`1px solid ${C.border}`,
-              borderRadius:16, padding:"14px 16px", cursor:"pointer", textAlign:"left",
-              borderLeft:`4px solid ${s.color}`}}>
-            <div style={{display:"flex", alignItems:"center", gap:12}}>
+        {filtered.map(s => {
+          const fav = isFavori("score", s.id);
+          return (
+            <div key={s.id} style={{
+              background:C.white, border:`1px solid ${C.border}`,
+              borderRadius:16, padding:"14px 16px", textAlign:"left",
+              borderLeft:`4px solid ${s.color}`,
+              display:"flex", alignItems:"center", gap:12,
+              cursor:"pointer",
+            }}
+              onClick={() => setSelected(s)}>
               <div style={{background:s.color+"15", borderRadius:12,
                 width:46, height:46, display:"flex", alignItems:"center",
                 justifyContent:"center", fontSize:22, flexShrink:0}}>{s.icon}</div>
@@ -13817,10 +13938,24 @@ function ScoresScreen() {
                 <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:3}}>{s.title}</div>
                 <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
               </div>
+              {/* Étoile favori */}
+              <button
+                onClick={(e)=>{ e.stopPropagation(); toggleFavori({id:s.id, type:"score", title:s.title, icon:s.icon, color:s.color, nav:"scores"}); }}
+                style={{
+                  background:"none", border:"none", cursor:"pointer",
+                  padding:"4px 6px", fontSize:20, flexShrink:0,
+                  color: fav ? "#F59E0B" : C.border,
+                  touchAction:"manipulation",
+                  WebkitTapHighlightColor:"transparent",
+                  transition:"color .15s, transform .1s",
+                  transform: fav ? "scale(1.1)" : "scale(1)",
+                }}
+                aria-label={fav ? "Retirer des favoris" : "Ajouter aux favoris"}
+              >{fav ? "★" : "☆"}</button>
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </div>
-          </button>
-        ))}
+          );
+        })}
 
         {filtered.length === 0 && (
           <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
@@ -13985,7 +14120,7 @@ function AppInner() {
         {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion}/>}
+        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion}/>}
