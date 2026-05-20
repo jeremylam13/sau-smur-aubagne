@@ -369,25 +369,56 @@ function DataProvider({ children }) {
   }
 
   async function addRetexItem(item) {
-    await saveFiles(item, []);
-    const toStore = { ...item, medias: (item.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) };
-    const updated = [toStore, ...store.retex.filter(x => x.id !== toStore.id)];
-    await safeSet("retex_submissions", JSON.stringify(updated));
-    setStore(prev => ({ ...prev, retex: [item, ...prev.retex.filter(x => x.id !== item.id)] }));
+    // Strippe les data: base64 des médias (URLs Storage seulement, plus les data)
+    const cleanItem = {
+      ...item,
+      medias: (item.medias || []).filter(m => !m._uploading).map(m => ({
+        url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || ""
+      })),
+    };
+    // POST Supabase via supaFetch
+    const row = itemToRow("retex", cleanItem);
+    try {
+      const rows = await supaFetch("/retex", "POST", row);
+      const created = rowToItem("retex", Array.isArray(rows) ? rows[0] : rows);
+      setStore(prev => ({ ...prev, retex: [created, ...prev.retex.filter(x => x.id !== created.id)] }));
+      return created;
+    } catch(e) {
+      console.error("addRetexItem error", e);
+      alert("Erreur lors de la publication RETEX : " + e.message);
+      throw e;
+    }
   }
 
   async function removeRetexItem(id) {
-    const updated = store.retex.filter(x => x.id !== id);
-    const toStore = updated.map(x => ({ ...x, medias: (x.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) }));
-    await safeSet("retex_submissions", JSON.stringify(toStore));
-    setStore(prev => ({ ...prev, retex: updated }));
+    try {
+      await supaFetch("/retex?id=eq." + encodeURIComponent(id), "DELETE");
+      setStore(prev => ({ ...prev, retex: prev.retex.filter(x => x.id !== id) }));
+    } catch(e) {
+      console.error("removeRetexItem error", e);
+      alert("Erreur lors de la suppression RETEX : " + e.message);
+      throw e;
+    }
   }
 
   async function updateRetex(item) {
-    const updated = store.retex.map(x => x.id === item.id ? item : x);
-    const toStore = updated.map(x => ({ ...x, medias: (x.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo })) }));
-    await safeSet("retex_submissions", JSON.stringify(toStore));
-    setStore(prev => ({ ...prev, retex: updated }));
+    const cleanItem = {
+      ...item,
+      medias: (item.medias || []).filter(m => !m._uploading).map(m => ({
+        url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || ""
+      })),
+    };
+    const row = itemToRow("retex", cleanItem);
+    try {
+      const rows = await supaFetch("/retex?id=eq." + encodeURIComponent(item.id), "PATCH", row);
+      const updated = rowToItem("retex", Array.isArray(rows) ? rows[0] : rows) || cleanItem;
+      setStore(prev => ({ ...prev, retex: prev.retex.map(x => x.id === item.id ? updated : x) }));
+      return updated;
+    } catch(e) {
+      console.error("updateRetex error", e);
+      alert("Erreur lors de la mise à jour RETEX : " + e.message);
+      throw e;
+    }
   }
 
   return (
@@ -668,9 +699,23 @@ function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Phot
   function addFiles(files) {
     Array.from(files).forEach(file => {
       const reader = new FileReader();
-      reader.onload = ev => {
-        const newItem = { url: file.name + "_" + Date.now(), name: file.name, data: ev.target.result, isVideo: file.type.startsWith("video/"), credit: "" };
-        onChange(prev => [...prev, newItem]);
+      reader.onload = async ev => {
+        const tmpId = Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+        const isVideo = file.type.startsWith("video/");
+        // Placeholder avec data en local pour preview immédiat
+        const tmpItem = { url: "⏳ upload_" + tmpId, name: file.name, data: ev.target.result, isVideo, credit: "", _uploading: true };
+        onChange(prev => [...prev, tmpItem]);
+        // Upload réel vers Supabase Storage
+        try {
+          const publicUrl = await uploadMedia(file.name, ev.target.result);
+          // Remplace l'item temporaire par l'item final avec la vraie URL
+          onChange(prev => prev.map(m => m.url === tmpItem.url ? { url: publicUrl, name: file.name, data: ev.target.result, isVideo, credit: m.credit || "", _uploading: false } : m));
+        } catch(err) {
+          console.error("uploadMedia error", err);
+          alert("Erreur upload : " + err.message);
+          // Retire le placeholder si l'upload a échoué
+          onChange(prev => prev.filter(m => m.url !== tmpItem.url));
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -696,12 +741,12 @@ function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Phot
               {/* Aperçu image en entier */}
               <div style={{position:"relative", background:"#0A1628", display:"flex", alignItems:"center", justifyContent:"center", minHeight:120, maxHeight:220}}>
                 {m.isVideo
-                  ? <video src={m.data} controls style={{width:"100%", maxHeight:220, display:"block"}}/>
-                  : <img src={m.data} alt={m.name} style={{width:"100%", maxHeight:220, objectFit:"contain", display:"block"}}/>
+                  ? <video src={m.data || m.url} controls style={{width:"100%", maxHeight:220, display:"block"}}/>
+                  : <img src={m.data || m.url} alt={m.name} style={{width:"100%", maxHeight:220, objectFit:"contain", display:"block"}}/>
                 }
                 {/* Badge type */}
-                <div style={{position:"absolute", top:6, left:6, background:"rgba(0,0,0,.6)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"#fff", fontWeight:700}}>
-                  {m.isVideo ? "🎬 Vidéo" : "📷 Photo"}
+                <div style={{position:"absolute", top:6, left:6, background:m._uploading?"rgba(245,158,11,.95)":"rgba(0,0,0,.6)", borderRadius:4, padding:"2px 6px", fontSize:10, color:"#fff", fontWeight:700}}>
+                  {m._uploading ? "⏳ Upload..." : (m.isVideo ? "🎬 Vidéo" : "📷 Photo")}
                 </div>
                 {/* Bouton suppr */}
                 <button onClick={()=>remove(i)} style={{position:"absolute", top:5, right:5, background:"rgba(220,38,38,.85)", border:"none", borderRadius:"50%", width:24, height:24, cursor:"pointer", color:"#fff", fontSize:14, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center", padding:0}}>
@@ -874,8 +919,8 @@ function MediaGallery({ medias }) {
             <div onClick={()=>!m.isVideo && setLightbox(m)}
               style={{cursor:m.isVideo?"default":"pointer", position:"relative", display:"flex", alignItems:"center", justifyContent:"center", background:"#0A1628", minHeight:80}}>
               {m.isVideo
-                ? <video src={m.data} controls style={{width:"100%", display:"block"}}/>
-                : <img src={m.data} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
+                ? <video src={m.url || m.data} controls style={{width:"100%", display:"block"}}/>
+                : <img src={m.url || m.data} alt={m.name||""} style={{width:"100%", objectFit:"contain", display:"block"}}/>
               }
               {!m.isVideo && (
                 <div style={{position:"absolute", bottom:6, right:8, background:"rgba(0,0,0,.55)", borderRadius:6, padding:"3px 8px", fontSize:10, color:"#fff", display:"flex", alignItems:"center", gap:4}}>
@@ -894,7 +939,7 @@ function MediaGallery({ medias }) {
       </div>
 
       {/* Lightbox avec zoom */}
-      {lightbox && <ImageLightbox src={lightbox.data} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
+      {lightbox && <ImageLightbox src={lightbox.url || lightbox.data} credit={lightbox.credit} onClose={()=>setLightbox(null)}/>}
     </div>
   );
 }
@@ -1046,8 +1091,22 @@ function HomeScreen({onNav}) {
   const [searchFocused, setSearchFocused] = useState(false);
   const allData = useGlobalSearch();
   const { favoris } = useFavoris();
+  const { store } = useData();
   const inputRef = useRef(null);
   const searchRef = useRef(null);
+
+  // Quiz du jour : sélectionné de façon déterministe à partir de la date
+  const quizOfTheDay = (() => {
+    if (!store.quizzes || store.quizzes.length === 0) return null;
+    const now = new Date();
+    const dayKey = now.getFullYear() * 1000 + now.getMonth() * 50 + now.getDate();
+    return store.quizzes[dayKey % store.quizzes.length];
+  })();
+  const dailyScores = (() => {
+    try { return JSON.parse(localStorage.getItem("quiz_scores_v1") || "{}"); }
+    catch { return {}; }
+  })();
+  const dailyDone = quizOfTheDay && dailyScores[quizOfTheDay.id] && (Date.now() - dailyScores[quizOfTheDay.id].ts < 24*60*60*1000);
 
   // Fermer en cliquant dehors
   useEffect(()=>{
@@ -1099,6 +1158,95 @@ function HomeScreen({onNav}) {
         </div>
 
       </div>
+
+      {/* ★ Quiz du Jour ★ */}
+      {quizOfTheDay && (
+        <button
+          onClick={() => onNav("quiz", {id: quizOfTheDay.id})}
+          style={{
+            width: "100%",
+            background: `linear-gradient(135deg, ${quizOfTheDay.color || "#6366F1"} 0%, ${quizOfTheDay.color === "#6366F1" || !quizOfTheDay.color ? "#4338CA" : "#1F2937"} 100%)`,
+            border: "none",
+            borderRadius: 18,
+            padding: "18px 18px",
+            marginBottom: 18,
+            cursor: "pointer",
+            textAlign: "left",
+            color: "#fff",
+            position: "relative",
+            overflow: "hidden",
+            boxShadow: `0 6px 20px ${quizOfTheDay.color || "#6366F1"}44`,
+            touchAction: "manipulation",
+          }}
+        >
+          {/* Décor : grand emoji semi-transparent en fond */}
+          <div style={{
+            position: "absolute",
+            right: -10, bottom: -22,
+            fontSize: 110,
+            opacity: 0.13,
+            transform: "rotate(-12deg)",
+            pointerEvents: "none",
+            lineHeight: 1,
+          }}>{quizOfTheDay.icon || "🧠"}</div>
+
+          {/* Badge "Quiz du jour" */}
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            background: "rgba(255,255,255,.18)",
+            backdropFilter: "blur(8px)",
+            padding: "4px 10px",
+            borderRadius: 14,
+            fontSize: 10,
+            fontWeight: 900,
+            letterSpacing: 0.6,
+            marginBottom: 10,
+          }}>
+            <span>✨</span> QUIZ DU JOUR
+            {dailyDone && (
+              <span style={{
+                marginLeft: 6,
+                background: "rgba(34,197,94,.85)",
+                padding: "1px 7px",
+                borderRadius: 10,
+                fontSize: 9,
+                letterSpacing: 0.3,
+              }}>✓ FAIT</span>
+            )}
+          </div>
+
+          {/* Contenu */}
+          <div style={{display: "flex", alignItems: "center", gap: 14, position: "relative", zIndex: 1}}>
+            <div style={{fontSize: 38, lineHeight: 1, flexShrink: 0}}>{quizOfTheDay.icon || "🧠"}</div>
+            <div style={{flex: 1, minWidth: 0}}>
+              <div style={{fontSize: 15, fontWeight: 900, lineHeight: 1.25, marginBottom: 3}}>{quizOfTheDay.title}</div>
+              <div style={{display: "flex", alignItems: "center", gap: 8, fontSize: 11, opacity: 0.88}}>
+                <span>📝 {countQuestions(quizOfTheDay)} question{countQuestions(quizOfTheDay) > 1 ? "s" : ""}</span>
+                <span>•</span>
+                <span>⏱ ~{quizOfTheDay.estimatedMin || 5} min</span>
+                {dailyDone && (
+                  <>
+                    <span>•</span>
+                    <span style={{fontWeight: 800}}>{dailyScores[quizOfTheDay.id].score}/{dailyScores[quizOfTheDay.id].total}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div style={{
+              background: "rgba(255,255,255,.22)",
+              borderRadius: 12,
+              padding: "8px 14px",
+              fontSize: 12,
+              fontWeight: 900,
+              letterSpacing: 0.3,
+              flexShrink: 0,
+              backdropFilter: "blur(6px)",
+            }}>{dailyDone ? "↻ Rejouer" : "▶ Démarrer"}</div>
+          </div>
+        </button>
+      )}
 
       {/* Barre de recherche globale */}
       <div ref={searchRef} style={{position:"relative", marginBottom:24}}>
@@ -12791,7 +12939,7 @@ function saveQuizScore(quizId, score, total) {
   localStorage.setItem(QUIZ_SCORES_KEY, JSON.stringify(all));
 }
 
-function QuizScreen() {
+function QuizScreen({ deepLinkId }) {
   const C = useC();
   const { store } = useData();
   const [view, setView] = useState("list"); // list | intro | play | result
@@ -12800,6 +12948,18 @@ function QuizScreen() {
   const scores = getQuizScores();
 
   const quizzes = Array.isArray(store.quizzes) ? store.quizzes : [];
+
+  // Deep link : si on arrive avec un id, ouvre direct l'intro
+  useEffect(() => {
+    if (deepLinkId && !selected) {
+      const q = quizzes.find(x => x.id === deepLinkId);
+      if (q) {
+        setSelected(q);
+        setView("intro");
+      }
+    }
+  }, [deepLinkId, quizzes]);
+
   const filtered = quizzes.filter(q =>
     !search ||
     q.title?.toLowerCase().includes(search.toLowerCase()) ||
@@ -13826,7 +13986,7 @@ function AppInner() {
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion}/>}
-        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion}/>}
+        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif}/>}
