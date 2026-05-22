@@ -8527,6 +8527,303 @@ function QsofaCalculator({ onBack }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// NEWS2 : National Early Warning Score 2
+// 7 paramètres — total /20
+// Seuils : 0 faible / 1-4 faible / 5-6 ou param.=3 moyen / ≥7 élevé
+// ────────────────────────────────────────────────────────────────────────────
+function newsFrPoints(fr) {
+  if (fr <= 8)  return 3;
+  if (fr <= 11) return 1;
+  if (fr <= 20) return 0;
+  if (fr <= 24) return 2;
+  return 3;
+}
+function newsSpo2Points(spo2, scale, onO2) {
+  if (scale === 1) {
+    if (spo2 <= 91) return 3;
+    if (spo2 <= 93) return 2;
+    if (spo2 <= 95) return 1;
+    return 0;
+  } else {
+    if (spo2 <= 83) return 3;
+    if (spo2 <= 85) return 2;
+    if (spo2 <= 87) return 1;
+    if (spo2 <= 92) return 0;
+    if (!onO2) return 0;
+    if (spo2 <= 94) return 1;
+    if (spo2 <= 96) return 2;
+    return 3;
+  }
+}
+function newsPasPoints(p) {
+  if (p <= 90)  return 3;
+  if (p <= 100) return 2;
+  if (p <= 110) return 1;
+  if (p <= 219) return 0;
+  return 3;
+}
+function newsFcPoints(fc) {
+  if (fc <= 40)  return 3;
+  if (fc <= 50)  return 1;
+  if (fc <= 90)  return 0;
+  if (fc <= 110) return 1;
+  if (fc <= 130) return 2;
+  return 3;
+}
+function newsTempPoints(t) {
+  if (t <= 35.0) return 3;
+  if (t <= 36.0) return 1;
+  if (t <= 38.0) return 0;
+  if (t <= 39.0) return 1;
+  return 2;
+}
+function newsFrBin(fr) {
+  if (fr <= 8)  return "≤ 8 / min";
+  if (fr <= 11) return "9 – 11 / min";
+  if (fr <= 20) return "12 – 20 / min";
+  if (fr <= 24) return "21 – 24 / min";
+  return "≥ 25 / min";
+}
+function newsSpo2Bin(spo2, scale, onO2) {
+  if (scale === 1) {
+    if (spo2 <= 91) return "≤ 91 %";
+    if (spo2 <= 93) return "92 – 93 %";
+    if (spo2 <= 95) return "94 – 95 %";
+    return "≥ 96 %";
+  } else {
+    if (spo2 <= 83) return "≤ 83 %";
+    if (spo2 <= 85) return "84 – 85 %";
+    if (spo2 <= 87) return "86 – 87 %";
+    if (spo2 <= 92) return "88 – 92 % (cible)";
+    if (!onO2) return spo2 + " % (air ambiant)";
+    if (spo2 <= 94) return "93 – 94 % sous O₂";
+    if (spo2 <= 96) return "95 – 96 % sous O₂";
+    return "≥ 97 % sous O₂";
+  }
+}
+function newsPasBin(p) {
+  if (p <= 90)  return "≤ 90 mmHg";
+  if (p <= 100) return "91 – 100 mmHg";
+  if (p <= 110) return "101 – 110 mmHg";
+  if (p <= 219) return "111 – 219 mmHg";
+  return "≥ 220 mmHg";
+}
+function newsFcBin(fc) {
+  if (fc <= 40)  return "≤ 40 / min";
+  if (fc <= 50)  return "41 – 50 / min";
+  if (fc <= 90)  return "51 – 90 / min";
+  if (fc <= 110) return "91 – 110 / min";
+  if (fc <= 130) return "111 – 130 / min";
+  return "≥ 131 / min";
+}
+function newsTempBin(t) {
+  if (t <= 35.0) return "≤ 35,0 °C";
+  if (t <= 36.0) return "35,1 – 36,0 °C";
+  if (t <= 38.0) return "36,1 – 38,0 °C";
+  if (t <= 39.0) return "38,1 – 39,0 °C";
+  return "≥ 39,1 °C";
+}
+
+function NewsCalculator({ onBack }) {
+  const C = useC();
+  const accent = "#6366F1";
+
+  const [scale, setScale]           = useState(1);
+  const [o2, setO2]                 = useState(0);
+  const [fr, setFr]                 = useState(16);
+  const [spo2, setSpo2]             = useState(98);
+  const [pas, setPas]               = useState(130);
+  const [fc, setFc]                 = useState(75);
+  const [temp, setTemp]             = useState(37.0);
+  const [conscience, setConscience] = useState(0);
+
+  const pFr   = newsFrPoints(fr);
+  const pSpo2 = newsSpo2Points(spo2, scale, o2 === 1);
+  const pO2   = o2 === 1 ? 2 : 0;
+  const pPas  = newsPasPoints(pas);
+  const pFc   = newsFcPoints(fc);
+  const pTemp = newsTempPoints(temp);
+  const pCons = conscience === 1 ? 3 : 0;
+  const total = pFr + pSpo2 + pO2 + pPas + pFc + pTemp + pCons;
+  const anySingle3 = pFr===3 || pSpo2===3 || pPas===3 || pFc===3 || pTemp===3 || pCons===3;
+
+  let sev, sevColor, sevBg, interpText, urgence;
+  if (total === 0) {
+    sev = "Faible (0)"; sevColor = C.green; sevBg = C.greenLight;
+    interpText = "Surveillance standard. Réévaluation NEWS minimum toutes les 12 h."; urgence = null;
+  } else if (total <= 4 && !anySingle3) {
+    sev = `Faible (${total})`; sevColor = C.green; sevBg = C.greenLight;
+    interpText = "Surveillance régulière. Réévaluation NEWS toutes les 4 – 6 h. Informer IDE référente."; urgence = null;
+  } else if (total <= 6 || (anySingle3 && total < 7)) {
+    sev = `Moyen (${total})${anySingle3 ? " · param. = 3" : ""}`; sevColor = C.amber; sevBg = C.amberLight;
+    interpText = "Évaluation médicale urgente (dans l'heure). Surveillance horaire. Considérer escalade vers USC.";
+    urgence = "⚠️ Appeler le médecin dans l'heure";
+  } else {
+    sev = `Élevé (${total})`; sevColor = C.red; sevBg = C.redLight;
+    interpText = "Urgence vitale. Appel médical IMMÉDIAT. Monitoring continu. Évaluer transfert en réanimation.";
+    urgence = "🚨 Appel médical IMMÉDIAT";
+  }
+
+  const activeItems = [
+    { label: "FR",         pts: pFr,   bin: newsFrBin(fr) },
+    { label: "SpO₂",       pts: pSpo2, bin: newsSpo2Bin(spo2, scale, o2===1) },
+    { label: "O₂",         pts: pO2,   bin: o2===1 ? "Sous O₂" : null },
+    { label: "PAS",        pts: pPas,  bin: newsPasBin(pas) },
+    { label: "FC",         pts: pFc,   bin: newsFcBin(fc) },
+    { label: "Temp.",      pts: pTemp, bin: newsTempBin(temp) },
+    { label: "Conscience", pts: pCons, bin: conscience===1 ? "Altérée (CVPU)" : null },
+  ].filter(x => x.pts > 0 && x.bin);
+
+  function renderNumInput(label, val, setVal, unit, min, max, step, pts, bin) {
+    const col = pts === 0 ? C.green : pts <= 2 ? C.amber : C.red;
+    return (
+      <div style={{ background: C.white, borderRadius: 12, padding: "12px 14px", marginBottom: 8, border: `1.5px solid ${pts > 0 ? col : C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: 0.5 }}>{label}</div>
+          <div style={{ background: pts > 0 ? col : C.border, color: pts > 0 ? "#fff" : C.sub, borderRadius: 10, padding: "2px 10px", fontSize: 12, fontWeight: 900 }}>{pts > 0 ? "+" + pts : "0"}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setVal(v => Math.max(min, parseFloat((v - step).toFixed(1))))}
+            style={{ background: C.border, border: "none", borderRadius: 8, width: 36, height: 36, fontSize: 20, cursor: "pointer", flexShrink: 0, color: C.text }}>−</button>
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <span style={{ fontSize: 28, fontWeight: 900, color: pts > 0 ? col : C.text, fontVariantNumeric: "tabular-nums" }}>{val}</span>
+            <span style={{ fontSize: 13, color: C.sub, marginLeft: 4 }}>{unit}</span>
+          </div>
+          <button onClick={() => setVal(v => Math.min(max, parseFloat((v + step).toFixed(1))))}
+            style={{ background: C.border, border: "none", borderRadius: 8, width: 36, height: 36, fontSize: 20, cursor: "pointer", flexShrink: 0, color: C.text }}>+</button>
+        </div>
+        <div style={{ textAlign: "center", fontSize: 10, color: col, fontWeight: 700, marginTop: 4 }}>{bin}</div>
+      </div>
+    );
+  }
+
+  function renderToggle(label, val, setVal, opt0, opt1, pts1) {
+    return (
+      <div style={{ background: C.white, borderRadius: 12, padding: "12px 14px", marginBottom: 8, border: `1.5px solid ${val === 1 ? C.amber : C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: 0.5 }}>{label}</div>
+          <div style={{ background: val === 1 ? C.amber : C.border, color: val === 1 ? "#fff" : C.sub, borderRadius: 10, padding: "2px 10px", fontSize: 12, fontWeight: 900 }}>+{val === 1 ? pts1 : 0}</div>
+        </div>
+        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
+          {[opt0, opt1].map((o, i) => {
+            const active = val === i;
+            return (
+              <button key={i} onClick={() => setVal(i)} style={{
+                flex: 1, border: "none", padding: "10px 8px",
+                background: active ? (i === 1 ? C.amber : C.green) : C.white,
+                color: active ? "#fff" : C.text,
+                fontSize: 13, fontWeight: active ? 800 : 600, cursor: "pointer",
+                WebkitTapHighlightColor: "transparent",
+              }}>{o}</button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack} />
+      <div style={{ background: `linear-gradient(135deg, ${accent} 0%, #4F46E5 100%)`, borderRadius: 16, padding: 18, marginTop: 8, marginBottom: 14, color: "#fff" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 24 }}>🚨</span>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800 }}>NEWS2</div>
+            <div style={{ fontSize: 11, opacity: 0.85 }}>National Early Warning Score 2 — surveillance hospitalière</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sélecteur échelle SpO₂ */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: 0.5, marginBottom: 6 }}>ÉCHELLE SpO₂</div>
+        <div style={{ display: "flex", borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
+          {[{val:1,label:"Échelle 1",sub:"Standard"},{val:2,label:"Échelle 2",sub:"BPCO / cible 88-92%"}].map((o, i, arr) => {
+            const active = scale === o.val;
+            return (
+              <React.Fragment key={o.val}>
+                <button onClick={() => setScale(o.val)} style={{
+                  flex: 1, border: "none", padding: "10px 8px",
+                  background: active ? accent : C.white, color: active ? "#fff" : C.text,
+                  fontSize: 13, fontWeight: active ? 800 : 600, cursor: "pointer",
+                  WebkitTapHighlightColor: "transparent", display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                }}>
+                  <span>{o.label}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, opacity: active ? 0.9 : 0.7 }}>{o.sub}</span>
+                </button>
+                {i < arr.length - 1 && <div style={{ width: 1, background: C.border }} />}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+
+      {renderNumInput("FRÉQUENCE RESPIRATOIRE", fr, setFr, "/ min", 0, 60, 1, pFr, newsFrBin(fr))}
+      {renderNumInput("SATURATION SpO₂", spo2, setSpo2, "%", 50, 100, 1, pSpo2, newsSpo2Bin(spo2, scale, o2===1))}
+      {renderToggle("APPORT D'OXYGÈNE", o2, setO2, "Air ambiant", "Sous O₂", 2)}
+      {renderNumInput("PRESSION ARTÉRIELLE SYSTOLIQUE", pas, setPas, "mmHg", 0, 250, 1, pPas, newsPasBin(pas))}
+      {renderNumInput("FRÉQUENCE CARDIAQUE", fc, setFc, "/ min", 0, 250, 1, pFc, newsFcBin(fc))}
+      {renderToggle("ÉTAT DE CONSCIENCE", conscience, setConscience, "Alerte (A)", "Altéré (CVPU)", 3)}
+      {renderNumInput("TEMPÉRATURE", temp, setTemp, "°C", 30, 43, 0.1, pTemp, newsTempBin(temp))}
+
+      {/* Bandeau total */}
+      <div style={{ background: C.white, borderRadius: 14, padding: "18px 16px", marginTop: 16, marginBottom: 12, border: `1px solid ${C.border}`, boxShadow: "0 2px 12px rgba(26,58,92,.07)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: activeItems.length > 0 ? 14 : 0 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 42, fontWeight: 900, lineHeight: 1, color: sevColor, fontVariantNumeric: "tabular-nums" }}>{total}</span>
+              <span style={{ fontSize: 16, color: C.sub }}>/ 20</span>
+            </div>
+            <div style={{ fontSize: 11, color: anySingle3 ? C.red : C.sub, fontWeight: anySingle3 ? 800 : 400, marginTop: 6, letterSpacing: 0.5 }}>
+              {activeItems.length} item{activeItems.length > 1 ? "s" : ""} positif{activeItems.length > 1 ? "s" : ""}
+              {anySingle3 && <> · 1 param. = 3 !</>}
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ background: sevBg, color: sevColor, borderRadius: 10, padding: "6px 14px", fontSize: 13, fontWeight: 800, marginBottom: 4 }}>{sev}</div>
+            {urgence && <div style={{ fontSize: 11, color: sevColor, fontWeight: 700 }}>{urgence}</div>}
+          </div>
+        </div>
+        {activeItems.length > 0 && (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+            {activeItems.map((it, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ background: it.pts >= 3 ? C.red : it.pts >= 2 ? C.amber : C.green + "33", color: it.pts >= 3 ? "#fff" : it.pts >= 2 ? "#fff" : C.green, borderRadius: 6, padding: "1px 7px", fontSize: 11, fontWeight: 900, minWidth: 24, textAlign: "center" }}>+{it.pts}</span>
+                  <span style={{ color: C.text, fontWeight: 600 }}>{it.label}</span>
+                </div>
+                <span style={{ color: C.sub, fontSize: 11 }}>{it.bin}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: sevBg, border: `1px solid ${sevColor}33`, borderRadius: 12, padding: "12px 14px", marginBottom: 12, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+        <div style={{ fontWeight: 800, color: sevColor, marginBottom: 4 }}>📋 Conduite à tenir</div>
+        {interpText}
+      </div>
+
+      <button onClick={() => { setFr(16); setSpo2(98); setPas(130); setFc(75); setTemp(37.0); setConscience(0); setO2(0); setScale(1); }}
+        style={{ width: "100%", background: C.white, border: `1.5px solid ${C.border}`, borderRadius: 12, padding: "12px 16px", fontSize: 13, fontWeight: 700, color: C.sub, cursor: "pointer", marginBottom: 12, touchAction: "manipulation" }}>
+        ↺ Réinitialiser
+      </button>
+
+      <div style={{ background: accent + "10", border: `1px solid ${accent}33`, borderRadius: 12, padding: "12px 14px", fontSize: 11, color: C.text, lineHeight: 1.6, marginBottom: 20 }}>
+        <div style={{ fontWeight: 800, color: accent, marginBottom: 4 }}>💡 Seuils NEWS2 (RCP 2017)</div>
+        • <b>0</b> : surveillance toutes les 12 h<br />
+        • <b>1 – 4</b> : surveillance toutes les 4 – 6 h<br />
+        • <b>5 – 6</b> ou <b>1 paramètre = 3</b> : évaluation médicale urgente dans l'heure<br />
+        • <b>≥ 7</b> : urgence vitale — appel médical immédiat, scope continu<br />
+        • <b>Échelle 2</b> : uniquement chez patients BPCO (cible SpO₂ 88 – 92 %)<br />
+        • <b>O₂</b> : apport d'oxygène = +2 points dans tous les cas
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // GeneveEpCalculator : Score de Genève révisé simplifié (embolie pulmonaire)
 // 8 items binaires (1 pt chacun) — total /9
 // Probabilité clinique : faible (0-1) / intermédiaire (2-4) / forte (≥ 5)
@@ -12725,6 +13022,15 @@ const SCORES_LIST = [
     tags: ["#FA", "#anticoagulation", "#hémorragie", "#saignement"],
   },
   {
+    id: "news2",
+    category: "urg",
+    title: "NEWS2",
+    subtitle: "National Early Warning Score 2 — surveillance hospitalière",
+    icon: "🚨",
+    color: "#6366F1",
+    tags: ["#surveillance", "#détérioration", "#monitoring", "#NEWS", "#sepsis", "#urgence"],
+  },
+  {
     id: "parkland",
     category: "urg",
     title: "Parkland (brûlé grave)",
@@ -13871,6 +14177,7 @@ function ScoresScreen({ deepLinkId }) {
     if (selected.id === "carvajal") return <CarvajalCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "tripcast") return <TripCastCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "perc") return <PercCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "news2") return <NewsCalculator onBack={() => setSelected(null)}/>;
     // Les autres calculateurs seront branchés ici un par un
     return (
       <div>
