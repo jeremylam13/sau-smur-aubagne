@@ -1339,6 +1339,17 @@ function HomeScreen({onNav}) {
 
           {/* ── Widget Saviez-vous (RETEX) ── */}
           <SaviezVousWidget onNav={onNav}/>
+
+          {/* ── Disclaimer légal ── */}
+          <div style={{marginTop:24, marginBottom:8, padding:"12px 14px",
+            background:"rgba(0,0,0,.04)", borderRadius:12,
+            border:"1px solid rgba(0,0,0,.08)"}}>
+            <p style={{fontSize:10, color:"#64748B", lineHeight:1.55, margin:0, textAlign:"center"}}>
+              ⚠️ Usage réservé aux professionnels de santé. Cet outil d'aide à la décision ne se substitue pas
+              au jugement clinique&nbsp;; la responsabilité de la prescription et de la prise en charge
+              reste celle du praticien.
+            </p>
+          </div>
         </>
       )}
     </div>
@@ -2644,13 +2655,19 @@ function GestesScreen({ deepLinkId }) {
 
   return (
     <div style={{minHeight:"100vh"}}>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:20}}>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:C.redLight, borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"✂️"}</div>
         <div>
           <div style={{fontSize:18, fontWeight:800, color:C.text}}>Gestes techniques</div>
           <div style={{fontSize:12, color:C.sub}}>{allGestes.length} fiches disponibles</div>
         </div>
+      </div>
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10,
+        padding:"6px 12px", marginBottom:16}}>
+        <span style={{fontSize:10, color:"#92400E", fontWeight:600}}>
+          ⚕️ Aide à la décision/prescription — validation clinique requise
+        </span>
       </div>
 
       {/* Barre de recherche */}
@@ -3392,7 +3409,7 @@ function DilutionScreen({ deepLinkId }) {
   return (
     <div>
       {/* Header */}
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:20}}>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:C.redLight, borderRadius:14, width:48, height:48,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, flexShrink:0}}>
           {"💉"}
@@ -3401,6 +3418,12 @@ function DilutionScreen({ deepLinkId }) {
           <div style={{fontSize:18, fontWeight:800, color:C.text}}>Dilutions</div>
           <div style={{fontSize:12, color:C.sub}}>{allDilutions.length} fiche{allDilutions.length>1?"s":""} disponible{allDilutions.length>1?"s":""}</div>
         </div>
+      </div>
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10,
+        padding:"6px 12px", marginBottom:16}}>
+        <span style={{fontSize:10, color:"#92400E", fontWeight:600}}>
+          ⚕️ Aide à la décision/prescription — validation clinique requise
+        </span>
       </div>
 
       {/* Recherche */}
@@ -8808,6 +8831,396 @@ function NewsCalculator({ onBack }) {
 // 8 items binaires (1 pt chacun) — total /9
 // Probabilité clinique : faible (0-1) / intermédiaire (2-4) / forte (≥ 5)
 // ────────────────────────────────────────────────────────────────────────────
+// Surface Brûlée — Règle des 9 de Wallace (adulte) / Lund-Browder adapté (enfant)
+// ────────────────────────────────────────────────────────────────────────────
+function SurfaceBruleeCalculator({ onBack }) {
+  const C = useC();
+  const [mode, setMode] = React.useState("adulte"); // adulte | enfant
+  const [burned, setBurned] = React.useState({});
+
+  // Zones et pourcentages — adulte (règle des 9 de Wallace)
+  const ZONES_ADULTE = {
+    tete_face:      { label:"Tête/face",          pct:4.5, face:true },
+    tete_back:      { label:"Tête (dos)",          pct:4.5, face:false },
+    thorax_face:    { label:"Thorax ant.",         pct:9,   face:true },
+    thorax_back:    { label:"Dos sup.",            pct:9,   face:false },
+    abdomen_face:   { label:"Abdomen ant.",        pct:9,   face:true },
+    abdomen_back:   { label:"Dos inf.",            pct:9,   face:false },
+    bras_g_face:    { label:"Bras G ant.",         pct:2,   face:true },
+    bras_d_face:    { label:"Bras D ant.",         pct:2,   face:true },
+    avbras_g_face:  { label:"Avant-bras G ant.",   pct:1.5, face:true },
+    avbras_d_face:  { label:"Avant-bras D ant.",   pct:1.5, face:true },
+    bras_g_back:    { label:"Bras G post.",        pct:2,   face:false },
+    bras_d_back:    { label:"Bras D post.",        pct:2,   face:false },
+    avbras_g_back:  { label:"Avant-bras G post.",  pct:1.5, face:false },
+    avbras_d_back:  { label:"Avant-bras D post.",  pct:1.5, face:false },
+    main_g:         { label:"Main G",             pct:1.25,face:true },
+    main_d:         { label:"Main D",             pct:1.25,face:true },
+    main_g_b:       { label:"Main G (dos)",       pct:1.25,face:false },
+    main_d_b:       { label:"Main D (dos)",       pct:1.25,face:false },
+    cuisse_g_face:  { label:"Cuisse G ant.",      pct:4.5, face:true },
+    cuisse_d_face:  { label:"Cuisse D ant.",      pct:4.5, face:true },
+    cuisse_g_back:  { label:"Cuisse G post.",     pct:4.5, face:false },
+    cuisse_d_back:  { label:"Cuisse D post.",     pct:4.5, face:false },
+    jambe_g_face:   { label:"Jambe G ant.",       pct:3.5, face:true },
+    jambe_d_face:   { label:"Jambe D ant.",       pct:3.5, face:true },
+    jambe_g_back:   { label:"Jambe G post.",      pct:3.5, face:false },
+    jambe_d_back:   { label:"Jambe D post.",      pct:3.5, face:false },
+    pied_g:         { label:"Pied G",             pct:1.75,face:true },
+    pied_d:         { label:"Pied D",             pct:1.75,face:true },
+    pied_g_b:       { label:"Pied G (dos)",       pct:1.75,face:false },
+    pied_d_b:       { label:"Pied D (dos)",       pct:1.75,face:false },
+    perinee:        { label:"Périnée",            pct:1,   face:true },
+  };
+
+  // Zones enfant — Lund-Browder simplifié (valeurs approximatives < 10 ans)
+  const ZONES_ENFANT = {
+    tete_face:      { label:"Tête/face",          pct:8.5, face:true },
+    tete_back:      { label:"Tête (dos)",          pct:8.5, face:false },
+    thorax_face:    { label:"Thorax ant.",         pct:9,   face:true },
+    thorax_back:    { label:"Dos sup.",            pct:9,   face:false },
+    abdomen_face:   { label:"Abdomen ant.",        pct:9,   face:true },
+    abdomen_back:   { label:"Dos inf.",            pct:9,   face:false },
+    bras_g_face:    { label:"Bras G ant.",         pct:2,   face:true },
+    bras_d_face:    { label:"Bras D ant.",         pct:2,   face:true },
+    avbras_g_face:  { label:"Avant-bras G ant.",   pct:1.5, face:true },
+    avbras_d_face:  { label:"Avant-bras D ant.",   pct:1.5, face:true },
+    bras_g_back:    { label:"Bras G post.",        pct:2,   face:false },
+    bras_d_back:    { label:"Bras D post.",        pct:2,   face:false },
+    avbras_g_back:  { label:"Avant-bras G post.",  pct:1.5, face:false },
+    avbras_d_back:  { label:"Avant-bras D post.",  pct:1.5, face:false },
+    main_g:         { label:"Main G",             pct:1.25,face:true },
+    main_d:         { label:"Main D",             pct:1.25,face:true },
+    main_g_b:       { label:"Main G (dos)",       pct:1.25,face:false },
+    main_d_b:       { label:"Main D (dos)",       pct:1.25,face:false },
+    cuisse_g_face:  { label:"Cuisse G ant.",      pct:2.75,face:true },
+    cuisse_d_face:  { label:"Cuisse D ant.",      pct:2.75,face:true },
+    cuisse_g_back:  { label:"Cuisse G post.",     pct:2.75,face:false },
+    cuisse_d_back:  { label:"Cuisse D post.",     pct:2.75,face:false },
+    jambe_g_face:   { label:"Jambe G ant.",       pct:2.5, face:true },
+    jambe_d_face:   { label:"Jambe D ant.",       pct:2.5, face:true },
+    jambe_g_back:   { label:"Jambe G post.",      pct:2.5, face:false },
+    jambe_d_back:   { label:"Jambe D post.",      pct:2.5, face:false },
+    pied_g:         { label:"Pied G",             pct:1.75,face:true },
+    pied_d:         { label:"Pied D",             pct:1.75,face:true },
+    pied_g_b:       { label:"Pied G (dos)",       pct:1.75,face:false },
+    pied_d_b:       { label:"Pied D (dos)",       pct:1.75,face:false },
+    perinee:        { label:"Périnée",            pct:1,   face:true },
+  };
+
+  const ZONES = mode === "adulte" ? ZONES_ADULTE : ZONES_ENFANT;
+
+  const toggle = (key) => {
+    setBurned(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const scb = Object.entries(burned)
+    .filter(([, v]) => v)
+    .reduce((acc, [k]) => acc + (ZONES[k]?.pct || 0), 0);
+
+  const COLOR_ZONE   = "#EA580C";
+  const COLOR_NORMAL = "#D1FAE5";
+  const COLOR_BURNED = "#FCA5A5";
+  const BORDER_NORMAL= "#10B981";
+  const BORDER_BURNED= "#EF4444";
+
+  // Silhouette SVG adulte — vue de face
+  const SilhouetteAdulteFace = () => {
+    const z = (key) => ({
+      fill: burned[key] ? COLOR_BURNED : COLOR_NORMAL,
+      stroke: burned[key] ? BORDER_BURNED : BORDER_NORMAL,
+      strokeWidth: burned[key] ? 1.5 : 1,
+      cursor:"pointer",
+      transition:"all .15s",
+    });
+    return (
+      <svg viewBox="0 0 120 300" style={{width:"100%",maxWidth:130,display:"block",margin:"0 auto"}}>
+        {/* Tête */}
+        <ellipse cx="60" cy="22" rx="16" ry="18" style={z("tete_face")} onClick={()=>toggle("tete_face")}/>
+        {/* Cou */}
+        <rect x="54" y="38" width="12" height="10" rx="3" fill="#E5E7EB" stroke="#D1D5DB" strokeWidth="1"/>
+        {/* Thorax */}
+        <rect x="36" y="48" width="48" height="42" rx="5" style={z("thorax_face")} onClick={()=>toggle("thorax_face")}/>
+        {/* Abdomen */}
+        <rect x="38" y="90" width="44" height="36" rx="4" style={z("abdomen_face")} onClick={()=>toggle("abdomen_face")}/>
+        {/* Périnée */}
+        <ellipse cx="60" cy="132" rx="12" ry="8" style={z("perinee")} onClick={()=>toggle("perinee")}/>
+        {/* Bras G (côté droit sur dessin face) */}
+        <rect x="16" y="50" width="18" height="36" rx="5" style={z("bras_g_face")} onClick={()=>toggle("bras_g_face")}/>
+        {/* Avant-bras G */}
+        <rect x="12" y="88" width="16" height="30" rx="5" style={z("avbras_g_face")} onClick={()=>toggle("avbras_g_face")}/>
+        {/* Main G */}
+        <ellipse cx="20" cy="126" rx="8" ry="10" style={z("main_g")} onClick={()=>toggle("main_g")}/>
+        {/* Bras D */}
+        <rect x="86" y="50" width="18" height="36" rx="5" style={z("bras_d_face")} onClick={()=>toggle("bras_d_face")}/>
+        {/* Avant-bras D */}
+        <rect x="92" y="88" width="16" height="30" rx="5" style={z("avbras_d_face")} onClick={()=>toggle("avbras_d_face")}/>
+        {/* Main D */}
+        <ellipse cx="100" cy="126" rx="8" ry="10" style={z("main_d")} onClick={()=>toggle("main_d")}/>
+        {/* Cuisse G */}
+        <rect x="38" y="140" width="20" height="42" rx="5" style={z("cuisse_g_face")} onClick={()=>toggle("cuisse_g_face")}/>
+        {/* Cuisse D */}
+        <rect x="62" y="140" width="20" height="42" rx="5" style={z("cuisse_d_face")} onClick={()=>toggle("cuisse_d_face")}/>
+        {/* Jambe G */}
+        <rect x="36" y="184" width="20" height="38" rx="5" style={z("jambe_g_face")} onClick={()=>toggle("jambe_g_face")}/>
+        {/* Jambe D */}
+        <rect x="64" y="184" width="20" height="38" rx="5" style={z("jambe_d_face")} onClick={()=>toggle("jambe_d_face")}/>
+        {/* Pied G */}
+        <ellipse cx="46" cy="228" rx="13" ry="7" style={z("pied_g")} onClick={()=>toggle("pied_g")}/>
+        {/* Pied D */}
+        <ellipse cx="74" cy="228" rx="13" ry="7" style={z("pied_d")} onClick={()=>toggle("pied_d")}/>
+      </svg>
+    );
+  };
+
+  const SilhouetteAdulteDos = () => {
+    const z = (key) => ({
+      fill: burned[key] ? COLOR_BURNED : COLOR_NORMAL,
+      stroke: burned[key] ? BORDER_BURNED : BORDER_NORMAL,
+      strokeWidth: burned[key] ? 1.5 : 1,
+      cursor:"pointer",
+      transition:"all .15s",
+    });
+    return (
+      <svg viewBox="0 0 120 300" style={{width:"100%",maxWidth:130,display:"block",margin:"0 auto"}}>
+        {/* Tête dos */}
+        <ellipse cx="60" cy="22" rx="16" ry="18" style={z("tete_back")} onClick={()=>toggle("tete_back")}/>
+        {/* Cou */}
+        <rect x="54" y="38" width="12" height="10" rx="3" fill="#E5E7EB" stroke="#D1D5DB" strokeWidth="1"/>
+        {/* Dos sup */}
+        <rect x="36" y="48" width="48" height="42" rx="5" style={z("thorax_back")} onClick={()=>toggle("thorax_back")}/>
+        {/* Dos inf */}
+        <rect x="38" y="90" width="44" height="36" rx="4" style={z("abdomen_back")} onClick={()=>toggle("abdomen_back")}/>
+        {/* Fessier (on réutilise périnée visuellement) */}
+        <ellipse cx="60" cy="132" rx="14" ry="9" fill={burned["abdomen_back"] ? COLOR_BURNED : "#FDE68A"} stroke="#D97706" strokeWidth="1" style={{cursor:"default"}}/>
+        {/* Bras G post */}
+        <rect x="16" y="50" width="18" height="36" rx="5" style={z("bras_g_back")} onClick={()=>toggle("bras_g_back")}/>
+        {/* Avant-bras G post */}
+        <rect x="12" y="88" width="16" height="30" rx="5" style={z("avbras_g_back")} onClick={()=>toggle("avbras_g_back")}/>
+        {/* Main G dos */}
+        <ellipse cx="20" cy="126" rx="8" ry="10" style={z("main_g_b")} onClick={()=>toggle("main_g_b")}/>
+        {/* Bras D post */}
+        <rect x="86" y="50" width="18" height="36" rx="5" style={z("bras_d_back")} onClick={()=>toggle("bras_d_back")}/>
+        {/* Avant-bras D post */}
+        <rect x="92" y="88" width="16" height="30" rx="5" style={z("avbras_d_back")} onClick={()=>toggle("avbras_d_back")}/>
+        {/* Main D dos */}
+        <ellipse cx="100" cy="126" rx="8" ry="10" style={z("main_d_b")} onClick={()=>toggle("main_d_b")}/>
+        {/* Cuisse G post */}
+        <rect x="38" y="140" width="20" height="42" rx="5" style={z("cuisse_g_back")} onClick={()=>toggle("cuisse_g_back")}/>
+        {/* Cuisse D post */}
+        <rect x="62" y="140" width="20" height="42" rx="5" style={z("cuisse_d_back")} onClick={()=>toggle("cuisse_d_back")}/>
+        {/* Jambe G post */}
+        <rect x="36" y="184" width="20" height="38" rx="5" style={z("jambe_g_back")} onClick={()=>toggle("jambe_g_back")}/>
+        {/* Jambe D post */}
+        <rect x="64" y="184" width="20" height="38" rx="5" style={z("jambe_d_back")} onClick={()=>toggle("jambe_d_back")}/>
+        {/* Pied G dos */}
+        <ellipse cx="46" cy="228" rx="13" ry="7" style={z("pied_g_b")} onClick={()=>toggle("pied_g_b")}/>
+        {/* Pied D dos */}
+        <ellipse cx="74" cy="228" rx="13" ry="7" style={z("pied_d_b")} onClick={()=>toggle("pied_d_b")}/>
+      </svg>
+    );
+  };
+
+  // Silhouette enfant — tête plus grosse, membres plus courts
+  const SilhouetteEnfantFace = () => {
+    const z = (key) => ({
+      fill: burned[key] ? COLOR_BURNED : "#DBEAFE",
+      stroke: burned[key] ? BORDER_BURNED : "#3B82F6",
+      strokeWidth: burned[key] ? 1.5 : 1,
+      cursor:"pointer",
+      transition:"all .15s",
+    });
+    return (
+      <svg viewBox="0 0 120 260" style={{width:"100%",maxWidth:130,display:"block",margin:"0 auto"}}>
+        {/* Tête grande */}
+        <ellipse cx="60" cy="26" rx="22" ry="22" style={z("tete_face")} onClick={()=>toggle("tete_face")}/>
+        <rect x="54" y="46" width="12" height="8" rx="3" fill="#E5E7EB" stroke="#D1D5DB" strokeWidth="1"/>
+        {/* Thorax */}
+        <rect x="38" y="54" width="44" height="36" rx="5" style={z("thorax_face")} onClick={()=>toggle("thorax_face")}/>
+        {/* Abdomen */}
+        <rect x="40" y="90" width="40" height="28" rx="4" style={z("abdomen_face")} onClick={()=>toggle("abdomen_face")}/>
+        {/* Périnée */}
+        <ellipse cx="60" cy="124" rx="11" ry="7" style={z("perinee")} onClick={()=>toggle("perinee")}/>
+        {/* Bras G */}
+        <rect x="18" y="56" width="18" height="28" rx="5" style={z("bras_g_face")} onClick={()=>toggle("bras_g_face")}/>
+        <rect x="14" y="86" width="15" height="24" rx="5" style={z("avbras_g_face")} onClick={()=>toggle("avbras_g_face")}/>
+        <ellipse cx="21" cy="116" rx="8" ry="8" style={z("main_g")} onClick={()=>toggle("main_g")}/>
+        {/* Bras D */}
+        <rect x="84" y="56" width="18" height="28" rx="5" style={z("bras_d_face")} onClick={()=>toggle("bras_d_face")}/>
+        <rect x="91" y="86" width="15" height="24" rx="5" style={z("avbras_d_face")} onClick={()=>toggle("avbras_d_face")}/>
+        <ellipse cx="99" cy="116" rx="8" ry="8" style={z("main_d")} onClick={()=>toggle("main_d")}/>
+        {/* Cuisses courtes */}
+        <rect x="40" y="130" width="18" height="32" rx="5" style={z("cuisse_g_face")} onClick={()=>toggle("cuisse_g_face")}/>
+        <rect x="62" y="130" width="18" height="32" rx="5" style={z("cuisse_d_face")} onClick={()=>toggle("cuisse_d_face")}/>
+        {/* Jambes */}
+        <rect x="38" y="164" width="18" height="28" rx="5" style={z("jambe_g_face")} onClick={()=>toggle("jambe_g_face")}/>
+        <rect x="64" y="164" width="18" height="28" rx="5" style={z("jambe_d_face")} onClick={()=>toggle("jambe_d_face")}/>
+        {/* Pieds */}
+        <ellipse cx="47" cy="198" rx="12" ry="6" style={z("pied_g")} onClick={()=>toggle("pied_g")}/>
+        <ellipse cx="73" cy="198" rx="12" ry="6" style={z("pied_d")} onClick={()=>toggle("pied_d")}/>
+      </svg>
+    );
+  };
+
+  const SilhouetteEnfantDos = () => {
+    const z = (key) => ({
+      fill: burned[key] ? COLOR_BURNED : "#DBEAFE",
+      stroke: burned[key] ? BORDER_BURNED : "#3B82F6",
+      strokeWidth: burned[key] ? 1.5 : 1,
+      cursor:"pointer",
+      transition:"all .15s",
+    });
+    return (
+      <svg viewBox="0 0 120 260" style={{width:"100%",maxWidth:130,display:"block",margin:"0 auto"}}>
+        <ellipse cx="60" cy="26" rx="22" ry="22" style={z("tete_back")} onClick={()=>toggle("tete_back")}/>
+        <rect x="54" y="46" width="12" height="8" rx="3" fill="#E5E7EB" stroke="#D1D5DB" strokeWidth="1"/>
+        <rect x="38" y="54" width="44" height="36" rx="5" style={z("thorax_back")} onClick={()=>toggle("thorax_back")}/>
+        <rect x="40" y="90" width="40" height="28" rx="4" style={z("abdomen_back")} onClick={()=>toggle("abdomen_back")}/>
+        <ellipse cx="60" cy="124" rx="13" ry="8" fill="#FDE68A" stroke="#D97706" strokeWidth="1" style={{cursor:"default"}}/>
+        <rect x="18" y="56" width="18" height="28" rx="5" style={z("bras_g_back")} onClick={()=>toggle("bras_g_back")}/>
+        <rect x="14" y="86" width="15" height="24" rx="5" style={z("avbras_g_back")} onClick={()=>toggle("avbras_g_back")}/>
+        <ellipse cx="21" cy="116" rx="8" ry="8" style={z("main_g_b")} onClick={()=>toggle("main_g_b")}/>
+        <rect x="84" y="56" width="18" height="28" rx="5" style={z("bras_d_back")} onClick={()=>toggle("bras_d_back")}/>
+        <rect x="91" y="86" width="15" height="24" rx="5" style={z("avbras_d_back")} onClick={()=>toggle("avbras_d_back")}/>
+        <ellipse cx="99" cy="116" rx="8" ry="8" style={z("main_d_b")} onClick={()=>toggle("main_d_b")}/>
+        <rect x="40" y="130" width="18" height="32" rx="5" style={z("cuisse_g_back")} onClick={()=>toggle("cuisse_g_back")}/>
+        <rect x="62" y="130" width="18" height="32" rx="5" style={z("cuisse_d_back")} onClick={()=>toggle("cuisse_d_back")}/>
+        <rect x="38" y="164" width="18" height="28" rx="5" style={z("jambe_g_back")} onClick={()=>toggle("jambe_g_back")}/>
+        <rect x="64" y="164" width="18" height="28" rx="5" style={z("jambe_d_back")} onClick={()=>toggle("jambe_d_back")}/>
+        <ellipse cx="47" cy="198" rx="12" ry="6" style={z("pied_g_b")} onClick={()=>toggle("pied_g_b")}/>
+        <ellipse cx="73" cy="198" rx="12" ry="6" style={z("pied_d_b")} onClick={()=>toggle("pied_d_b")}/>
+      </svg>
+    );
+  };
+
+  const severite = scb < 10 ? { label:"Brûlure légère", color:"#22C55E", bg:"#F0FDF4" }
+    : scb < 20 ? { label:"Brûlure modérée", color:"#F59E0B", bg:"#FFFBEB" }
+    : scb < 40 ? { label:"Brûlure grave", color:"#EF4444", bg:"#FEF2F2" }
+    : { label:"Brûlure très grave — réanimation", color:"#7C3AED", bg:"#F5F3FF" };
+
+  const FaceFig = mode === "adulte" ? SilhouetteAdulteFace : SilhouetteEnfantFace;
+  const DosFig  = mode === "adulte" ? SilhouetteAdulteDos  : SilhouetteEnfantDos;
+
+  const burnedList = Object.entries(burned).filter(([,v])=>v).map(([k])=>({ key:k, ...ZONES[k] }));
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer",
+          fontSize:22, padding:"4px 8px", borderRadius:8, color:C.text}}>←</button>
+        <div style={{background:"#FEF3C7", borderRadius:14, width:48, height:48,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:26}}>🔥</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Surface Brûlée</div>
+          <div style={{fontSize:12, color:C.sub}}>Règle des 9 — cliquer les zones brûlées</div>
+        </div>
+      </div>
+
+      {/* Sélecteur adulte / enfant */}
+      <div style={{display:"flex", gap:8, marginBottom:16}}>
+        {["adulte","enfant"].map(m => (
+          <button key={m} onClick={()=>{ setMode(m); setBurned({}); }}
+            style={{flex:1, padding:"10px 0", borderRadius:12, border:"2px solid",
+              borderColor: mode===m ? "#EA580C" : C.border,
+              background: mode===m ? "#FEF3C7" : C.white,
+              color: mode===m ? "#9A3412" : C.text,
+              fontWeight:700, fontSize:14, cursor:"pointer"}}>
+            {m==="adulte" ? "🧑 Adulte" : "🧒 Enfant"}
+          </button>
+        ))}
+      </div>
+
+      {/* Score principal */}
+      <div style={{background: severite.bg, border:`2px solid ${severite.color}`,
+        borderRadius:16, padding:"12px 16px", marginBottom:16,
+        display:"flex", alignItems:"center", gap:12}}>
+        <div style={{fontSize:36, fontWeight:900, color:severite.color, minWidth:70, textAlign:"center"}}>
+          {scb.toFixed(1)}%
+        </div>
+        <div>
+          <div style={{fontSize:14, fontWeight:700, color:severite.color}}>{severite.label}</div>
+          <div style={{fontSize:11, color:C.sub, marginTop:2}}>
+            {mode==="adulte" ? "Règle des 9 de Wallace" : "Lund-Browder adapté enfant"}
+          </div>
+        </div>
+      </div>
+
+      {/* Note Parkland */}
+      {scb >= 15 && (
+        <div style={{background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:10,
+          padding:"8px 12px", marginBottom:14, fontSize:11, color:"#1E40AF"}}>
+          💧 <strong>Parkland :</strong> 4 ml × Poids (kg) × SCB (%) — moitié en 8h, moitié en 16h (adulte)
+        </div>
+      )}
+
+      {/* Silhouettes */}
+      <div style={{display:"flex", gap:8, marginBottom:14}}>
+        <div style={{flex:1, textAlign:"center"}}>
+          <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:6, textTransform:"uppercase", letterSpacing:.5}}>Face</div>
+          <FaceFig/>
+        </div>
+        <div style={{flex:1, textAlign:"center"}}>
+          <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:6, textTransform:"uppercase", letterSpacing:.5}}>Dos</div>
+          <DosFig/>
+        </div>
+      </div>
+
+      {/* Légende */}
+      <div style={{display:"flex", gap:10, marginBottom:12, justifyContent:"center"}}>
+        <div style={{display:"flex", alignItems:"center", gap:4, fontSize:11, color:C.sub}}>
+          <div style={{width:14, height:14, borderRadius:3, background: mode==="adulte" ? COLOR_NORMAL : "#DBEAFE",
+            border:`1px solid ${mode==="adulte" ? BORDER_NORMAL : "#3B82F6"}`}}/>
+          Non brûlé
+        </div>
+        <div style={{display:"flex", alignItems:"center", gap:4, fontSize:11, color:C.sub}}>
+          <div style={{width:14, height:14, borderRadius:3, background:COLOR_BURNED, border:`1px solid ${BORDER_BURNED}`}}/>
+          Brûlé (cliquer)
+        </div>
+      </div>
+
+      {/* Liste des zones sélectionnées */}
+      {burnedList.length > 0 && (
+        <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:"12px 14px", marginBottom:12}}>
+          <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8, textTransform:"uppercase", letterSpacing:.5}}>
+            Zones sélectionnées
+          </div>
+          {burnedList.map(z => (
+            <div key={z.key} style={{display:"flex", justifyContent:"space-between", alignItems:"center",
+              padding:"5px 0", borderBottom:`1px solid ${C.bg}`}}>
+              <span style={{fontSize:12, color:C.text}}>{z.label}</span>
+              <div style={{display:"flex", alignItems:"center", gap:8}}>
+                <span style={{fontSize:12, fontWeight:700, color:"#EA580C"}}>{z.pct}%</span>
+                <button onClick={()=>toggle(z.key)}
+                  style={{background:"#FEE2E2", border:"none", borderRadius:6, width:20, height:20,
+                    cursor:"pointer", fontSize:10, color:"#EF4444", display:"flex", alignItems:"center", justifyContent:"center"}}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Reset */}
+      {burnedList.length > 0 && (
+        <button onClick={()=>setBurned({})}
+          style={{width:"100%", padding:"10px 0", borderRadius:12, border:"1px solid #FCA5A5",
+            background:"#FEF2F2", color:"#EF4444", fontWeight:700, fontSize:13, cursor:"pointer"}}>
+          🗑️ Tout effacer
+        </button>
+      )}
+
+      {/* Référence */}
+      <div style={{marginTop:16, padding:"10px 12px", background:C.bg, borderRadius:10}}>
+        <div style={{fontSize:10, color:C.sub, lineHeight:1.6}}>
+          <strong>Règle des 9 de Wallace (adulte) :</strong> tête 9%, chaque bras 9%, thorax ant/post 9% chacun, abdomen ant/post 9% chacun, chaque cuisse 9%, chaque jambe 9%, périnée 1%<br/>
+          <strong>Enfant :</strong> tête proportionnellement plus grande (~17%), membres inférieurs proportionnellement plus petits — tableau de Lund-Browder recommandé.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 function GeneveEpCalculator({ onBack }) {
   const C = useC();
   const COLOR = "#0EA5E9";
@@ -13127,6 +13540,15 @@ const SCORES_LIST = [
     color: "#14B8A6",
     tags: ["#EP", "#embolie", "#exclusion", "#rule-out"],
   },
+  {
+    id: "surface-brulee",
+    category: "urg",
+    title: "Surface Brûlée",
+    subtitle: "Règle des 9 de Wallace — adulte & enfant",
+    icon: "🔥",
+    color: "#EA580C",
+    tags: ["#brûlure", "#SCB", "#Wallace", "#réanimation", "#pédiatrie"],
+  },
 ];
 
 const SCORES_CATEGORIES = [
@@ -14158,6 +14580,7 @@ function ScoresScreen({ deepLinkId }) {
     if (selected.id === "tripcast") return <TripCastCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "perc") return <PercCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "news2") return <NewsCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "surface-brulee") return <SurfaceBruleeCalculator onBack={() => setSelected(null)}/>;
     // Les autres calculateurs seront branchés ici un par un
     return (
       <div>
@@ -14304,7 +14727,7 @@ function AppInner() {
     {id:"home",       icon:"🏠", label:"Accueil"},
     {id:"favoris",    icon:"⭐", label:"Favoris"},
     {id:"gestes",     icon:"✂️",  label:"Gestes"},
-    {id:"retex",      icon:"🔬", label:"RETEX", badge:retexCount>0, badgeCount:retexCount},
+    {id:"scores",     icon:"🧮", label:"Scores"},
     {id:"dilutions",  icon:"💉", label:"Dilutions"},
     {id:"annuaire",   icon:"📒", label:"Contacts"},
   ];
@@ -14345,10 +14768,10 @@ function AppInner() {
       {/* Barre du haut — tous écrans */}
       <div style={{background:theme.navy, padding:"8px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0, transition:"background .25s"}}>
         <div style={{display:"flex", alignItems:"center", gap:10}}>
-          {/* Mini logo fondu dans la topbar */}
-          <div style={{width:34, height:34, borderRadius:8, overflow:"hidden", flexShrink:0}}>
+          {/* Logo en entier dans la topbar */}
+          <div style={{width:54, height:34, borderRadius:8, overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(255,255,255,.07)"}}>
             <img src={LOGO_HOSP} alt="Urgences SMUR Aubagne"
-              style={{width:"100%", height:"100%", objectFit:"cover", mixBlendMode:"luminosity", filter:"brightness(1.2) saturate(0)", opacity:0.9}}/>
+              style={{width:"100%", height:"100%", objectFit:"contain", opacity:0.95}}/>
           </div>
           <div>
             <div style={{color:"#fff", fontSize:13, fontWeight:800, lineHeight:1.15, letterSpacing:-0.2}}>SAU / SMUR Aubagne</div>
