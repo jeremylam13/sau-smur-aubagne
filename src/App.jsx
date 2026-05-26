@@ -497,16 +497,21 @@ function Card({children, onClick, style={}}) {
   );
 }
 
-function Btn({children, onClick, color, outline, style={}}) {
+function Btn({children, onClick, color, outline, disabled, style={}}) {
   const C = useC();
   return (
-    <button onClick={onClick} style={{
-      background: outline ? "transparent" : (color||C.blue),
-      color: outline ? (color||C.blue) : "#fff",
-      border: outline ? `2px solid ${color||C.blue}` : "none",
-      borderRadius:10, padding:"10px 18px", fontWeight:700, fontSize:13, cursor:"pointer",
-      transition:"opacity .15s, transform .1s", WebkitTapHighlightColor:"transparent", ...style
-    }}>{children}</button>
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      style={{
+        background: disabled ? "#CBD5E1" : (outline ? "transparent" : (color||C.blue)),
+        color: disabled ? "#94A3B8" : (outline ? (color||C.blue) : "#fff"),
+        border: outline ? `2px solid ${color||C.blue}` : "none",
+        borderRadius:10, padding:"10px 18px", fontWeight:700, fontSize:13,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.7 : 1,
+        transition:"opacity .15s, transform .1s", WebkitTapHighlightColor:"transparent", ...style
+      }}>{children}</button>
   );
 }
 
@@ -1508,6 +1513,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
   });
   const [saving, setSaving] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   const CATS = ["Réanimation","Cardiologie","Neurologie","Traumatologie","SMUR","Pédiatrie","Toxicologie","Infectiologie","Autre"];
 
@@ -1525,10 +1531,11 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   }
 
   async function handleSubmit() {
-    if(!form.title.trim()) return;
+    if(!form.title.trim() || !confirmed) return;
     setSaving(true);
     await onSubmit(form);
     setSaving(false);
+    setConfirmed(false);
   }
 
   return (
@@ -1624,10 +1631,26 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
         accept="image/*,video/*,application/pdf"
       />
 
-      <button onClick={handleSubmit} disabled={saving||!form.title.trim()} style={{
-        width:"100%", background:form.title.trim()?C.green:"#CBD5E1",
+      {/* Case à cocher obligatoire */}
+      <div onClick={()=>setConfirmed(v=>!v)}
+        style={{display:"flex", alignItems:"flex-start", gap:10, padding:"12px 14px",
+          background: confirmed ? "#F0FDF4" : "#FFF7ED",
+          border:`1.5px solid ${confirmed ? "#22C55E" : "#F59E0B"}`,
+          borderRadius:12, marginBottom:10, cursor:"pointer", userSelect:"none"}}>
+        <div style={{width:22, height:22, borderRadius:6, flexShrink:0, marginTop:1,
+          border:`2px solid ${confirmed ? "#22C55E" : "#F59E0B"}`,
+          background: confirmed ? "#22C55E" : "#fff",
+          display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"}}>
+          {confirmed && <span style={{color:"#fff", fontSize:14, fontWeight:900, lineHeight:1}}>✓</span>}
+        </div>
+        <span style={{fontSize:12, color: confirmed ? "#166534" : "#92400E", fontWeight:600, lineHeight:1.5}}>
+          Je certifie que ce cas est anonymisé, que sa publication est conforme au règlement intérieur du service et que j'en assume la responsabilité éditoriale.
+        </span>
+      </div>
+      <button onClick={handleSubmit} disabled={saving||!form.title.trim()||!confirmed} style={{
+        width:"100%", background:(form.title.trim()&&confirmed)?C.green:"#CBD5E1",
         border:"none", borderRadius:10, padding:"14px", fontSize:14,
-        fontWeight:800, color:"#fff", cursor:form.title.trim()?"pointer":"not-allowed",
+        fontWeight:800, color:"#fff", cursor:(form.title.trim()&&confirmed)?"pointer":"not-allowed",
         marginTop:4,
       }}>
         {saving?"Enregistrement...":(isEdit ? "✅ Enregistrer les modifications" : "✅ Publier")}
@@ -3497,15 +3520,18 @@ function DilutionScreen({ deepLinkId }) {
 function AdminScreen({ onNewItem }) {
   const C = useC();
   const { store, addItem, updateItem, removeItem } = useData();
-  const [tab, setTab] = useState("ecg");
+  const [tab, setTab] = useState("home");
   const [saved, setSaved] = useState(null);
   const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
   const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" });
+  const [ecgConfirmed, setEcgConfirmed] = useState(false);
+  const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
+  const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"", tags:"" });
   const [qzForm, setQzForm] = useState({ title:"", theme:"", description:"", icon:"🧠", color:"#6366F1", estimatedMin:5, sources:"", takeaways:"", questions:[], tags:"" });
 
@@ -3548,7 +3574,7 @@ function AdminScreen({ onNewItem }) {
     } else {
       const item = {...eForm, id:Date.now(), tags, points, revealed:false, color:"#E05260"};
       await addItem("ecgs","admin_ecgs",item,["image","image2"]);
-      setEForm(ecgReset);
+      setEForm(ecgReset); setEcgConfirmed(false);
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
@@ -3565,7 +3591,7 @@ function AdminScreen({ onNewItem }) {
     } else {
       const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
       await addItem("imagerie","admin_imagerie",item,["image"]);
-      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""}); setImagerieConfirmed(false);
       showSaved("Cas ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
     }
@@ -3612,6 +3638,7 @@ function AdminScreen({ onNewItem }) {
     const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
     await addRetexItem(item);
     setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
+    setRetexAdminConfirmed(false);
     showSaved("Publication ajoutée !");
     if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
   }
@@ -3730,34 +3757,90 @@ function AdminScreen({ onNewItem }) {
   const inp = {width:"100%",border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",fontSize:13,color:C.text,background:"#fff",boxSizing:"border-box",marginBottom:10,outline:"none"};
   const lbl = {fontSize:11,fontWeight:700,color:C.sub,marginBottom:4,display:"block"};
 
+  // ── Modules disponibles (tuiles d'accueil de l'éditeur) ─────────────────
+  const ADMIN_MODULES = [
+    { id:"ecg",       icon:"❤️",  label:"ECG",              color:"#E05260", bg:"#FEE2E2",  count: (store.ecgs||[]).length },
+    { id:"imagerie",  icon:"🩻",  label:"Imagerie",          color:"#9B59B6", bg:"#F3E8FF",  count: (store.imagerie||[]).length },
+    { id:"retex",     icon:"🔬",  label:"RETEX / Cas",       color:"#2E9E6B", bg:"#D1FAE5",  count: (store.retex||[]).length },
+    { id:"gestes",    icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FEE2E2",  count: (store.gestes||[]).length },
+    { id:"dilutions", icon:"💉",  label:"Dilutions",         color:"#E05260", bg:"#FEE2E2",  count: (store.dilutions||[]).length },
+    { id:"agenda",    icon:"📅",  label:"Agenda",            color:"#1A73E8", bg:"#DBEAFE",  count: (store.agenda||[]).length },
+    { id:"divers",    icon:"⚡",  label:"Divers",            color:"#1A3A5C", bg:"#EFF6FF",  count: (store.divers||[]).length },
+    { id:"recoflash", icon:"📋",  label:"Reco Flash",        color:"#0891B2", bg:"#CFFAFE",  count: (store.recoflash||[]).length },
+    { id:"quiz",      icon:"🧠",  label:"Quiz",              color:"#6366F1", bg:"#EEF2FF",  count: (store.quizzes||[]).length },
+    { id:"annuaire",  icon:"📒",  label:"Contacts",          color:"#1A3A5C", bg:"#F0FDF4",  count: (store.contacts||[]).length },
+  ];
+
   return (
     <div>
-      <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:20}}>
-        <span style={{fontSize:24}}>{"🗂️"}</span>
-        <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Éditeur de fiches</div>
-          <div style={{fontSize:12, color:C.sub}}>Gérer le contenu de l'application</div>
-        </div>
-      </div>
-
+      {/* Notification de sauvegarde */}
       {saved && (
-        <div style={{background:C.greenLight, border:`1px solid ${C.green}`, borderRadius:10, padding:"10px 16px", marginBottom:16, fontSize:13, fontWeight:700, color:C.green, textAlign:"center"}}>
+        <div style={{background:C.greenLight, border:`1px solid ${C.green}`, borderRadius:10,
+          padding:"10px 16px", marginBottom:16, fontSize:13, fontWeight:700, color:C.green, textAlign:"center"}}>
           {saved}
         </div>
       )}
 
-      <div style={{display:"flex", gap:6, marginBottom:20, background:"#eef2f7", borderRadius:12, padding:4, overflowX:"auto", WebkitOverflowScrolling:"touch", scrollbarWidth:"none"}}>
-        {[{id:"ecg",label:"❤️ ECG"},{id:"imagerie",label:"🩻 Imagerie"},{id:"retex",label:"🔬 RETEX"},{id:"agenda",label:"📅 Agenda"},{id:"divers",label:"⚡ Divers"},{id:"gestes",label:"✂️ Urgents"},{id:"dilutions",label:"💉 Dilutions"},{id:"recoflash",label:"⚡ Reco Flash"},{id:"quiz",label:"🧠 Quiz"},{id:"annuaire",label:"📒 Contacts"}].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            flexShrink:0, border:"none", borderRadius:9, padding:"8px 10px", cursor:"pointer",
-            background:tab===t.id?C.white:"transparent",
-            color:tab===t.id?C.navy:C.sub,
-            fontWeight:tab===t.id?800:600, fontSize:11,
-            boxShadow:tab===t.id?"0 1px 6px rgba(0,0,0,.08)":"none",
-            whiteSpace:"nowrap",
-          }}>{t.label}</button>
-        ))}
-      </div>
+      {/* Page d'accueil éditeur — grille de 10 modules */}
+      {tab === "home" && (
+        <div>
+          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:20}}>
+            <span style={{fontSize:24}}>{"🗂️"}</span>
+            <div>
+              <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Éditeur de fiches</div>
+              <div style={{fontSize:12, color:C.sub}}>Sélectionner un module à éditer</div>
+            </div>
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+            {ADMIN_MODULES.map(m => (
+              <button key={m.id} onClick={()=>setTab(m.id)}
+                style={{background:C.white, border:`1.5px solid ${C.border}`, borderRadius:16,
+                  padding:"16px 14px", cursor:"pointer", textAlign:"left",
+                  display:"flex", flexDirection:"column", gap:6,
+                  boxShadow:"0 1px 4px rgba(0,0,0,.06)", transition:"transform .1s, box-shadow .1s"}}>
+                <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+                  <div style={{width:42, height:42, borderRadius:12, background:m.bg,
+                    display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>
+                    {m.icon}
+                  </div>
+                  {m.count > 0 && (
+                    <span style={{background:m.color, color:"#fff", borderRadius:20,
+                      fontSize:10, fontWeight:800, padding:"2px 8px", minWidth:20, textAlign:"center"}}>
+                      {m.count}
+                    </span>
+                  )}
+                </div>
+                <div style={{fontSize:13, fontWeight:800, color:C.text}}>{m.label}</div>
+                <div style={{fontSize:11, color:C.sub}}>{m.count === 0 ? "Aucune fiche" : `${m.count} fiche${m.count>1?"s":""}`}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Header avec bouton retour — affiché pour tous les modules sauf home */}
+      {tab !== "home" && (
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:20}}>
+          <button onClick={()=>setTab("home")}
+            style={{background:"none", border:"none", cursor:"pointer", fontSize:22,
+              padding:"4px 8px", borderRadius:8, color:C.text}}>←</button>
+          {(() => { const m = ADMIN_MODULES.find(x=>x.id===tab); return m ? (
+            <>
+              <div style={{width:38, height:38, borderRadius:11, background:m.bg,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>
+                {m.icon}
+              </div>
+              <div>
+                <div style={{fontSize:16, fontWeight:800, color:C.navy}}>{m.label}</div>
+                <div style={{fontSize:11, color:C.sub}}>Ajouter ou modifier des fiches</div>
+              </div>
+            </>
+          ) : null; })()}
+        </div>
+      )}
+
+      {/* ──────────────────── formulaires par module ──────────────────── */}
+      {/* le reste des {tab==="ecg" && ...} suit directement */}
 
       {tab==="ecg" && (
         <div>
@@ -3847,8 +3930,24 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#SCA #Arythmie #Pediatrie" value={eForm.tags} onChange={e=>setEForm({...eForm,tags:e.target.value})}/>
-            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
-            <Btn onClick={addEcg} color={C.red} style={{width:"100%"}}>{editingE ? "✅ Enregistrer les modifications" : "Ajouter l'ECG"}</Btn>
+            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); setEcgConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {/* Case à cocher obligatoire */}
+            <div onClick={()=>setEcgConfirmed(v=>!v)}
+              style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
+                background: ecgConfirmed ? "#F0FDF4" : "#FFF7ED",
+                border:`1.5px solid ${ecgConfirmed ? "#22C55E" : "#F59E0B"}`,
+                borderRadius:10, marginBottom:8, cursor:"pointer", userSelect:"none"}}>
+              <div style={{width:20, height:20, borderRadius:5, flexShrink:0, marginTop:1,
+                border:`2px solid ${ecgConfirmed ? "#22C55E" : "#F59E0B"}`,
+                background: ecgConfirmed ? "#22C55E" : "#fff",
+                display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"}}>
+                {ecgConfirmed && <span style={{color:"#fff", fontSize:13, fontWeight:900, lineHeight:1}}>✓</span>}
+              </div>
+              <span style={{fontSize:11, color: ecgConfirmed ? "#166534" : "#92400E", fontWeight:600, lineHeight:1.5}}>
+                Je certifie que cet ECG est anonymisé et que sa publication est conforme au règlement du service.
+              </span>
+            </div>
+            <Btn onClick={addEcg} disabled={!ecgConfirmed} color={C.red} style={{width:"100%"}}>{editingE ? "✅ Enregistrer les modifications" : "Ajouter l'ECG"}</Btn>
           </Card>
           {customEcgs.length>0 && (
             <div>
@@ -3916,8 +4015,24 @@ function AdminScreen({ onNewItem }) {
             />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#Scanner #Radio #Fracture" value={iForm.tags} onChange={e=>setIForm({...iForm,tags:e.target.value})}/>
-            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
-            <Btn onClick={addImagerie} color="#9B59B6" style={{width:"100%"}}>{editingI ? "✅ Enregistrer les modifications" : "Ajouter le cas"}</Btn>
+            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" }); setImagerieConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {/* Case à cocher obligatoire */}
+            <div onClick={()=>setImagerieConfirmed(v=>!v)}
+              style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
+                background: imagerieConfirmed ? "#F0FDF4" : "#FFF7ED",
+                border:`1.5px solid ${imagerieConfirmed ? "#22C55E" : "#F59E0B"}`,
+                borderRadius:10, marginBottom:8, cursor:"pointer", userSelect:"none"}}>
+              <div style={{width:20, height:20, borderRadius:5, flexShrink:0, marginTop:1,
+                border:`2px solid ${imagerieConfirmed ? "#22C55E" : "#F59E0B"}`,
+                background: imagerieConfirmed ? "#22C55E" : "#fff",
+                display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"}}>
+                {imagerieConfirmed && <span style={{color:"#fff", fontSize:13, fontWeight:900, lineHeight:1}}>✓</span>}
+              </div>
+              <span style={{fontSize:11, color: imagerieConfirmed ? "#166534" : "#92400E", fontWeight:600, lineHeight:1.5}}>
+                Je certifie que cette imagerie est anonymisée et que sa publication est conforme au règlement du service.
+              </span>
+            </div>
+            <Btn onClick={addImagerie} disabled={!imagerieConfirmed} color="#9B59B6" style={{width:"100%"}}>{editingI ? "✅ Enregistrer les modifications" : "Ajouter le cas"}</Btn>
           </Card>
           {customImagerie.length>0 && (
             <div>
@@ -4011,7 +4126,23 @@ function AdminScreen({ onNewItem }) {
               onChange={upd => setRForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
               accept="image/*,video/*,application/pdf"
             />
-            <Btn onClick={addRetex} color={C.green} style={{width:"100%"}}>✅ Publier directement</Btn>
+            {/* Case à cocher obligatoire */}
+            <div onClick={()=>setRetexAdminConfirmed(v=>!v)}
+              style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
+                background: retexAdminConfirmed ? "#F0FDF4" : "#FFF7ED",
+                border:`1.5px solid ${retexAdminConfirmed ? "#22C55E" : "#F59E0B"}`,
+                borderRadius:10, marginBottom:8, cursor:"pointer", userSelect:"none"}}>
+              <div style={{width:20, height:20, borderRadius:5, flexShrink:0, marginTop:1,
+                border:`2px solid ${retexAdminConfirmed ? "#22C55E" : "#F59E0B"}`,
+                background: retexAdminConfirmed ? "#22C55E" : "#fff",
+                display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"}}>
+                {retexAdminConfirmed && <span style={{color:"#fff", fontSize:13, fontWeight:900, lineHeight:1}}>✓</span>}
+              </div>
+              <span style={{fontSize:11, color: retexAdminConfirmed ? "#166534" : "#92400E", fontWeight:600, lineHeight:1.5}}>
+                Je certifie que ce cas est anonymisé et que sa publication est conforme au règlement du service.
+              </span>
+            </div>
+            <Btn onClick={addRetex} disabled={!retexAdminConfirmed} color={C.green} style={{width:"100%"}}>✅ Publier directement</Btn>
           </Card>
 
           {customRetex.length>0 && (
@@ -4689,10 +4820,12 @@ function AdminScreen({ onNewItem }) {
         </div>
       )}
 
-      <div style={{marginTop:20, padding:"12px 16px", background:C.amberLight, border:`1px solid ${C.amber}`, borderRadius:12, fontSize:11, color:C.text, lineHeight:1.6}}>
-        <div style={{fontWeight:800, color:C.amber, marginBottom:4}}>{"📎 Comment ajouter un fichier ?"}</div>
-        Cliquez sur la zone pointillee pour selectionner un PDF ou une image depuis votre appareil. Le fichier est charge directement dans l'application et sauvegarde pour les prochaines sessions.
-      </div>
+      {tab !== "home" && (
+        <div style={{marginTop:20, padding:"12px 16px", background:C.amberLight, border:`1px solid ${C.amber}`, borderRadius:12, fontSize:11, color:C.text, lineHeight:1.6}}>
+          <div style={{fontWeight:800, color:C.amber, marginBottom:4}}>{"📎 Comment ajouter un fichier ?"}</div>
+          Cliquez sur la zone pointillee pour selectionner un PDF ou une image depuis votre appareil. Le fichier est charge directement dans l'application et sauvegarde pour les prochaines sessions.
+        </div>
+      )}
     </div>
   );
 }
