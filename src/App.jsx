@@ -1619,7 +1619,12 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
 
       {/* Take home message (commun) */}
       <label style={lbl}>🎯 Take home message</label>
-      <textarea style={ta(70)} placeholder="Le message clé à retenir..." value={form.takehome} onChange={e=>setForm({...form,takehome:e.target.value})}/>
+      <textarea
+        style={{...inp, minHeight:100, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}}
+        placeholder="Le message clé à retenir..."
+        value={form.takehome}
+        onChange={e=>setForm({...form,takehome:e.target.value})}
+      />
 
       <label style={lbl}>Tags (optionnel)</label>
       <input style={inp} placeholder="#SMUR #SCA #Pediatrie" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
@@ -1756,7 +1761,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
             <span style={{fontSize:16}}>🎯</span>
             <span style={{fontSize:11, fontWeight:800, color:"#E05260", letterSpacing:.5}}>TAKE HOME MESSAGE</span>
           </div>
-          <div style={{fontSize:14, fontWeight:700, color:C.text, lineHeight:1.5}}>{item.takehome}</div>
+          <div style={{fontSize:14, fontWeight:700, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.takehome}</div>
         </div>
       )}
 
@@ -1840,10 +1845,20 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
 }
 
 // ── RetexScreen ───────────────────────────────────────────────────────────────
-function RetexScreen({ deepLinkId }) {
+function RetexScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store, addRetexItem, removeRetexItem, updateRetex } = useData();
-  const items = store.retex;
+  const items = [...(store.retex||[])].sort((a,b)=>{
+    // Trier par date saisie d'abord, puis created_at
+    const da = a.date ? new Date(a.date) : null;
+    const db = b.date ? new Date(b.date) : null;
+    const ta = a.created_at ? new Date(a.created_at) : new Date(0);
+    const tb = b.created_at ? new Date(b.created_at) : new Date(0);
+    if(da && db) return db - da;
+    if(da) return -1;
+    if(db) return 1;
+    return tb - ta;
+  });
   const [selected, setSelected] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -2042,14 +2057,18 @@ function RetexScreen({ deepLinkId }) {
   );
 }
 // - ECGScreen -
-function ECGScreen({ deepLinkId }) {
+function ECGScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [revealedIds, setRevealedIds] = useState({});
   const [selected, setSelected] = useState(null);
   const { toggleFavori, isFavori } = useFavoris();
 
-  const ecgs = [...ECGS, ...store.ecgs];
+  const ecgs = [...ECGS, ...store.ecgs].sort((a,b)=>{
+    const ta = a.created_at ? new Date(a.created_at) : new Date(0);
+    const tb = b.created_at ? new Date(b.created_at) : new Date(0);
+    return tb - ta;
+  });
 
   useEffect(()=>{ if(deepLinkId && ecgs.length){ const it=ecgs.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.ecgs]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
@@ -2149,6 +2168,20 @@ function ECGScreen({ deepLinkId }) {
 
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"❤️"} ECG</h2>
       <div style={{display:"flex", flexDirection:"column", gap:12}}>
         {ecgs.map(e => (
@@ -2174,14 +2207,18 @@ function ECGScreen({ deepLinkId }) {
 }
 
 // - IconoScreen -
-function IconoScreen({ deepLinkId }) {
+function IconoScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [revealed, setRevealed] = useState({});
   const [selected, setSelected] = useState(null);
   const { toggleFavori, isFavori } = useFavoris();
 
-  const allCases = [...ICONO, ...store.imagerie];
+  const allCases = [...ICONO, ...store.imagerie].sort((a,b)=>{
+    const ta = a.created_at ? new Date(a.created_at) : new Date(0);
+    const tb = b.created_at ? new Date(b.created_at) : new Date(0);
+    return tb - ta;
+  });
 
   useEffect(()=>{ if(deepLinkId && allCases.length){ const it=allCases.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.imagerie]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
@@ -2245,6 +2282,20 @@ function IconoScreen({ deepLinkId }) {
 
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"🖼️"} Imagerie</h2>
       {allCases.length===0 && (
         <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
@@ -2391,7 +2442,7 @@ function MiniCalendar({ events }) {
 }
 
 // - AgendaScreen -
-function AgendaScreen({ deepLinkId }) {
+function AgendaScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store, removeItem } = useData();
   const [selected, setSelected] = useState(null);
@@ -2484,6 +2535,20 @@ function AgendaScreen({ deepLinkId }) {
 
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"📅"} Agenda</h2>
 
       {allEvents.length===0 ? (
@@ -2638,12 +2703,12 @@ const GESTES_CATEGORIES = [
   { id: "autre",          label: "Autre",         icon: "⚡",  color: "#64748B" },
 ];
 
-function GestesScreen({ deepLinkId }) {
+function GestesScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
-  const [activeTab, setActiveTab] = useState("indications");
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const { toggleFavori, isFavori } = useFavoris();
 
@@ -2662,7 +2727,9 @@ function GestesScreen({ deepLinkId }) {
     const q = search.toLowerCase();
     if(!q) return true;
     return (g.title + (Array.isArray(g.tags)?g.tags:[]).join(" ") + (g.indications||"")).toLowerCase().includes(q);
-  });
+  })
+  .sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
+
 
   // Compte le nb de gestes par catégorie (utile pour les chips)
   const categoryCounts = {};
@@ -2673,11 +2740,25 @@ function GestesScreen({ deepLinkId }) {
 
   if(selected) {
     const gesteToShow = allGestes.find(g=>g.id===selected.id)||selected;
-    return <GesteDetail geste={gesteToShow} onBack={()=>{ setSelected(null); setActiveTab("indications"); }} activeTab={activeTab} setActiveTab={setActiveTab}/>;
+    return <GesteDetail geste={gesteToShow} onBack={()=>setSelected(null)}/>;
   }
 
   return (
     <div style={{minHeight:"100vh"}}>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:C.redLight, borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"✂️"}</div>
@@ -2803,17 +2884,9 @@ function GestesScreen({ deepLinkId }) {
   );
 }
 
-function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
+function GesteDetail({geste, onBack}) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
-  const tabs = [
-    {id:"indications", label:"Indications", icon:"💊"},
-    ...(geste.contreIndications?.length ? [{id:"ci", label:"Contre-ind.", icon:"🚫"}] : []),
-    {id:"materiel",    label:"Matériel",    icon:"🧰"},
-    {id:"etapes",      label:"Étapes",      icon:"📋"},
-    {id:"pieges",      label:"Pièges",      icon:"⚠️"},
-    {id:"compli",      label:"Compli.",     icon:"🚨"},
-  ];
 
   const extractYoutubeId = url => {
     if(!url) return null;
@@ -2821,45 +2894,65 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
     return m ? m[1] : null;
   };
   const ytId = extractYoutubeId(geste.videoUrl);
+  const gTags = Array.isArray(geste.tags) ? geste.tags
+    : (typeof geste.tags==="string" && geste.tags ? geste.tags.split(",").map(s=>s.trim()).filter(Boolean) : []);
+  const COLOR = geste.color || C.red;
+
+  // Helper : section avec icône-label + contenu en carte (style Dilutions)
+  const Section = ({ icon, label, color, children }) => (
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:7}}>
+        <div style={{background:color+"18", borderRadius:10, width:34, height:34,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, flexShrink:0}}>
+          {icon}
+        </div>
+        <span style={{fontSize:12, fontWeight:800, color:color, letterSpacing:.5, textTransform:"uppercase"}}>{label}</span>
+      </div>
+      <div style={{background:C.white, borderRadius:14, border:`1.5px solid ${color}30`,
+        borderLeft:`4px solid ${color}`, boxShadow:"0 2px 8px rgba(26,58,92,.05)", overflow:"hidden"}}>
+        {children}
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{minHeight:"100vh"}}>
-
-      {/* Header */}
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer",
-          display:"flex", alignItems:"center", gap:6, color:C.sub,
-          fontWeight:700, fontSize:13, padding:0}}>
-          ‹ <span>Retour</span>
-        </button>
-        <StarBtn filled={isFavori("geste",geste.id)} color={geste.color||C.red}
-          onToggle={()=>toggleFavori({id:geste.id, type:"geste", title:geste.title, icon:geste.icon||"✂️", color:geste.color||C.red, nav:"gestes"})}/>
+    <div>
+      {/* Barre haut : retour + favori */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+        <BackBtn onClick={onBack}/>
+        <StarBtn filled={isFavori("geste",geste.id)} color={COLOR}
+          onToggle={()=>toggleFavori({id:geste.id, type:"geste", title:geste.title, icon:geste.icon||"✂️", color:COLOR, nav:"gestes"})}/>
       </div>
 
-      <div style={{background:C.white, borderRadius:16, padding:16, boxShadow:"0 2px 12px rgba(26,58,92,.07)",
-        borderLeft:`4px solid ${geste.color||C.blue}`, marginBottom:16}}>
-        <div style={{display:"flex", alignItems:"center", gap:12}}>
-          <div style={{background:(geste.color||C.blue)+"22", borderRadius:12,
-            width:52, height:52, display:"flex", alignItems:"center",
-            justifyContent:"center", fontSize:28, flexShrink:0}}>
+      {/* Header coloré — style dilutions */}
+      <div style={{
+        background:`linear-gradient(135deg, ${COLOR} 0%, ${COLOR}CC 100%)`,
+        borderRadius:18, padding:20, marginBottom:20, color:"#fff"
+      }}>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
+          <div style={{background:"rgba(255,255,255,.2)", borderRadius:14, width:52, height:52,
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, flexShrink:0}}>
             {geste.icon||"✂️"}
           </div>
-          <div>
-            <div style={{fontSize:16, fontWeight:800, color:C.text, lineHeight:1.3}}>{geste.title}</div>
-            <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:5}}>
-              {(Array.isArray(geste.tags) ? geste.tags : (typeof geste.tags === "string" && geste.tags ? geste.tags.split(",").map(s=>s.trim()).filter(Boolean) : [])).map(t=>(
-                <span key={t} style={{fontSize:10, fontWeight:700,
-                  background:C.blue+"22", color:C.blue,
-                  padding:"2px 7px", borderRadius:6}}>{t}</span>
-              ))}
-            </div>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{fontSize:19, fontWeight:800, lineHeight:1.2}}>{geste.title}</div>
+            {geste.subtitle && <div style={{fontSize:12, opacity:.8, marginTop:2}}>{geste.subtitle}</div>}
           </div>
         </div>
+        {gTags.length > 0 && (
+          <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:4}}>
+            {gTags.map(t=>(
+              <span key={t} style={{background:"rgba(255,255,255,.2)", borderRadius:20,
+                padding:"2px 10px", fontSize:10, fontWeight:700}}>{t}</span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Image principale si disponible */}
+      {/* Image principale */}
       {(geste.imageData||geste.imageUrl) && (
-        <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
+        <div style={{borderRadius:14, overflow:"hidden", marginBottom:geste.credit?4:16,
+          background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
           <ClickableImage src={geste.imageData||geste.imageUrl} alt={geste.title} style={{borderRadius:14}}/>
         </div>
       )}
@@ -2868,87 +2961,72 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           © {geste.credit}
         </div>
       )}
-      {/* Galerie multi-médias */}
-      {geste.medias?.length > 0 && <MediaGallery medias={geste.medias}/>}
 
-      {/* Onglets de contenu */}
-      <div style={{display:"flex", gap:4, marginBottom:16, overflowX:"auto", paddingBottom:4}}>
-        {tabs.map(t=>(
-          <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{
-            flexShrink:0, border:"none", borderRadius:10,
-            padding:"7px 12px", cursor:"pointer", fontSize:11, fontWeight:700,
-            background: activeTab===t.id ? (geste.color||C.blue) : C.white,
-            color: activeTab===t.id ? "#fff" : C.sub,
-            transition:"background .15s",
-          }}>{t.icon} {t.label}</button>
-        ))}
-      </div>
+      {/* Galerie médias */}
+      {geste.medias?.length > 0 && (
+        <div style={{marginBottom:16}}>
+          <MediaGallery medias={geste.medias}/>
+        </div>
+      )}
 
-      {/* Contenu de l'onglet */}
-      <div style={{background:C.white, borderRadius:16,
-        border:`1px solid ${C.border}`, overflow:"hidden"}}>
+      {/* ── Sections défilantes ── */}
 
-        {activeTab==="indications" && (
-          <div style={{padding:16}}>
-            <div style={{fontSize:12, fontWeight:800, color:C.sub,
-              letterSpacing:.5, marginBottom:12}}>{"💊 INDICATIONS"}</div>
-            <div style={{fontSize:14, color:C.text, lineHeight:1.7, whiteSpace:"pre-line"}}>
-              {geste.indications}
-            </div>
+      {/* Indications */}
+      {geste.indications && (
+        <Section icon="💊" label="Indications" color={C.green}>
+          <div style={{padding:"14px 16px", fontSize:13, color:C.text, lineHeight:1.75, whiteSpace:"pre-line"}}>
+            {geste.indications}
           </div>
-        )}
+        </Section>
+      )}
 
-        {activeTab==="ci" && (
-          <div style={{padding:16}}>
-            <div style={{fontSize:12, fontWeight:800, color:C.sub,
-              letterSpacing:.5, marginBottom:12}}>{"🚫 CONTRE-INDICATIONS"}</div>
-            <div style={{display:"flex", flexDirection:"column", gap:8}}>
-              {(geste.contreIndications||[]).map((ci,i)=>(
-                <div key={i} style={{
-                  display:"flex", alignItems:"flex-start", gap:10,
-                  background:C.redLight, borderRadius:10, padding:"10px 12px",
-                  border:`1px solid ${C.red}30`,
-                }}>
-                  <span style={{fontSize:15, flexShrink:0, marginTop:1}}>{"🚫"}</span>
-                  <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{ci}</div>
+      {/* Contre-indications */}
+      {(geste.contreIndications||[]).length > 0 && (
+        <Section icon="🚫" label="Contre-indications" color={C.red}>
+          <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:8}}>
+            {geste.contreIndications.map((ci,i)=>(
+              <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10,
+                background:C.redLight, borderRadius:10, padding:"10px 12px",
+                border:`1px solid ${C.red}30`}}>
+                <div style={{width:6, height:6, borderRadius:"50%", background:C.red,
+                  flexShrink:0, marginTop:6}}/>
+                <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{ci}</div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Matériel */}
+      {(geste.materiel||[]).length > 0 && (
+        <Section icon="🧰" label="Matériel nécessaire" color={C.blue}>
+          <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:8}}>
+            {geste.materiel.map((item,i)=>(
+              <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10}}>
+                <div style={{background:C.blue+"22", borderRadius:6, padding:"2px 8px",
+                  fontSize:11, fontWeight:800, color:C.blue, flexShrink:0, marginTop:1, minWidth:22, textAlign:"center"}}>
+                  {i+1}
                 </div>
-              ))}
-            </div>
+                <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{item}</div>
+              </div>
+            ))}
           </div>
-        )}
+        </Section>
+      )}
 
-        {activeTab==="materiel" && (
-          <div style={{padding:16}}>
-            <div style={{fontSize:12, fontWeight:800, color:C.sub,
-              letterSpacing:.5, marginBottom:12}}>{"🧰 MATÉRIEL"}</div>
-            <div style={{display:"flex", flexDirection:"column", gap:8}}>
-              {(geste.materiel||[]).map((item,i)=>(
-                <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10}}>
-                  <div style={{background:C.blue+"22", borderRadius:6, padding:"2px 7px",
-                    fontSize:11, fontWeight:800, color:C.blue, flexShrink:0, marginTop:1}}>
-                    {i+1}
-                  </div>
-                  <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{item}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab==="etapes" && (
-          <div style={{padding:0}}>
-            <div style={{padding:"16px 16px 10px", fontSize:12, fontWeight:800,
-              color:C.sub, letterSpacing:.5}}>{"📋 ÉTAPES"}</div>
-            {(geste.etapes||[]).map((step,i)=>(
+      {/* Étapes */}
+      {(geste.etapes||[]).length > 0 && (
+        <Section icon="📋" label="Étapes" color={COLOR}>
+          <div>
+            {geste.etapes.map((step,i)=>(
               <div key={i} style={{
                 display:"flex", alignItems:"flex-start", gap:12,
-                padding:"12px 16px",
+                padding:"13px 16px",
                 borderTop: i>0 ? `1px solid ${C.border}` : "none",
-                background: i%2===0 ? "transparent" : C.blueLight+"80",
+                background: i%2===0 ? "transparent" : C.blueLight+"60",
               }}>
                 <div style={{
-                  background: geste.color||C.blue,
-                  borderRadius:"50%", width:26, height:26,
+                  background: COLOR, borderRadius:"50%", width:26, height:26,
                   display:"flex", alignItems:"center", justifyContent:"center",
                   fontSize:12, fontWeight:800, color:"#fff", flexShrink:0, marginTop:1,
                 }}>{i+1}</div>
@@ -2956,68 +3034,52 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
               </div>
             ))}
           </div>
-        )}
+        </Section>
+      )}
 
-        {activeTab==="pieges" && (
-          <div style={{padding:16}}>
-            <div style={{fontSize:12, fontWeight:800, color:C.sub,
-              letterSpacing:.5, marginBottom:12}}>{"⚠️ POINTS CRITIQUES / PIÈGES"}</div>
-            <div style={{display:"flex", flexDirection:"column", gap:10}}>
-              {(geste.pieges||[]).map((p,i)=>(
-                <div key={i} style={{
-                  display:"flex", alignItems:"flex-start", gap:10,
-                  background:"#E8A82E15", borderRadius:10, padding:"10px 12px",
-                  border:"1px solid #E8A82E30",
-                }}>
-                  <span style={{fontSize:16, flexShrink:0}}>{"⚠️"}</span>
-                  <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{p}</div>
-                </div>
-              ))}
-            </div>
+      {/* Pièges */}
+      {(geste.pieges||[]).length > 0 && (
+        <Section icon="⚠️" label="Points critiques / Pièges" color="#D97706">
+          <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:10}}>
+            {geste.pieges.map((p,i)=>(
+              <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10,
+                background:"#FEF3C7", borderRadius:10, padding:"10px 12px",
+                border:"1px solid #FCD34D"}}>
+                <div style={{width:6, height:6, borderRadius:"50%", background:"#D97706",
+                  flexShrink:0, marginTop:6}}/>
+                <div style={{fontSize:13, color:"#78350F", lineHeight:1.5}}>{p}</div>
+              </div>
+            ))}
           </div>
-        )}
+        </Section>
+      )}
 
-        {activeTab==="compli" && (
-          <div style={{padding:16}}>
-            <div style={{fontSize:12, fontWeight:800, color:C.sub,
-              letterSpacing:.5, marginBottom:12}}>{"🚨 COMPLICATIONS"}</div>
-            <div style={{display:"flex", flexDirection:"column", gap:8}}>
-              {(geste.complications||[]).map((c,i)=>(
-                <div key={i} style={{
-                  display:"flex", alignItems:"center", gap:10,
-                  background:"#E74C3C15", borderRadius:10, padding:"9px 12px",
-                  border:"1px solid #E74C3C30",
-                }}>
-                  <div style={{width:7, height:7, borderRadius:"50%",
-                    background:"#E74C3C", flexShrink:0}}/>
-                  <div style={{fontSize:13, color:C.text}}>{c}</div>
-                </div>
-              ))}
-            </div>
+      {/* Complications */}
+      {(geste.complications||[]).length > 0 && (
+        <Section icon="🚨" label="Complications" color="#DC2626">
+          <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:8}}>
+            {geste.complications.map((c,i)=>(
+              <div key={i} style={{display:"flex", alignItems:"center", gap:10,
+                background:"#FEF2F2", borderRadius:10, padding:"9px 12px",
+                border:"1px solid #FECACA"}}>
+                <div style={{width:7, height:7, borderRadius:"50%", background:"#DC2626", flexShrink:0}}/>
+                <div style={{fontSize:13, color:"#7F1D1D"}}>{c}</div>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+        </Section>
+      )}
 
-      {/* Vidéo YouTube — lien direct en bas de page */}
+      {/* Vidéo YouTube */}
       {ytId && (
-        <a
-          href={`https://www.youtube.com/watch?v=${ytId}`}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display:"flex", alignItems:"center", gap:14,
+        <a href={`https://www.youtube.com/watch?v=${ytId}`} target="_blank" rel="noreferrer"
+          style={{display:"flex", alignItems:"center", gap:14,
             background:C.white, border:`1px solid ${C.border}`,
-            borderRadius:14, padding:"14px 16px", marginTop:16, marginBottom:16,
-            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)",
-          }}>
-          <div style={{
-            background:"#FF0000", borderRadius:10,
-            width:46, height:46, flexShrink:0,
-            display:"flex", alignItems:"center", justifyContent:"center",
-          }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
+            borderRadius:14, padding:"14px 16px", marginTop:4, marginBottom:16,
+            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)"}}>
+          <div style={{background:"#FF0000", borderRadius:10, width:46, height:46, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center"}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
@@ -3025,8 +3087,7 @@ function GesteDetail({geste, onBack, activeTab, setActiveTab}) {
           </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
             <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
+            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
           </svg>
         </a>
       )}
@@ -3066,7 +3127,7 @@ function DiversImageViewer({ src, alt, isPdf, pdfData }) {
 }
 
 // - DiversScreen -
-function DiversScreen({ deepLinkId }) {
+function DiversScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [search, setSearch] = useState("");
@@ -3125,6 +3186,20 @@ function DiversScreen({ deepLinkId }) {
 
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"⚡"} Base de connaissances</h2>
       <div style={{display:"flex", alignItems:"center", gap:10, background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:"10px 14px", marginBottom:16}}>
         <span style={{fontSize:14, opacity:.5}}>{"🔍"}</span>
@@ -3161,7 +3236,7 @@ function DiversScreen({ deepLinkId }) {
 }
 
 // - AnnuaireScreen -
-function AnnuaireScreen() {
+function AnnuaireScreen({ onBack }) {
   const C = useC();
   const { store } = useData();
   const [search, setSearch]     = useState("");
@@ -3300,7 +3375,7 @@ function AnnuaireScreen() {
 
 
 // ─── DilutionScreen ───────────────────────────────────────────────────────────
-function DilutionScreen({ deepLinkId }) {
+function DilutionScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [selected, setSelected] = useState(null);
@@ -3315,7 +3390,7 @@ function DilutionScreen({ deepLinkId }) {
   const filtered = allDilutions.filter(d =>
     d.title.toLowerCase().includes(search.toLowerCase()) ||
     (Array.isArray(d.tags)?d.tags:[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
-  );
+  ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   if(selected) {
     const sections = [
@@ -3431,6 +3506,20 @@ function DilutionScreen({ deepLinkId }) {
 
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       {/* Header */}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:C.redLight, borderRadius:14, width:48, height:48,
@@ -3517,7 +3606,7 @@ function DilutionScreen({ deepLinkId }) {
 
 
 // ─── AdminScreen ───────────────────────────────────────────────────────────────
-function AdminScreen({ onNewItem }) {
+function AdminScreen({ onNewItem, onBack }) {
   const C = useC();
   const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("home");
@@ -3773,6 +3862,20 @@ function AdminScreen({ onNewItem }) {
 
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       {/* Notification de sauvegarde */}
       {saved && (
         <div style={{background:C.greenLight, border:`1px solid ${C.green}`, borderRadius:10,
@@ -4097,7 +4200,7 @@ function AdminScreen({ onNewItem }) {
                 <label style={lbl}>Récit de l'intervention</label>
                 <textarea style={{...inp, height:140, resize:"vertical"}} placeholder="Racontez l'intervention librement..." value={rForm.recit} onChange={e=>setRForm({...rForm,recit:e.target.value})}/>
                 <label style={lbl}>Take home message</label>
-                <textarea style={{...inp, height:70, resize:"vertical"}} placeholder="Le message clé à retenir..." value={rForm.takehome} onChange={e=>setRForm({...rForm,takehome:e.target.value})}/>
+                <textarea style={{...inp, minHeight:100, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Le message clé à retenir..." value={rForm.takehome} onChange={e=>setRForm({...rForm,takehome:e.target.value})}/>
               </div>
             )}
 
@@ -4114,7 +4217,7 @@ function AdminScreen({ onNewItem }) {
                 <label style={lbl}>💡 Ce que l'on ferait différemment</label>
                 <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Axes d'amélioration..." value={rForm.amelio} onChange={e=>setRForm({...rForm,amelio:e.target.value})}/>
                 <label style={lbl}>🎯 Take home message</label>
-                <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Le message clé à retenir..." value={rForm.takehome} onChange={e=>setRForm({...rForm,takehome:e.target.value})}/>
+                <textarea style={{...inp, minHeight:100, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Le message clé à retenir..." value={rForm.takehome} onChange={e=>setRForm({...rForm,takehome:e.target.value})}/>
               </div>
             )}
 
@@ -4833,13 +4936,14 @@ function AdminScreen({ onNewItem }) {
 // ────────────────────────────────────────────────────────────────────────────
 // RecoFlashScreen : Recommandations officielles flash
 // ────────────────────────────────────────────────────────────────────────────
-function RecoFlashScreen({ deepLinkId }) {
+function RecoFlashScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const { toggleFavori, isFavori } = useFavoris();
   const [search, setSearch] = useState("");
   const [selectedSpec, setSelectedSpec] = useState("all");
   const [selected, setSelected] = useState(null);
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
 
   const list = store.recoflash || [];
 
@@ -4930,6 +5034,20 @@ function RecoFlashScreen({ deepLinkId }) {
   // Vue liste
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
         <div style={{background:"#0EA5E9"+"22", borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"⚡"}</div>
@@ -13483,6 +13601,208 @@ function PercCalculator({ onBack }) {
   );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// YearsEpCalculator : Algorithme YEARS pour l'embolie pulmonaire
+// van der Hulle et al., NEJM 2017 — 3 critères Wells + seuil D-dimères adapté
+// 0 critère → seuil D-dimères 1000 ng/mL | ≥ 1 critère → seuil 500 ng/mL
+// ────────────────────────────────────────────────────────────────────────────
+function YearsEpCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0891B2";
+
+  const ITEMS = [
+    {
+      key: "tvp",
+      title: "Signes cliniques de TVP",
+      help: "Œdème unilatéral d'un membre inférieur + douleur à la palpation du trajet veineux profond",
+    },
+    {
+      key: "hemoptysie",
+      title: "Hémoptysie",
+      help: "Expectoration sanglante, même minime",
+    },
+    {
+      key: "ep_probable",
+      title: "EP plus probable que tout autre diagnostic",
+      help: "Évaluation clinique globale — l'embolie pulmonaire est le diagnostic le plus vraisemblable après examen",
+    },
+  ];
+
+  const [scores, setScores] = React.useState({ tvp: null, hemoptysie: null, ep_probable: null });
+  const [ddimeres, setDdimeres] = React.useState("");
+
+  const toggle = (key, val) => setScores(s => ({ ...s, [key]: s[key] === val ? null : val }));
+  const reset = () => { setScores({ tvp: null, hemoptysie: null, ep_probable: null }); setDdimeres(""); };
+
+  const allAnswered = Object.values(scores).every(v => v !== null);
+  const positifs = Object.values(scores).filter(v => v === true).length;
+  const seuil = positifs === 0 ? 1000 : 500;
+  const dd = parseFloat(ddimeres);
+  const ddValide = !isNaN(dd) && dd > 0;
+
+  // Résultat final
+  let result = null;
+  if (allAnswered && ddValide) {
+    if (dd < seuil) {
+      result = "exclue";
+    } else {
+      result = "angio";
+    }
+  }
+
+  const itemColor = (key, val) => {
+    if (scores[key] === null) return { bg: C.white, border: C.border, text: C.text };
+    if (scores[key] === val) {
+      return val === true
+        ? { bg: "#FEF3C7", border: "#F59E0B", text: "#92400E" }
+        : { bg: "#F0FDF4", border: "#22C55E", text: "#166534" };
+    }
+    return { bg: C.bg, border: C.border, text: C.sub };
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer",
+          fontSize:22, padding:"4px 8px", borderRadius:8, color:C.text}}>←</button>
+        <div style={{background:"#E0F7FA", borderRadius:14, width:48, height:48,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:26}}>🫁</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Score YEARS</div>
+          <div style={{fontSize:12, color:C.sub}}>Algorithme EP — D-dimères à seuil adapté</div>
+        </div>
+      </div>
+
+      {/* Principe */}
+      <div style={{background:"#E0F7FA", border:"1px solid #67E8F9", borderRadius:12,
+        padding:"10px 14px", marginBottom:18, fontSize:11, color:"#0E7490", lineHeight:1.6}}>
+        <strong>Principe :</strong> 3 critères cliniques → seuil de D-dimères variable.
+        {" "}0 critère : seuil <strong>1000 ng/mL</strong> · ≥ 1 critère : seuil <strong>500 ng/mL</strong>
+      </div>
+
+      {/* Étape 1 — critères YEARS */}
+      <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:10,
+        display:"flex", alignItems:"center", gap:6}}>
+        <span style={{background:COLOR, color:"#fff", borderRadius:"50%", width:22, height:22,
+          display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:900}}>1</span>
+        Critères cliniques YEARS
+      </div>
+
+      {ITEMS.map(item => (
+        <div key={item.key} style={{marginBottom:10}}>
+          <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:6}}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize:11, color:C.sub, marginBottom:6, lineHeight:1.4}}>{item.help}</div>
+          )}
+          <div style={{display:"flex", gap:8}}>
+            {[{ val: true, label:"Oui" }, { val: false, label:"Non" }].map(({ val, label }) => {
+              const st = itemColor(item.key, val);
+              return (
+                <button key={label} onClick={() => toggle(item.key, val)}
+                  style={{flex:1, padding:"10px 0", borderRadius:10, border:`2px solid ${st.border}`,
+                    background:st.bg, color:st.text, fontWeight:700, fontSize:13, cursor:"pointer",
+                    transition:"all .15s"}}>
+                  {val ? "✓ " : "✗ "}{label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Seuil calculé */}
+      {allAnswered && (
+        <div style={{background: positifs === 0 ? "#F0FDF4" : "#FEF3C7",
+          border:`2px solid ${positifs === 0 ? "#22C55E" : "#F59E0B"}`,
+          borderRadius:12, padding:"12px 16px", marginBottom:18, textAlign:"center"}}>
+          <div style={{fontSize:12, color:C.sub, marginBottom:4}}>
+            {positifs} critère{positifs > 1 ? "s" : ""} YEARS positif{positifs > 1 ? "s" : ""}
+          </div>
+          <div style={{fontSize:16, fontWeight:900, color: positifs === 0 ? "#166534" : "#92400E"}}>
+            Seuil D-dimères : <span style={{fontSize:22}}>{seuil}</span> ng/mL
+          </div>
+          <div style={{fontSize:11, color:C.sub, marginTop:4}}>
+            {positifs === 0
+              ? "0 critère → seuil élevé (1000 ng/mL = 2× le seuil standard)"
+              : "≥ 1 critère → seuil standard (500 ng/mL)"}
+          </div>
+        </div>
+      )}
+
+      {/* Étape 2 — saisie D-dimères */}
+      {allAnswered && (
+        <>
+          <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:10,
+            display:"flex", alignItems:"center", gap:6}}>
+            <span style={{background:COLOR, color:"#fff", borderRadius:"50%", width:22, height:22,
+              display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:900}}>2</span>
+            Résultat D-dimères (ng/mL)
+          </div>
+
+          <div style={{display:"flex", gap:10, alignItems:"center", marginBottom:16}}>
+            <input
+              type="number"
+              value={ddimeres}
+              onChange={e => setDdimeres(e.target.value)}
+              placeholder="ex. 650"
+              style={{flex:1, padding:"12px 16px", borderRadius:12, border:`2px solid ${C.border}`,
+                fontSize:16, fontWeight:700, color:C.text, background:C.white, outline:"none",
+                WebkitAppearance:"none"}}
+            />
+            <span style={{fontSize:13, color:C.sub, fontWeight:600}}>ng/mL</span>
+          </div>
+
+          {/* Résultat */}
+          {result === "exclue" && (
+            <div style={{background:"#F0FDF4", border:"2px solid #22C55E", borderRadius:16,
+              padding:"16px 18px", marginBottom:14, textAlign:"center"}}>
+              <div style={{fontSize:28, marginBottom:6}}>✅</div>
+              <div style={{fontSize:16, fontWeight:900, color:"#166534"}}>EP exclue</div>
+              <div style={{fontSize:12, color:"#166534", marginTop:4, lineHeight:1.5}}>
+                D-dimères {dd} ng/mL &lt; seuil {seuil} ng/mL — pas d'angioTDM nécessaire
+              </div>
+            </div>
+          )}
+          {result === "angio" && (
+            <div style={{background:"#FEF2F2", border:"2px solid #EF4444", borderRadius:16,
+              padding:"16px 18px", marginBottom:14, textAlign:"center"}}>
+              <div style={{fontSize:28, marginBottom:6}}>🔴</div>
+              <div style={{fontSize:16, fontWeight:900, color:"#991B1B"}}>AngioTDM thoracique indiqué</div>
+              <div style={{fontSize:12, color:"#991B1B", marginTop:4, lineHeight:1.5}}>
+                D-dimères {dd} ng/mL ≥ seuil {seuil} ng/mL — imagerie nécessaire
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Reset */}
+      <button onClick={reset}
+        style={{width:"100%", background:C.white, border:`1.5px solid ${C.border}`,
+          borderRadius:12, padding:"11px 16px", fontSize:13, fontWeight:700,
+          color:C.sub, cursor:"pointer", marginBottom:20}}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{background:COLOR + "10", border:`1px solid ${COLOR}33`,
+        borderRadius:12, padding:"12px 14px", fontSize:11, color:C.text, lineHeight:1.7}}>
+        <div style={{fontWeight:800, color:COLOR, marginBottom:6}}>
+          💡 Repères cliniques (van der Hulle, NEJM 2017)
+        </div>
+        • <strong>Étude YEARS</strong> : 3616 patients, 18 centres — réduction de 14% des angioTDM vs stratégie standard<br/>
+        • <strong>0 critère YEARS</strong> → seuil D-dimères porté à 1000 ng/mL (×2) → exclut l'EP avec sécurité équivalente<br/>
+        • <strong>≥ 1 critère YEARS</strong> → seuil standard 500 ng/mL (ou ajusté à l'âge si &gt; 50 ans : âge × 10)<br/>
+        • <strong>EP probable d'emblée</strong> (critère 3 positif + D-dim élevés) → angioTDM sans attendre<br/>
+        • <strong>Avantage principal</strong> : simple (3 items), réduit les irradiations inutiles sans augmenter les EP manquées (taux d'EP à 3 mois : 0,61%)<br/>
+        • <strong>Alternatives</strong> : Genève + D-dimères ajustés à l'âge · Wells + PERC si probabilité faible<br/>
+        • Validé en externe sur plusieurs cohortes européennes ; recommandé ESC 2019
+      </div>
+    </div>
+  );
+}
+
 const SCORES_LIST = [
   {
     id: "glasgow",
@@ -13681,6 +14001,15 @@ const SCORES_LIST = [
     icon: "🔥",
     color: "#EA580C",
     tags: ["#brûlure", "#SCB", "#Wallace", "#réanimation", "#pédiatrie"],
+  },
+  {
+    id: "years-ep",
+    category: "respi",
+    title: "Score YEARS",
+    subtitle: "Algorithme EP — D-dimères à seuil adapté",
+    icon: "🫁",
+    color: "#0891B2",
+    tags: ["#EP", "#embolie", "#D-dimères", "#dyspnée", "#thrombose", "#YEARS"],
   },
 ];
 
@@ -13887,11 +14216,12 @@ function saveQuizScore(quizId, score, total) {
   localStorage.setItem(QUIZ_SCORES_KEY, JSON.stringify(all));
 }
 
-function QuizScreen({ deepLinkId }) {
+function QuizScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [view, setView] = useState("list"); // list | intro | play | result
   const [selected, setSelected] = useState(null);
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
   const [search, setSearch] = useState("");
   const scores = getQuizScores();
 
@@ -13931,6 +14261,20 @@ function QuizScreen({ deepLinkId }) {
   const COLOR = "#6366F1";
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <div style={{
         background: `linear-gradient(135deg, ${COLOR} 0%, #4338CA 100%)`,
         borderRadius: 16,
@@ -14672,10 +15016,11 @@ function QuizResult({ quiz, score, total, answers, onRestart, onBack }) {
   );
 }
 
-function ScoresScreen({ deepLinkId }) {
+function ScoresScreen({ deepLinkId, onBack }) {
   const C = useC();
   const [selectedCat, setSelectedCat] = useState("all");
   const [selected, setSelected] = useState(null);
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
   const { toggleFavori, isFavori } = useFavoris();
 
   // Deep link : si un id arrive depuis les favoris, ouvre direct le score
@@ -14686,9 +15031,10 @@ function ScoresScreen({ deepLinkId }) {
     }
   }, [deepLinkId]);
 
-  const filtered = selectedCat === "all"
+  const filtered = (selectedCat === "all"
     ? SCORES_LIST
-    : SCORES_LIST.filter(s => s.category === selectedCat);
+    : SCORES_LIST.filter(s => s.category === selectedCat)
+  ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   // Routing vers le calculateur sélectionné
   if (selected) {
@@ -14714,6 +15060,7 @@ function ScoresScreen({ deepLinkId }) {
     if (selected.id === "perc") return <PercCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "news2") return <NewsCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "surface-brulee") return <SurfaceBruleeCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "years-ep") return <YearsEpCalculator onBack={() => setSelected(null)}/>;
     // Les autres calculateurs seront branchés ici un par un
     return (
       <div>
@@ -14730,6 +15077,20 @@ function ScoresScreen({ deepLinkId }) {
   // Vue liste
   return (
     <div>
+      {onBack && (
+        <button onClick={onBack} style={{
+          display:"flex", alignItems:"center", gap:4,
+          background:"none", border:"none", cursor:"pointer",
+          color:"#64748B", fontSize:12, fontWeight:700,
+          padding:"4px 0", marginBottom:10,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Accueil
+        </button>
+      )}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
         <div style={{background:"#0D9488"+"22", borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"🧮"}</div>
@@ -14958,18 +15319,18 @@ function AppInner() {
       <div ref={contentRef} data-content-scroll style={{flex:1, padding:"16px 16px 90px", overflowY:"auto", background:theme.bg, transition:"background .25s"}}>
         {screen==="home"       && <HomeScreen onNav={navigate}/>}
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
-        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink}/>}
-        {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion}/>}
-        {screen==="admin"      && <AdminScreen onNewItem={pushNotif}/>}
+        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
+        {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={()=>navigate("home")}/>}
+        {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={()=>navigate("home")}/>}
       </div>
 
       <div style={{position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:theme.white, borderTop:`1px solid ${theme.border}`, display:"flex", padding:"8px 0 12px", boxShadow:"0 -4px 20px rgba(26,58,92,.08)", transition:"background .25s"}}>
