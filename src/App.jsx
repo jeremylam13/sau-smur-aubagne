@@ -15188,6 +15188,7 @@ export default function App() {
 
 function AppInner() {
   const [screen, setScreen] = useState("home");
+  const [screenHistory, setScreenHistory] = useState([]);
   const [deepLink, setDeepLink] = useState(null);
   const [navVersion, setNavVersion] = useState(0);
   const [retexCount, setRetexCount] = useState(0);
@@ -15207,10 +15208,22 @@ function AppInner() {
   const unreadCount = notifs.length;
 
   function navigate(screenId, favoriItem) {
+    setScreenHistory(h => screen === "home" ? [] : [...h, screen]);
     setScreen(screenId);
     setDeepLink(favoriItem ? favoriItem.id : null);
     setNavVersion(v => v + 1);
     setNotifOpen(false);
+  }
+
+  function goBack() {
+    if (screenHistory.length > 0) {
+      const prev = screenHistory[screenHistory.length - 1];
+      setScreenHistory(h => h.slice(0, -1));
+      setScreen(prev);
+      setNavVersion(v => v + 1);
+    } else {
+      navigate("home");
+    }
   }
 
   useEffect(()=>{
@@ -15262,15 +15275,21 @@ function AppInner() {
       {/* Barre du haut — tous écrans */}
       <div style={{background:theme.navy, padding:"8px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0, transition:"background .25s"}}>
         <div style={{display:"flex", alignItems:"center", gap:10}}>
-          {/* Logo en entier dans la topbar */}
-          <div style={{width:54, height:34, borderRadius:8, overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(255,255,255,.07)"}}>
-            <img src={LOGO_HOSP} alt="Urgences SMUR Aubagne"
-              style={{width:"100%", height:"100%", objectFit:"contain", opacity:0.95}}/>
-          </div>
-          <div>
-            <div style={{color:"#fff", fontSize:13, fontWeight:800, lineHeight:1.15, letterSpacing:-0.2}}>SAU / SMUR Aubagne</div>
-            <div style={{color:"rgba(255,255,255,.55)", fontSize:9.5, fontWeight:600, letterSpacing:0.4}}>CH Edmond Garcin</div>
-          </div>
+          {/* Logo cliquable → accueil */}
+          <button onClick={()=>navigate("home")} style={{
+            display:"flex", alignItems:"center", gap:10,
+            background:"none", border:"none", cursor:"pointer", padding:0,
+            WebkitTapHighlightColor:"transparent",
+          }}>
+            <div style={{width:54, height:34, borderRadius:8, overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:"rgba(255,255,255,.07)"}}>
+              <img src={LOGO_HOSP} alt="Urgences SMUR Aubagne"
+                style={{width:"100%", height:"100%", objectFit:"contain", opacity:0.95}}/>
+            </div>
+            <div>
+              <div style={{color:"#fff", fontSize:13, fontWeight:800, lineHeight:1.15, letterSpacing:-0.2}}>SAU / SMUR Aubagne</div>
+              <div style={{color:"rgba(255,255,255,.55)", fontSize:9.5, fontWeight:600, letterSpacing:0.4}}>CH Edmond Garcin</div>
+            </div>
+          </button>
         </div>
         <div style={{display:"flex", alignItems:"center", gap:10}}>
           {/* Toggle Nuit / Jour */}
@@ -15316,7 +15335,18 @@ function AppInner() {
         </div>
       </div>
 
-      <div ref={contentRef} data-content-scroll style={{flex:1, padding:"16px 16px 90px", overflowY:"auto", background:theme.bg, transition:"background .25s"}}>
+      <div ref={contentRef} data-content-scroll
+        style={{flex:1, padding:"16px 16px 90px", overflowY:"auto", background:theme.bg, transition:"background .25s"}}
+        onTouchStart={e => { contentRef.current._swipeX = e.touches[0].clientX; contentRef.current._swipeY = e.touches[0].clientY; }}
+        onTouchEnd={e => {
+          const dx = e.changedTouches[0].clientX - (contentRef.current._swipeX || 0);
+          const dy = e.changedTouches[0].clientY - (contentRef.current._swipeY || 0);
+          // Swipe horizontal > 80px et plus horizontal que vertical → goBack
+          if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            if (dx > 0 && screen !== "home") goBack(); // swipe droite = retour
+          }
+        }}
+      >
         {screen==="home"       && <HomeScreen onNav={navigate}/>}
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
         {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
