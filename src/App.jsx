@@ -2792,54 +2792,32 @@ function GestesScreen({ deepLinkId, onBack }) {
         )}
       </div>
 
-      {/* Chips de catégories — scroll horizontal */}
-      <div style={{
-        display: "flex",
-        gap: 6,
-        marginBottom: 16,
-        overflowX: "auto",
-        scrollbarWidth: "none",
-        msOverflowStyle: "none",
-        WebkitOverflowScrolling: "touch",
-        paddingBottom: 4,
-      }}>
+      {/* Catégories — grille compacte sans scroll */}
+      <div style={{display:"grid", gridTemplateColumns:"repeat(5, 1fr)", gap:4, marginBottom:12}}>
         {GESTES_CATEGORIES.map(cat => {
           const count = cat.id === "all" ? allGestes.length : (categoryCounts[cat.id] || 0);
           if (cat.id !== "all" && count === 0) return null;
           const active = selectedCategory === cat.id;
           return (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              style={{
-                flexShrink: 0,
-                background: active ? cat.color : C.white,
-                color: active ? "#fff" : C.text,
-                border: `1.5px solid ${active ? cat.color : C.border}`,
-                borderRadius: 18,
-                padding: "7px 12px",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                touchAction: "manipulation",
-                transition: "all .15s",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <span style={{fontSize: 13}}>{cat.icon}</span>
-              <span>{cat.label}</span>
-              <span style={{
-                background: active ? "rgba(255,255,255,.25)" : C.border,
-                color: active ? "#fff" : C.sub,
-                fontSize: 10,
-                fontWeight: 800,
-                padding: "1px 6px",
-                borderRadius: 9,
-                marginLeft: 2,
-              }}>{count}</span>
+            <button key={cat.id} onClick={() => setSelectedCategory(cat.id)} style={{
+              border: `1.5px solid ${active ? cat.color : C.border}`,
+              borderRadius: 8,
+              padding: "5px 2px",
+              cursor: "pointer",
+              background: active ? cat.color : C.white,
+              color: active ? "#fff" : C.sub,
+              fontWeight: 700,
+              fontSize: 9,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 1,
+              transition: "all .15s",
+              lineHeight: 1.2,
+              touchAction: "manipulation",
+            }}>
+              <span style={{fontSize:13}}>{cat.icon}</span>
+              <span style={{fontSize:9}}>{cat.label}</span>
             </button>
           );
         })}
@@ -13803,6 +13781,192 @@ function YearsEpCalculator({ onBack }) {
   );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// SpesiCalculator : sPESI — simplified Pulmonary Embolism Severity Index
+// Jiménez et al., Arch Intern Med 2010
+// 6 critères binaires → score 0 (faible risque) ou ≥1 (risque élevé)
+// Stratification risque ESC 2019 : faible / intermédiaire-faible / intermédiaire-élevé / élevé
+// ────────────────────────────────────────────────────────────────────────────
+function SpesiCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#BE123C";
+
+  const ITEMS = [
+    { key:"age",      points:1, label:"Âge > 80 ans" },
+    { key:"cancer",   points:1, label:"Cancer actif" },
+    { key:"cardio",   points:1, label:"Insuffisance cardiopulmonaire chronique",
+      help:"IC chronique OU maladie cardiopulmonaire chronique" },
+    { key:"fc",       points:1, label:"Fréquence cardiaque ≥ 110 bpm" },
+    { key:"tas",      points:1, label:"TAS < 100 mmHg" },
+    { key:"spo2",     points:1, label:"SpO₂ < 90%" },
+  ];
+
+  const [scores, setScores] = React.useState({});
+  const toggle = key => setScores(s => ({ ...s, [key]: !s[key] }));
+  const reset = () => setScores({});
+
+  const total = Object.entries(scores).filter(([,v])=>v).reduce((acc,[k])=> {
+    const item = ITEMS.find(i=>i.key===k);
+    return acc + (item ? item.points : 0);
+  }, 0);
+
+  const allAnswered = ITEMS.every(i => i.key in scores);
+
+  // Stratification sPESI
+  const strat = total === 0
+    ? { label:"Risque faible", detail:"Mortalité à 30j < 1%", color:"#16A34A", bg:"#F0FDF4",
+        icon:"✅", reco:"Envisager traitement ambulatoire (critères Hestia à vérifier)" }
+    : { label:"Risque élevé", detail:"Mortalité à 30j ≈ 10,9%", color:"#DC2626", bg:"#FEF2F2",
+        icon:"🔴", reco:"Hospitalisation — évaluer la fonction VD (ETT, troponine, BNP)" };
+
+  // Stratification risque ESC 2019
+  const ESC_RISK = [
+    { label:"Faible risque",                color:"#16A34A", bg:"#F0FDF4",
+      crit:"sPESI = 0 + pas dysfonction VD + biomarqueurs négatifs",
+      conduite:"Sortie précoce / ambulatoire (si critères sociaux OK)" },
+    { label:"Intermédiaire-faible",          color:"#CA8A04", bg:"#FEFCE8",
+      crit:"sPESI ≥ 1 + pas dysfonction VD + biomarqueurs négatifs",
+      conduite:"Hospitalisation courte — anticoagulation, surveillance" },
+    { label:"Intermédiaire-élevé",           color:"#EA580C", bg:"#FFF7ED",
+      crit:"sPESI ≥ 1 + dysfonction VD (ETT ou TDM) + biomarqueurs positifs",
+      conduite:"Hospitalisation — surveiller évolution, thrombolyse de sauvetage si état se dégrade" },
+    { label:"Risque élevé (EP massive)",     color:"#991B1B", bg:"#FEF2F2",
+      crit:"Choc ou hypotension (TAS < 90 mmHg ou chute ≥ 40 mmHg)",
+      conduite:"Thrombolyse systémique en urgence ou embolectomie — réa" },
+  ];
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer",
+          fontSize:22, padding:"4px 8px", borderRadius:8, color:C.text}}>←</button>
+        <div style={{background:"#FFE4E6", borderRadius:14, width:48, height:48,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:26}}>🫀</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Score sPESI</div>
+          <div style={{fontSize:12, color:C.sub}}>Stratification du risque — Embolie Pulmonaire</div>
+        </div>
+      </div>
+
+      {/* Intro */}
+      <div style={{background:"#FFE4E6", border:"1px solid #FECDD3", borderRadius:12,
+        padding:"10px 14px", marginBottom:18, fontSize:11, color:"#9F1239", lineHeight:1.6}}>
+        <strong>sPESI</strong> (simplified PESI) : 6 critères binaires (0/1 pt chacun).
+        Score <strong>0 = risque faible</strong> · Score <strong>≥ 1 = risque élevé</strong>
+      </div>
+
+      {/* Score total */}
+      <div style={{
+        background: total === 0 && allAnswered ? "#F0FDF4" : total >= 1 ? "#FEF2F2" : C.bg,
+        border: `2px solid ${total === 0 && allAnswered ? "#22C55E" : total >= 1 ? COLOR : C.border}`,
+        borderRadius:16, padding:"12px 16px", marginBottom:18,
+        display:"flex", alignItems:"center", gap:14
+      }}>
+        <div style={{
+          fontSize:42, fontWeight:900, lineHeight:1,
+          color: total === 0 && allAnswered ? "#16A34A" : total >= 1 ? COLOR : C.sub,
+          minWidth:52, textAlign:"center"
+        }}>{total}</div>
+        <div>
+          {allAnswered ? (
+            <>
+              <div style={{fontSize:15, fontWeight:800, color: strat.color}}>{strat.icon} {strat.label}</div>
+              <div style={{fontSize:11, color: strat.color, marginTop:2}}>{strat.detail}</div>
+            </>
+          ) : (
+            <div style={{fontSize:13, color:C.sub}}>Répondez à tous les critères</div>
+          )}
+        </div>
+      </div>
+
+      {/* Critères */}
+      <div style={{display:"flex", flexDirection:"column", gap:8, marginBottom:16}}>
+        {ITEMS.map(item => {
+          const checked = !!scores[item.key];
+          const answered = item.key in scores;
+          return (
+            <div key={item.key}
+              onClick={() => toggle(item.key)}
+              style={{
+                display:"flex", alignItems:"flex-start", gap:12,
+                background: checked ? "#FFF1F2" : answered ? "#F8FAFC" : C.white,
+                border: `1.5px solid ${checked ? COLOR : answered ? "#E2E8F0" : C.border}`,
+                borderRadius:12, padding:"12px 14px", cursor:"pointer",
+                transition:"all .15s", userSelect:"none",
+              }}>
+              <div style={{
+                width:24, height:24, borderRadius:6, flexShrink:0, marginTop:1,
+                border: `2px solid ${checked ? COLOR : C.border}`,
+                background: checked ? COLOR : C.white,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                transition:"all .15s",
+              }}>
+                {checked && <span style={{color:"#fff", fontSize:14, fontWeight:900}}>✓</span>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13, fontWeight:700, color: checked ? COLOR : C.text}}>
+                  {item.label}
+                  <span style={{
+                    marginLeft:8, background: checked ? COLOR : "#E2E8F0",
+                    color: checked ? "#fff" : C.sub,
+                    fontSize:10, fontWeight:800, padding:"1px 6px", borderRadius:8,
+                  }}>+{item.points}</span>
+                </div>
+                {item.help && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{item.help}</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Recommandation */}
+      {allAnswered && (
+        <div style={{background: strat.bg, border:`2px solid ${strat.color}30`,
+          borderRadius:14, padding:"12px 16px", marginBottom:18}}>
+          <div style={{fontSize:12, fontWeight:800, color:strat.color, marginBottom:4}}>
+            💡 Conduite à tenir
+          </div>
+          <div style={{fontSize:13, color:C.text, lineHeight:1.6}}>{strat.reco}</div>
+        </div>
+      )}
+
+      {/* Reset */}
+      <button onClick={reset} style={{
+        width:"100%", background:C.white, border:`1.5px solid ${C.border}`,
+        borderRadius:12, padding:"11px 16px", fontSize:13, fontWeight:700,
+        color:C.sub, cursor:"pointer", marginBottom:20,
+      }}>↺ Réinitialiser</button>
+
+      {/* Table stratification ESC 2019 */}
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:12, fontWeight:800, color:C.text, marginBottom:10,
+          textTransform:"uppercase", letterSpacing:.5}}>
+          Stratification du risque ESC 2019
+        </div>
+        {ESC_RISK.map((r,i) => (
+          <div key={i} style={{
+            background:r.bg, border:`1px solid ${r.color}40`,
+            borderLeft:`4px solid ${r.color}`,
+            borderRadius:12, padding:"10px 14px", marginBottom:8,
+          }}>
+            <div style={{fontSize:13, fontWeight:800, color:r.color, marginBottom:4}}>{r.label}</div>
+            <div style={{fontSize:11, color:C.text, marginBottom:3}}><strong>Critères :</strong> {r.crit}</div>
+            <div style={{fontSize:11, color:C.sub}}>→ {r.conduite}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Référence */}
+      <div style={{background:C.bg, borderRadius:10, padding:"10px 12px", fontSize:10, color:C.sub, lineHeight:1.7}}>
+        <strong>Réf :</strong> Jiménez D. et al., Arch Intern Med 2010 · Konstantinides SV. et al., ESC Guidelines 2019<br/>
+        <strong>Performances :</strong> Sensibilité 97% pour identifier risque faible · Spécificité 51,5%<br/>
+        <strong>⚠️ Limites :</strong> Ne s'applique qu'après confirmation diagnostique de l'EP (angioTDM ou scintigraphie)
+      </div>
+    </div>
+  );
+}
+
 const SCORES_LIST = [
   {
     id: "glasgow",
@@ -13815,7 +13979,7 @@ const SCORES_LIST = [
   },
   {
     id: "shock-index",
-    category: "urg",
+    category: "autres",
     title: "Shock Index",
     subtitle: "Indice de choc (FC / PAS)",
     icon: "🫀",
@@ -13869,7 +14033,7 @@ const SCORES_LIST = [
   },
   {
     id: "news2",
-    category: "urg",
+    category: "autres",
     title: "NEWS2",
     subtitle: "National Early Warning Score 2 — surveillance hospitalière",
     icon: "🚨",
@@ -13878,7 +14042,7 @@ const SCORES_LIST = [
   },
   {
     id: "parkland",
-    category: "urg",
+    category: "autres",
     title: "Parkland (brûlé grave)",
     subtitle: "Remplissage adulte – SCB > 10–20%",
     icon: "🔥",
@@ -13905,7 +14069,7 @@ const SCORES_LIST = [
   },
   {
     id: "geneve-ep",
-    category: "respi",
+    category: "cardio",
     title: "Score de Genève (EP)",
     subtitle: "Probabilité clinique d'embolie pulmonaire",
     icon: "🫁",
@@ -13923,7 +14087,7 @@ const SCORES_LIST = [
   },
   {
     id: "gbs",
-    category: "urg",
+    category: "autres",
     title: "Glasgow-Blatchford (GBS)",
     subtitle: "Hémorragie digestive haute – tri SAU",
     icon: "🩸",
@@ -13950,7 +14114,7 @@ const SCORES_LIST = [
   },
   {
     id: "batt",
-    category: "urg",
+    category: "autres",
     title: "BATT score",
     subtitle: "Risque hémorragique – traumatisé",
     icon: "🚑",
@@ -13995,7 +14159,7 @@ const SCORES_LIST = [
   },
   {
     id: "surface-brulee",
-    category: "urg",
+    category: "autres",
     title: "Surface Brûlée",
     subtitle: "Règle des 9 de Wallace — adulte & enfant",
     icon: "🔥",
@@ -14004,24 +14168,31 @@ const SCORES_LIST = [
   },
   {
     id: "years-ep",
-    category: "respi",
+    category: "cardio",
     title: "Score YEARS",
     subtitle: "Algorithme EP — D-dimères à seuil adapté",
     icon: "🫁",
     color: "#0891B2",
     tags: ["#EP", "#embolie", "#D-dimères", "#dyspnée", "#thrombose", "#YEARS"],
   },
+  {
+    id: "spesi",
+    category: "cardio",
+    title: "sPESI",
+    subtitle: "Embolie pulmonaire — stratification du risque",
+    icon: "🫀",
+    color: "#BE123C",
+    tags: ["#EP", "#embolie", "#risque", "#mortalité", "#sPESI", "#PESI"],
+  },
 ];
 
 const SCORES_CATEGORIES = [
-  { id:"all",    label:"Tous",        icon:"📋", color:"#0D9488" },
-  { id:"urg",    label:"Urgences",    icon:"🚨", color:"#DC2626" },
-  { id:"cardio", label:"Cardio",      icon:"❤️", color:"#2563EB" },
-  { id:"respi",  label:"Respiratoire", icon:"🫁", color:"#0284C7" },
-  { id:"neuro",  label:"Neuro",       icon:"🧠", color:"#9B59B6" },
-  { id:"infect", label:"Infectieux",  icon:"🦠", color:"#EA580C" },
-  { id:"pedia",  label:"Pédiatrie",   icon:"👶", color:"#EC4899" },
-  { id:"autres", label:"Autres",      icon:"⚙️", color:"#6B7280" },
+  { id:"all",    label:"Tous",      icon:"📋", color:"#0D9488" },
+  { id:"cardio", label:"Cardio",    icon:"❤️", color:"#2563EB" },
+  { id:"respi",  label:"Respi",     icon:"🫁", color:"#0284C7" },
+  { id:"neuro",  label:"Neuro",     icon:"🧠", color:"#9B59B6" },
+  { id:"pedia",  label:"Pédiatrie", icon:"👶", color:"#EC4899" },
+  { id:"autres", label:"Autres",    icon:"⚙️", color:"#6B7280" },
 ];
 
 // ── QuizQuestionEditor : éditeur d'une question (récursif pour cas cliniques) ─
@@ -15061,6 +15232,7 @@ function ScoresScreen({ deepLinkId, onBack }) {
     if (selected.id === "news2") return <NewsCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "surface-brulee") return <SurfaceBruleeCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "years-ep") return <YearsEpCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "spesi") return <SpesiCalculator onBack={() => setSelected(null)}/>;
     // Les autres calculateurs seront branchés ici un par un
     return (
       <div>
@@ -15100,23 +15272,31 @@ function ScoresScreen({ deepLinkId, onBack }) {
         </div>
       </div>
 
-      {/* Filtres catégories */}
-      <div style={{display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:4, scrollbarWidth:"none"}}>
+      {/* Filtres catégories — ligne compacte sans scroll */}
+      <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:4, marginBottom:12}}>
         {SCORES_CATEGORIES.map(cat => {
           const count = cat.id === "all" ? SCORES_LIST.length : SCORES_LIST.filter(s => s.category === cat.id).length;
           if (cat.id !== "all" && count === 0) return null;
+          const active = selectedCat === cat.id;
           return (
             <button key={cat.id} onClick={() => setSelectedCat(cat.id)} style={{
-              flexShrink:0, border:"none", borderRadius:18, padding:"6px 12px", cursor:"pointer",
-              background: selectedCat === cat.id ? cat.color : C.white,
-              color: selectedCat === cat.id ? "#fff" : C.sub,
-              fontWeight: 700, fontSize: 11, whiteSpace:"nowrap",
-              border:`1px solid ${selectedCat === cat.id ? cat.color : C.border}`,
-              display:"flex", alignItems:"center", gap:4,
+              border: `1.5px solid ${active ? cat.color : C.border}`,
+              borderRadius: 8,
+              padding: "5px 2px",
+              cursor: "pointer",
+              background: active ? cat.color : C.white,
+              color: active ? "#fff" : C.sub,
+              fontWeight: 700,
+              fontSize: 9,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 1,
+              transition: "all .15s",
+              lineHeight: 1.2,
             }}>
-              <span>{cat.icon}</span>
-              <span>{cat.label}</span>
-              <span style={{opacity:.7, fontSize:10}}>({count})</span>
+              <span style={{fontSize:13}}>{cat.icon}</span>
+              <span style={{fontSize:9}}>{cat.label}</span>
             </button>
           );
         })}
