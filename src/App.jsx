@@ -227,17 +227,107 @@ function DataProvider({ children }) {
     return items;
   }
 
-  // ── Cache localStorage offline ──────────────────────────────────────────
+  // ── Cache offline (IndexedDB pour les images, localStorage pour les données) ──
   const LS_KEY = "sau_offline_cache";
+  const IDB_NAME = "sau_media_cache";
+  const IDB_STORE = "images";
+
+  // IndexedDB helpers
+  function openIDB() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+      req.onsuccess = e => res(e.target.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+  async function idbSet(key, value) {
+    try {
+      const db = await openIDB();
+      return new Promise((res, rej) => {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put(value, key);
+        tx.oncomplete = () => res();
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch(e) {}
+  }
+  async function idbGet(key) {
+    try {
+      const db = await openIDB();
+      return new Promise((res) => {
+        const req = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(key);
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => res(null);
+      });
+    } catch(e) { return null; }
+  }
+
+  // Télécharger une URL Supabase Storage et la convertir en base64
+  async function fetchToBase64(url) {
+    if (!url) return null;
+    // Si c'est déjà du base64, on ne retélécharge pas
+    if (url.startsWith("data:")) return url;
+    // Construire l'URL complète si nécessaire
+    const fullUrl = url.startsWith("http") ? url
+      : `${SUPA_URL}/storage/v1/object/public/sau-media/${url}`;
+    try {
+      const res = await fetch(fullUrl, {
+        headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + SUPA_KEY }
+      });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch(e) { return null; }
+  }
+
+  // Mettre en cache toutes les images d'une liste d'items
+  async function cacheItemImages(items, fields = ["image"]) {
+    if (!items?.length) return items;
+    return Promise.all(items.map(async item => {
+      const copy = { ...item };
+      // Images principales
+      for (const field of fields) {
+        const urlF = field + "Url";
+        const dataF = field + "Data";
+        if (copy[urlF] && !copy[dataF]) {
+          const cached = await idbGet(copy[urlF]);
+          if (cached) {
+            copy[dataF] = cached;
+          } else {
+            const b64 = await fetchToBase64(copy[urlF]);
+            if (b64) { copy[dataF] = b64; await idbSet(copy[urlF], b64); }
+          }
+        }
+      }
+      // Médias attachés
+      if (copy.medias?.length) {
+        copy.medias = await Promise.all(copy.medias.map(async m => {
+          if (!m.url || m.data || m.isVideo) return m;
+          const cached = await idbGet(m.url);
+          if (cached) return { ...m, data: cached };
+          const b64 = await fetchToBase64(m.url);
+          if (b64) { await idbSet(m.url, b64); return { ...m, data: b64 }; }
+          return m;
+        }));
+      }
+      return copy;
+    }));
+  }
+
   function saveOfflineCache(data) {
     try {
-      // On ne stocke que les données légères (pas les imageData base64)
       const slim = {};
       for (const [k, v] of Object.entries(data)) {
-        if (k === "loaded") continue;
+        if (k === "loaded" || k === "fromCache") continue;
         slim[k] = Array.isArray(v) ? v.map(item => {
           const copy = { ...item };
-          // On garde imageUrl mais on retire les gros base64 du cache offline
+          // On retire les base64 du localStorage (trop lourds) — ils sont dans IndexedDB
           delete copy.imageData; delete copy.imageData2;
           delete copy.schemaData; delete copy.photoData;
           if (copy.medias) copy.medias = copy.medias.map(m => ({ ...m, data: undefined }));
@@ -254,7 +344,7 @@ function DataProvider({ children }) {
       if (!raw) return null;
       const data = JSON.parse(raw);
       const age = Date.now() - (data.ts || 0);
-      if (age > 7 * 24 * 3600 * 1000) return null; // expire après 7 jours
+      if (age > 7 * 24 * 3600 * 1000) return null;
       return data;
     } catch(e) { return null; }
   }
@@ -263,10 +353,33 @@ function DataProvider({ children }) {
     const next = { loaded: false };
     const isOnline = navigator.onLine;
 
-    // Si hors ligne → charger depuis le cache localStorage
+    // Si hors ligne → charger depuis le cache localStorage + images depuis IndexedDB
     if (!isOnline) {
       const cache = loadOfflineCache();
       if (cache) {
+        // Réinjecter les images depuis IndexedDB
+        for (const key of ["gestes", "dilutions", "ecgs", "imagerie", "divers"]) {
+          if (cache[key]) {
+            cache[key] = await Promise.all(cache[key].map(async item => {
+              const copy = { ...item };
+              for (const f of ["image", "schema", "photo"]) {
+                const urlF = f + "Url";
+                const dataF = f + "Data";
+                if (copy[urlF] && !copy[dataF]) {
+                  copy[dataF] = await idbGet(copy[urlF]) || null;
+                }
+              }
+              if (copy.medias?.length) {
+                copy.medias = await Promise.all(copy.medias.map(async m => {
+                  if (!m.url || m.data || m.isVideo) return m;
+                  const data = await idbGet(m.url);
+                  return data ? { ...m, data } : m;
+                }));
+              }
+              return copy;
+            }));
+          }
+        }
         Object.assign(next, cache);
         next.loaded = true;
         next.fromCache = true;
@@ -308,8 +421,21 @@ function DataProvider({ children }) {
     next.loaded = true;
     setStore(next);
 
-    // Sauvegarder en cache offline
+    // Sauvegarder en cache offline (données textuelles)
     saveOfflineCache(next);
+
+    // Mise en cache des images en arrière-plan — priorité Gestes + Dilutions
+    (async () => {
+      try {
+        const [g, d, e, i] = await Promise.all([
+          cacheItemImages(next.gestes, ["image"]),
+          cacheItemImages(next.dilutions, ["schema", "photo"]),
+          cacheItemImages(next.ecgs, ["image"]),
+          cacheItemImages(next.imagerie, ["image"]),
+        ]);
+        setStore(prev => ({ ...prev, gestes: g, dilutions: d, ecgs: e, imagerie: i }));
+      } catch(e) {}
+    })();
   }
 
   async function save(key, storeKey, items, stripFields = []) {
