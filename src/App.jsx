@@ -227,8 +227,53 @@ function DataProvider({ children }) {
     return items;
   }
 
+  // ── Cache localStorage offline ──────────────────────────────────────────
+  const LS_KEY = "sau_offline_cache";
+  function saveOfflineCache(data) {
+    try {
+      // On ne stocke que les données légères (pas les imageData base64)
+      const slim = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (k === "loaded") continue;
+        slim[k] = Array.isArray(v) ? v.map(item => {
+          const copy = { ...item };
+          // On garde imageUrl mais on retire les gros base64 du cache offline
+          delete copy.imageData; delete copy.imageData2;
+          delete copy.schemaData; delete copy.photoData;
+          if (copy.medias) copy.medias = copy.medias.map(m => ({ ...m, data: undefined }));
+          return copy;
+        }) : v;
+      }
+      localStorage.setItem(LS_KEY, JSON.stringify({ ...slim, ts: Date.now() }));
+    } catch(e) {}
+  }
+
+  function loadOfflineCache() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      const age = Date.now() - (data.ts || 0);
+      if (age > 7 * 24 * 3600 * 1000) return null; // expire après 7 jours
+      return data;
+    } catch(e) { return null; }
+  }
+
   async function loadAll() {
     const next = { loaded: false };
+    const isOnline = navigator.onLine;
+
+    // Si hors ligne → charger depuis le cache localStorage
+    if (!isOnline) {
+      const cache = loadOfflineCache();
+      if (cache) {
+        Object.assign(next, cache);
+        next.loaded = true;
+        next.fromCache = true;
+        setStore(next);
+        return;
+      }
+    }
 
     const re = await safeGet("admin_ecgs");
     next.ecgs = re ? await loadFiles(JSON.parse(re.value), ["image"]) : [];
@@ -262,6 +307,9 @@ function DataProvider({ children }) {
 
     next.loaded = true;
     setStore(next);
+
+    // Sauvegarder en cache offline
+    saveOfflineCache(next);
   }
 
   async function save(key, storeKey, items, stripFields = []) {
@@ -15369,6 +15417,22 @@ export default function App() {
 function AppInner() {
   const [screen, setScreen] = useState("home");
   const [screenHistory, setScreenHistory] = useState([]);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  React.useEffect(() => {
+    const on  = () => setIsOnline(true);
+    const off = () => setIsOnline(false);
+    window.addEventListener("online",  on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
+  // Enregistrement du Service Worker
+  React.useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+  }, []);
   const [deepLink, setDeepLink] = useState(null);
   const [navVersion, setNavVersion] = useState(0);
   const [retexCount, setRetexCount] = useState(0);
@@ -15514,6 +15578,16 @@ function AppInner() {
           </div>
         </div>
       </div>
+
+      {/* Bandeau hors-ligne */}
+      {!isOnline && (
+        <div style={{background:"#F59E0B", padding:"6px 16px", textAlign:"center",
+          fontSize:11, fontWeight:700, color:"#fff", flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center", gap:6}}>
+          <span>📵</span>
+          Mode hors ligne — données mises en cache · Gestes &amp; Dilutions disponibles
+        </div>
+      )}
 
       <div ref={contentRef} data-content-scroll
         style={{flex:1, padding:"16px 16px 90px", overflowY:"auto", background:theme.bg, transition:"background .25s"}}
