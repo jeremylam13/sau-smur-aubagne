@@ -54,8 +54,17 @@ function rowToItem(table, row) {
   if ("photo_url"   in r) { r.photoUrl   = r.photo_url;   delete r.photo_url; }
   if ("photo_data"  in r) { r.photoData  = r.photo_data;  delete r.photo_data; }
   if ("credit_photo" in r) { r.creditPhoto = r.credit_photo; delete r.credit_photo; }
-  if ("nom_commercial" in r) { r.nomCommercial = r.nom_commercial; delete r.nom_commercial; }
-  if ("dilution_standard" in r) { r.dilutionStandard = r.dilution_standard; delete r.dilution_standard; }
+  if ("nom_commercial"      in r) { r.nomCommercial      = r.nom_commercial;      delete r.nom_commercial; }
+  if ("dilution_standard"   in r) { r.dilutionStandard   = r.dilution_standard;   delete r.dilution_standard; }
+  if ("conditionnement"     in r) { r.conditionnement     = r.conditionnement; }
+  if ("mecanisme_action"    in r) { r.mecanismeAction     = r.mecanisme_action;    delete r.mecanisme_action; }
+  if ("contre_indications"  in r) { r.contreIndications   = r.contre_indications;  delete r.contre_indications; }
+  if ("pharmacocinetique"   in r) { r.pharmacocinetique   = r.pharmacocinetique; }
+  if ("posologie"           in r) { r.posologie           = r.posologie; }
+  if ("effets_indesirables" in r) { r.effetsIndesirables  = r.effets_indesirables; delete r.effets_indesirables; }
+  if ("surveillance"        in r) { r.surveillance        = r.surveillance; }
+  if ("antidote"            in r) { r.antidote            = r.antidote; }
+  if ("interactions"        in r) { r.interactions        = r.interactions; }
   if ("has_second_ecg" in r) { r.hasSecondEcg = r.has_second_ecg; delete r.has_second_ecg; }
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("has_second_image" in r) { r.hasSecondImage = r.has_second_image; delete r.has_second_image; }
@@ -1687,7 +1696,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
   });
   const [saving, setSaving] = useState(false);
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmed, setConfirmed] = useState(!!initial); // pré-coché en mode édition
 
   const CATS = ["Réanimation","Cardiologie","Neurologie","Traumatologie","SMUR","Pédiatrie","Toxicologie","Infectiologie","Autre"];
 
@@ -2050,7 +2059,6 @@ function RetexScreen({ deepLinkId, onBack }) {
     const tags = (form.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...editing, ...form, tags};
     await updateRetex(item);
-    setSelected(item);
     return item;
   }
 
@@ -2104,8 +2112,8 @@ function RetexScreen({ deepLinkId, onBack }) {
   if(editing) return (
     <RetexSubmitForm
       initial={editing}
-      onSubmit={async (form)=>{ await submitEdit(form); setEditing(null); }}
-      onCancel={()=>setEditing(null)}
+      onSubmit={async (form)=>{ const updated = await submitEdit(form); setEditing(null); setSelected(updated?.id ?? null); }}
+      onCancel={()=>{ setEditing(null); }}
     />
   );
 
@@ -2123,7 +2131,7 @@ function RetexScreen({ deepLinkId, onBack }) {
       onReaction={toggleReaction}
       onComment={addComment}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
-      onEdit={(it)=>{ setEditing(it); }}
+      onEdit={(it)=>{ setSelected(null); setEditing(it); }}
     />
   );
 
@@ -3545,14 +3553,22 @@ function DilutionScreen({ deepLinkId, onBack }) {
   ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   if(selected) {
+    // 9 rubriques pédagogiques — ordre logique de lecture clinique
     const sections = [
-      { key:"presentation",    label:"Présentation",          icon:"💊", color:C.navy },
-      { key:"indication",      label:"Indications",            icon:"🎯", color:C.amber },
-      { key:"dilutionStandard",label:"Dilution standard",      icon:"🧪", color:C.blue },
-      { key:"administration",  label:"Administration",         icon:"🩺", color:C.red },
+      { key:"presentation",      label:"Présentation",          icon:"💊", color:C.navy },
+      { key:"mecanismeAction",   label:"Mécanisme d'action",   icon:"⚗️", color:"#7C3AED" },
+      { key:"indication",        label:"Indications",           icon:"🎯", color:C.amber },
+      { key:"contreIndications", label:"Contre-indications",    icon:"🚫", color:C.red },
+      { key:"pharmacocinetique", label:"Pharmacocinétique",     icon:"📈", color:"#0891B2" },
+      { key:"posologie",         label:"Posologie",             icon:"⚖️", color:"#059669" },
+      { key:"dilutionStandard",  label:"Dilution & administration", icon:"🧪", color:C.blue },
+      { key:"effetsIndesirables",label:"Effets indésirables",   icon:"⚠️", color:"#D97706" },
+      { key:"surveillance",      label:"Surveillance",          icon:"👁️", color:"#0D9488" },
+      { key:"antidote",          label:"Antidote / Antagoniste",icon:"🛡️", color:"#16A34A" },
+      { key:"interactions",      label:"Interactions majeures", icon:"🔗", color:"#9333EA" },
       // Rétrocompatibilité anciens champs
-      { key:"debitDepart",     label:"Débit de départ",       icon:"⏱️", color:C.green },
-      { key:"voieAdmin",       label:"Voie d'administration",  icon:"🩺", color:C.red },
+      { key:"debitDepart",       label:"Débit de départ",       icon:"⏱️", color:C.green },
+      { key:"voieAdmin",         label:"Voie d'administration", icon:"🩺", color:C.red },
     ];
 
     return (
@@ -3769,7 +3785,7 @@ function AdminScreen({ onNewItem, onBack }) {
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
-  const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
+  const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
@@ -3913,12 +3929,12 @@ function AdminScreen({ onNewItem, onBack }) {
     if(editingDil !== null) {
       const item = {...dilForm, id:editingDil, tags, color:dilForm.color||"#E05260"};
       await updateItem("dilutions","admin_dilutions",item,["schema","photo"]);
-      setEditingDil(null); setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",indication:"",dilutionStandard:"",administration:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      setEditingDil(null); setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution modifiée !");
     } else {
       const item = {...dilForm, id:Date.now(), tags, color:dilForm.color||"#E05260"};
       await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
-      setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",indication:"",dilutionStandard:"",administration:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
@@ -4046,6 +4062,61 @@ function AdminScreen({ onNewItem, onBack }) {
               <div style={{fontSize:12, color:C.sub}}>Sélectionner un module à éditer</div>
             </div>
           </div>
+
+          {/* ── Récapitulatif des 3 derniers ajouts ── */}
+          {(() => {
+            const all = [
+              ...(store.ecgs||[]).map(x=>({ title:x.title, module:"ECG", icon:"❤️", color:"#E05260", bg:"#FEE2E2", id:"ecg", ts:x.created_at })),
+              ...(store.imagerie||[]).map(x=>({ title:x.title, module:"Imagerie", icon:"🩻", color:"#9B59B6", bg:"#F3E8FF", id:"imagerie", ts:x.created_at })),
+              ...(store.dilutions||[]).map(x=>({ title:x.title, module:"Dilutions", icon:"💉", color:"#E05260", bg:"#FEE2E2", id:"dilutions", ts:x.created_at })),
+              ...(store.gestes||[]).map(x=>({ title:x.title, module:"Gestes", icon:"✂️", color:"#C0392B", bg:"#FEE2E2", id:"gestes", ts:x.created_at })),
+              ...(store.retex||[]).map(x=>({ title:x.title, module:"RETEX", icon:"🔬", color:"#2E9E6B", bg:"#D1FAE5", id:"retex", ts:x.created_at })),
+              ...(store.agenda||[]).map(x=>({ title:x.title, module:"Agenda", icon:"📅", color:"#1A73E8", bg:"#DBEAFE", id:"agenda", ts:x.created_at })),
+              ...(store.divers||[]).map(x=>({ title:x.title, module:"Divers", icon:"⚡", color:"#1A3A5C", bg:"#EFF6FF", id:"divers", ts:x.created_at })),
+              ...(store.contacts||[]).map(x=>({ title:`${x.nom||""} ${x.prenom||""}`.trim()||"Contact", module:"Contacts", icon:"📒", color:"#1A3A5C", bg:"#F0FDF4", id:"annuaire", ts:x.created_at })),
+            ]
+            .filter(x => x.ts)
+            .sort((a,b) => new Date(b.ts) - new Date(a.ts))
+            .slice(0,3);
+
+            if (!all.length) return null;
+
+            return (
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:8,
+                  textTransform:"uppercase", letterSpacing:.5}}>
+                  Derniers ajouts
+                </div>
+                <div style={{display:"flex", flexDirection:"column", gap:7}}>
+                  {all.map((item, i) => (
+                    <button key={i} onClick={()=>setTab(item.id)}
+                      style={{display:"flex", alignItems:"center", gap:10,
+                        background:C.white, border:`1.5px solid ${C.border}`,
+                        borderRadius:12, padding:"10px 12px", cursor:"pointer",
+                        textAlign:"left", borderLeft:`4px solid ${item.color}`,
+                        boxShadow:"0 1px 3px rgba(0,0,0,.05)"}}>
+                      <div style={{width:32, height:32, borderRadius:9, background:item.bg,
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:16, flexShrink:0}}>
+                        {item.icon}
+                      </div>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:12, fontWeight:800, color:C.text,
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                          {item.title}
+                        </div>
+                        <div style={{fontSize:10, color:C.sub, marginTop:1}}>
+                          {item.module} · {new Date(item.ts).toLocaleDateString("fr-FR",{day:"2-digit",month:"short",year:"numeric"})}
+                        </div>
+                      </div>
+                      <span style={{fontSize:10, color:item.color, fontWeight:700}}>→</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
             {ADMIN_MODULES.map(m => (
               <button key={m.id} onClick={()=>setTab(m.id)}
@@ -4618,17 +4689,38 @@ function AdminScreen({ onNewItem, onBack }) {
               <img src={dilForm.schemaData} alt="schema" style={{width:"100%", borderRadius:8, marginBottom:10, maxHeight:200, objectFit:"contain", background:"#0A1628"}}/>
             )}
 
-            <label style={lbl}>{"💊 Présentation (ampoule, concentration...)"}</label>
-            <textarea style={{...inp, height:60, resize:"vertical"}} placeholder={"Ampoule : 500 mg / 10 mL\nConcentration : 50 mg/mL"} value={dilForm.presentation} onChange={e=>setDilForm({...dilForm,presentation:e.target.value})}/>
+            <label style={lbl}>{"💊 Présentation & conditionnement"}</label>
+            <textarea style={{...inp, height:60, resize:"vertical"}} placeholder={"Ampoule : 500 mg / 10 mL\nConcentration : 50 mg/mL\nFlacon de 250 mL..."} value={dilForm.presentation} onChange={e=>setDilForm({...dilForm,presentation:e.target.value})}/>
 
-            <label style={lbl}>{"🎯 Indications"}</label>
-            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder={"Sédation procédurale\nAnalgésie en urgence\n..."} value={dilForm.indication||""} onChange={e=>setDilForm({...dilForm,indication:e.target.value})}/>
+            <label style={lbl}>{"⚗️ Mécanisme d'action"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder={"Agoniste des récepteurs μ-opioïdes\nInhibition de la recapture de noradrénaline\n..."} value={dilForm.mecanismeAction||""} onChange={e=>setDilForm({...dilForm,mecanismeAction:e.target.value})}/>
 
-            <label style={lbl}>{"🧪 Dilution standard (étapes détaillées)"}</label>
-            <textarea style={{...inp, height:100, resize:"vertical"}} placeholder={"Prendre X mL...\nAjouter dans 40 mL NaCl 0.9%\nConcentration finale : ..."} value={dilForm.dilutionStandard} onChange={e=>setDilForm({...dilForm,dilutionStandard:e.target.value})}/>
+            <label style={lbl}>{"🎯 Indications (urgences en priorité)"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder={"Sédation procédurale\nAnalgésie en urgence\nChoc septique réfractaire..."} value={dilForm.indication||""} onChange={e=>setDilForm({...dilForm,indication:e.target.value})}/>
 
-            <label style={lbl}>{"🩺 Administration (voie, débit, titration...)"}</label>
-            <textarea style={{...inp, height:90, resize:"vertical"}} placeholder={"Voie veineuse centrale\nDébit de départ : 0.1 mcg/kg/min\nTitrer par paliers de 0.05...\nNe pas injecter en périphérique..."} value={dilForm.administration||""} onChange={e=>setDilForm({...dilForm,administration:e.target.value})}/>
+            <label style={lbl}>{"🚫 Contre-indications"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder={"CI absolues :\n- Allergie connue\nCI relatives :\n- Insuffisance rénale sévère\nTerrains à risque :\n- Grossesse..."} value={dilForm.contreIndications||""} onChange={e=>setDilForm({...dilForm,contreIndications:e.target.value})}/>
+
+            <label style={lbl}>{"📈 Pharmacocinétique"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder={"Début d'action : 2 min IV\nPic : 5 min\nDemi-vie : 2–4h\nDurée d'effet : 30–60 min\nÉlimination : hépatique (CYP3A4)"} value={dilForm.pharmacocinetique||""} onChange={e=>setDilForm({...dilForm,pharmacocinetique:e.target.value})}/>
+
+            <label style={lbl}>{"⚖️ Posologie (selon indication, poids, terrain)"}</label>
+            <textarea style={{...inp, height:80, resize:"vertical"}} placeholder={"Adulte : 0.1–0.2 mg/kg IV lente\nPédiatrie : 0.05 mg/kg IV\nIR sévère (DFG < 30) : réduire de 50%\nSujet âgé : réduire de 30%"} value={dilForm.posologie||""} onChange={e=>setDilForm({...dilForm,posologie:e.target.value})}/>
+
+            <label style={lbl}>{"🧪 Dilution & administration (étapes détaillées)"}</label>
+            <textarea style={{...inp, height:100, resize:"vertical"}} placeholder={"Prendre X mL...\nAjouter dans 40 mL NaCl 0.9%\nConcentration finale : ...\nVoie : VVC\nDébit : 5–10 mL/h"} value={dilForm.dilutionStandard} onChange={e=>setDilForm({...dilForm,dilutionStandard:e.target.value})}/>
+
+            <label style={lbl}>{"⚠️ Effets indésirables"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder={"Fréquents : nausées, hypotension\nGraves : dépression respiratoire, bradycardie\nRares : ..."} value={dilForm.effetsIndesirables||""} onChange={e=>setDilForm({...dilForm,effetsIndesirables:e.target.value})}/>
+
+            <label style={lbl}>{"👁️ Surveillance"}</label>
+            <textarea style={{...inp, height:60, resize:"vertical"}} placeholder={"FC, PA, SpO2 toutes les 5 min\nNiveau de sédation (RASS)\nDiurèse horaire si..."} value={dilForm.surveillance||""} onChange={e=>setDilForm({...dilForm,surveillance:e.target.value})}/>
+
+            <label style={lbl}>{"🛡️ Antidote / Antagoniste"}</label>
+            <textarea style={{...inp, height:50, resize:"vertical"}} placeholder={"Naloxone 0.4 mg IV (opioïdes)\nFlumazénil 0.2 mg IV (BZD)\nAucun antidote spécifique..."} value={dilForm.antidote||""} onChange={e=>setDilForm({...dilForm,antidote:e.target.value})}/>
+
+            <label style={lbl}>{"🔗 Interactions majeures"}</label>
+            <textarea style={{...inp, height:60, resize:"vertical"}} placeholder={"IMAO : CI absolue\nDépresseurs SNC : potentialisation\nAnticoagulants : surveiller INR..."} value={dilForm.interactions||""} onChange={e=>setDilForm({...dilForm,interactions:e.target.value})}/>
 
             {/* Photo complémentaire */}
             <label style={lbl}>{"📷 Photo complémentaire (optionnel)"}</label>
