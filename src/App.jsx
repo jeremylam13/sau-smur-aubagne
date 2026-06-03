@@ -459,17 +459,47 @@ function DataProvider({ children }) {
   }
 
   async function saveFiles(item, fileFields) {
+    // Champs principaux (schema, photo, image...) — upload vers Supabase Storage
     for (const field of fileFields) {
       const dataField = field + "Data";
-      const urlField = field + "Url";
+      const urlField  = field + "Url";
       if (item[dataField] && item[urlField]) {
-        await safeSet("file_" + item[urlField], item[dataField]);
+        try {
+          // Si c'est déjà une URL Supabase publique, ne pas re-uploader
+          if (!item[urlField].startsWith("http")) {
+            const publicUrl = await uploadMedia(item[urlField], item[dataField]);
+            if (publicUrl) { item[urlField] = publicUrl; item[dataField] = null; }
+          }
+          // Aussi garder en cache localStorage
+          await safeSet("file_" + item[urlField], item[dataField] || item[urlField]);
+        } catch(e) {
+          // Fallback localStorage si upload échoue
+          await safeSet("file_" + item[urlField], item[dataField]);
+        }
       }
     }
-    if (item.medias) {
-      for (const m of item.medias) {
-        if (m.data && m.url) await safeSet("file_" + m.url, m.data);
-      }
+    // Médias complémentaires — upload chaque fichier vers Supabase Storage
+    if (item.medias && item.medias.length > 0) {
+      item.medias = await Promise.all(item.medias.map(async m => {
+        if (!m.data || m.isVideo) return m; // vidéos YouTube : pas de base64
+        // Si l'URL est déjà une URL publique Supabase, ne pas re-uploader
+        if (m.url && m.url.startsWith("http")) {
+          await safeSet("file_" + m.url, m.data);
+          return m;
+        }
+        try {
+          const fileName = m.name || m.url || ("media_" + Date.now() + ".jpg");
+          const publicUrl = await uploadMedia(fileName, m.data);
+          if (publicUrl) {
+            await safeSet("file_" + publicUrl, m.data); // cache local aussi
+            return { ...m, url: publicUrl, data: null }; // data retirée → stockée sur Storage
+          }
+        } catch(e) {
+          // Fallback : garder en localStorage
+          if (m.url) await safeSet("file_" + m.url, m.data);
+        }
+        return m;
+      }));
     }
   }
 
@@ -1526,7 +1556,7 @@ function HomeScreen({onNav}) {
           )}
 
           {/* ── Widget Saviez-vous (RETEX) ── */}
-          <SaviezVousWidget onNav={onNav}/>
+          <DerniersAjoutsWidget onNav={onNav}/>
 
           {/* ── Disclaimer légal ── */}
           <div style={{marginTop:24, marginBottom:8, padding:"12px 14px",
@@ -1631,42 +1661,85 @@ function FavorisScreen({ onNav }) {
   );
 }
 
-function SaviezVousWidget({ onNav }) {
+function DerniersAjoutsWidget({ onNav }) {
   const C = useC();
-  const [item, setItem] = useState(null);
+  const { store } = useData();
 
-  useEffect(()=>{
-    (async()=>{
-      try {
-        const r = await safeGet("retex_submissions");
-        if(r) {
-          const validated = JSON.parse(r.value).filter(x=>x.takehome);
-          if(validated.length>0) {
-            const pick = validated[Math.floor(Math.random()*validated.length)];
-            setItem(pick);
-          }
-        }
-      } catch(e){}
-    })();
-  },[]);
+  // Modules avec config d'affichage
+  const MODULE_CONFIG = {
+    ecgs:      { label:"ECG",       icon:"❤️",  color:"#E05260", bg:"#FEE2E2", nav:"ecg" },
+    imagerie:  { label:"Imagerie",  icon:"🩻",  color:"#9B59B6", bg:"#F3E8FF", nav:"imagerie" },
+    dilutions: { label:"Dilution",  icon:"💉",  color:"#E05260", bg:"#FEE2E2", nav:"dilutions" },
+    gestes:    { label:"Geste",     icon:"✂️",  color:"#C0392B", bg:"#FEE2E2", nav:"gestes" },
+    retex:     { label:"RETEX",     icon:"🔬",  color:"#2E9E6B", bg:"#D1FAE5", nav:"retex" },
+    agenda:    { label:"Agenda",    icon:"📅",  color:"#1A73E8", bg:"#DBEAFE", nav:"agenda" },
+    divers:    { label:"Divers",    icon:"⚡",  color:"#1A3A5C", bg:"#EFF6FF", nav:"divers" },
+    contacts:  { label:"Contact",   icon:"📒",  color:"#1A3A5C", bg:"#F0FDF4", nav:"annuaire" },
+    recoflash: { label:"Reco Flash",icon:"📋",  color:"#0891B2", bg:"#CFFAFE", nav:"recoflash" },
+  };
 
-  if(!item) return null;
+  const derniers = React.useMemo(() => {
+    const all = [];
+    for (const [key, cfg] of Object.entries(MODULE_CONFIG)) {
+      const items = store[key] || [];
+      items.forEach(x => {
+        if (!x.created_at) return;
+        const title = x.title || (x.nom ? `${x.nom} ${x.prenom||""}`.trim() : null);
+        if (!title) return;
+        all.push({ title, module: cfg.label, icon: cfg.icon, color: cfg.color, bg: cfg.bg, nav: cfg.nav, ts: x.created_at });
+      });
+    }
+    return all.sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 3);
+  }, [store]);
+
+  if (!derniers.length) return null;
 
   return (
-    <div onClick={()=>onNav("retex")} style={{
-      background:`linear-gradient(135deg, #2E9E6B 0%, #27AE60 100%)`,
-      borderRadius:16, padding:16, marginBottom:20, cursor:"pointer",
-      boxShadow:"0 4px 16px rgba(46,158,107,.25)",
-    }}>
-      <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8}}>
-        <span style={{fontSize:16}}>🎯</span>
-        <span style={{fontSize:10, fontWeight:800, color:"rgba(255,255,255,.7)", letterSpacing:.5}}>SAVIEZ-VOUS ? · RETEX DU SERVICE</span>
+    <div style={{marginBottom:20}}>
+      {/* Titre section */}
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10}}>
+        <div style={{display:"flex", alignItems:"center", gap:6}}>
+          <span style={{fontSize:15}}>🆕</span>
+          <span style={{fontSize:12, fontWeight:800, color:C.text}}>Dernières fiches ajoutées</span>
+        </div>
       </div>
-      <div style={{fontSize:14, fontWeight:700, color:"#fff", lineHeight:1.5, marginBottom:8}}>
-        "{item.takehome}"
-      </div>
-      <div style={{fontSize:10, color:"rgba(255,255,255,.65)"}}>
-        {[item.author, item.date, item.lieu].filter(Boolean).join(" · ")} — Tap pour lire →
+
+      {/* Cartes */}
+      <div style={{display:"flex", flexDirection:"column", gap:8}}>
+        {derniers.map((item, i) => (
+          <button key={i} onClick={()=>onNav(item.nav)}
+            style={{display:"flex", alignItems:"center", gap:12,
+              background:C.white, border:`1.5px solid ${C.border}`,
+              borderLeft:`4px solid ${item.color}`,
+              borderRadius:14, padding:"12px 14px", cursor:"pointer",
+              textAlign:"left", boxShadow:"0 1px 4px rgba(0,0,0,.05)",
+              WebkitTapHighlightColor:"transparent"}}>
+            <div style={{width:38, height:38, borderRadius:11, background:item.bg,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:20, flexShrink:0}}>
+              {item.icon}
+            </div>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontSize:13, fontWeight:800, color:C.text,
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                {item.title}
+              </div>
+              <div style={{display:"flex", alignItems:"center", gap:6, marginTop:3}}>
+                <span style={{fontSize:10, fontWeight:700, color:item.color,
+                  background:item.bg, borderRadius:6, padding:"1px 7px"}}>
+                  {item.module}
+                </span>
+                <span style={{fontSize:10, color:C.sub}}>
+                  {new Date(item.ts).toLocaleDateString("fr-FR",{day:"2-digit",month:"short"})}
+                </span>
+              </div>
+            </div>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke={C.sub} strokeWidth="2.5" strokeLinecap="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -15670,7 +15743,13 @@ function AppInner() {
   const unreadCount = notifs.length;
 
   function navigate(screenId, favoriItem) {
-    setScreenHistory(h => screen === "home" ? [] : [...h, screen]);
+    // Pousser l'écran courant dans l'historique sauf si c'est déjà le même ou si on va sur home
+    setScreenHistory(h => {
+      if (screenId === "home") return []; // retour accueil = reset historique
+      if (screen === screenId) return h;  // même écran = pas d'historique
+      if (screen === "home") return [];   // depuis home = historique vide (home n'est pas empilé)
+      return [...h, screen].slice(-10);   // max 10 niveaux
+    });
     setScreen(screenId);
     setDeepLink(favoriItem ? favoriItem.id : null);
     setNavVersion(v => v + 1);
@@ -15684,7 +15763,9 @@ function AppInner() {
       setScreen(prev);
       setNavVersion(v => v + 1);
     } else {
-      navigate("home");
+      // Plus d'historique → accueil
+      setScreen("home");
+      setNavVersion(v => v + 1);
     }
   }
 
@@ -15821,18 +15902,18 @@ function AppInner() {
       >
         {screen==="home"       && <HomeScreen onNav={navigate}/>}
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
-        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={()=>navigate("home")}/>}
-        {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={()=>navigate("home")}/>}
-        {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={()=>navigate("home")}/>}
+        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="gestes"     && <GestesScreen key={"gestes-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={goBack}/>}
+        {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
       </div>
 
       <div style={{position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:theme.white, borderTop:`1px solid ${theme.border}`, display:"flex", padding:"8px 0 12px", boxShadow:"0 -4px 20px rgba(26,58,92,.08)", transition:"background .25s"}}>
