@@ -15768,7 +15768,18 @@ function SondageScreen({ onBack }) {
   const [sondages, setSondages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(null); // sondage en cours d'édition
   const deviceId = getDeviceId();
+
+  // Suppression d'un sondage
+  async function deleteSondage(id) {
+    try {
+      await supaFetch(`/sondages?id=eq.${id}`, "DELETE");
+      await loadSondages();
+      setSelected(null);
+      setView("list");
+    } catch(e) { alert("Erreur lors de la suppression"); }
+  }
 
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[view, selected]);
 
@@ -15785,12 +15796,20 @@ function SondageScreen({ onBack }) {
 
   // ── Création d'un sondage ──────────────────────────────────────────────
   function CreateView() {
-    const [title, setTitle] = useState("");
-    const [description, setDescription] = useState("");
-    const [options, setOptions] = useState(["", ""]);
-    const [multiple, setMultiple] = useState(false);
-    const [author, setAuthor] = useState("");
-    const [closesAt, setClosesAt] = useState("");
+    const isEdit = !!editing;
+    // Conversion ISO → format datetime-local (YYYY-MM-DDTHH:mm)
+    const toLocalInput = (iso) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      const pad = n => String(n).padStart(2,"0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const [title, setTitle] = useState(editing?.title || "");
+    const [description, setDescription] = useState(editing?.description || "");
+    const [options, setOptions] = useState(editing?.options?.length ? [...editing.options] : ["", ""]);
+    const [multiple, setMultiple] = useState(editing?.multiple || false);
+    const [author, setAuthor] = useState(editing?.author || "");
+    const [closesAt, setClosesAt] = useState(toLocalInput(editing?.closes_at));
     const [saving, setSaving] = useState(false);
 
     const inp = { width:"100%", padding:"12px 14px", borderRadius:10, border:`1.5px solid ${C.border}`,
@@ -15803,26 +15822,32 @@ function SondageScreen({ onBack }) {
     async function submit() {
       if (!canSubmit) return;
       setSaving(true);
+      const payload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        options: validOptions,
+        multiple,
+        author: author.trim() || null,
+        closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+      };
       try {
-        await supaFetch("/sondages", "POST", {
-          title: title.trim(),
-          description: description.trim() || null,
-          options: validOptions,
-          multiple,
-          author: author.trim() || null,
-          closes_at: closesAt ? new Date(closesAt).toISOString() : null,
-        });
+        if (isEdit) {
+          await supaFetch(`/sondages?id=eq.${editing.id}`, "PATCH", payload);
+        } else {
+          await supaFetch("/sondages", "POST", payload);
+        }
         await loadSondages();
+        setEditing(null);
         setView("list");
-      } catch(e) { alert("Erreur lors de la création"); }
+      } catch(e) { alert(isEdit ? "Erreur lors de la modification" : "Erreur lors de la création"); }
       setSaving(false);
     }
 
     return (
       <div>
         <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:20}}>
-          <button onClick={()=>setView("list")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Nouveau sondage</div>
+          <button onClick={()=>{ setEditing(null); setView("list"); }} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>{isEdit ? "Modifier le sondage" : "Nouveau sondage"}</div>
         </div>
 
         <label style={lbl}>Intitulé du sondage *</label>
@@ -15866,7 +15891,7 @@ function SondageScreen({ onBack }) {
           background:(canSubmit&&!saving)?"#7C3AED":"#CBD5E1", color:"#fff",
           fontSize:14, fontWeight:800, cursor:(canSubmit&&!saving)?"pointer":"not-allowed", marginTop:8,
         }}>
-          {saving?"Création...":"📊 Créer le sondage"}
+          {saving ? (isEdit ? "Modification..." : "Création...") : (isEdit ? "✅ Enregistrer les modifications" : "📊 Créer le sondage")}
         </button>
       </div>
     );
@@ -16048,6 +16073,36 @@ function SondageScreen({ onBack }) {
             </div>
           </div>
         )}
+
+        {/* Gestion du sondage — modifier / supprimer */}
+        <div style={{marginTop:24, paddingTop:16, borderTop:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10, fontWeight:800, color:C.sub, marginBottom:10, textTransform:"uppercase", letterSpacing:.5}}>
+            Gestion
+          </div>
+          <div style={{display:"flex", gap:10}}>
+            <button onClick={()=>{ setEditing(sondage); setSelected(null); setView("create"); }} style={{
+              flex:1, padding:"11px", borderRadius:10, border:`1.5px solid #7C3AED`,
+              background:"#F3E8FF", color:"#7C3AED", fontSize:13, fontWeight:700, cursor:"pointer",
+            }}>
+              ✏️ Modifier
+            </button>
+            <button onClick={()=>{
+              if (window.confirm("Supprimer définitivement ce sondage et tous ses votes ?")) {
+                deleteSondage(sondage.id);
+              }
+            }} style={{
+              flex:1, padding:"11px", borderRadius:10, border:`1.5px solid #EF4444`,
+              background:"#FEE2E2", color:"#DC2626", fontSize:13, fontWeight:700, cursor:"pointer",
+            }}>
+              🗑️ Supprimer
+            </button>
+          </div>
+          {totalVotes > 0 && (
+            <div style={{fontSize:10, color:C.sub, marginTop:8, textAlign:"center"}}>
+              ⚠️ Modifier les options après des votes peut fausser les résultats
+            </div>
+          )}
+        </div>
       </div>
     );
   }
