@@ -40,6 +40,20 @@ async function supaFetch(path, method = "GET", body = null) {
   return text ? JSON.parse(text) : [];
 }
 
+// Identifiant unique d'appareil (anti double-vote sondages)
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem("sau_device_id");
+    if (!id) {
+      id = "dev_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem("sau_device_id", id);
+    }
+    return id;
+  } catch(e) {
+    return "dev_fallback";
+  }
+}
+
 // Conversion snake_case Supabase → camelCase app (champs spécifiques)
 function rowToItem(table, row) {
   if (!row) return row;
@@ -1176,14 +1190,19 @@ function useGlobalSearch() {
         imagerie: [],
         dilutions: DILUTIONS,
         gestes: GESTES,
+        scores: SCORES_LIST,
+        quizzes: [],
+        recoflash: [],
       };
-      try { const r=await safeGet("admin_ecgs");     if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_ecgs");        if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
       try { const r=await safeGet("retex_submissions"); if(r) base.retex=JSON.parse(r.value); } catch(e){}
-      try { const r=await safeGet("admin_divers");   if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_agenda");   if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_divers");      if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_agenda");      if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
       try { const r=await safeGet("admin_imagerie");    if(r) base.imagerie=JSON.parse(r.value); } catch(e){}
-      try { const r=await safeGet("admin_dilutions"); if(r) base.dilutions=[...DILUTIONS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_contacts"); if(r) base.annuaire=JSON.parse(r.value); } catch(e){}
+      try { const r=await safeGet("admin_dilutions");   if(r) base.dilutions=[...DILUTIONS,...JSON.parse(r.value)]; } catch(e){}
+      try { const r=await safeGet("admin_contacts");    if(r) base.annuaire=JSON.parse(r.value); } catch(e){}
+      try { const r=await safeGet("admin_quizzes");     if(r) base.quizzes=JSON.parse(r.value); } catch(e){}
+      try { const r=await safeGet("admin_recoflash");   if(r) base.recoflash=JSON.parse(r.value); } catch(e){}
       setAllData(base);
     })();
   },[]);
@@ -1201,7 +1220,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   allData.ecgs.forEach(e=>{
     if((e.title+(e.context||"")+(e.diagnosis||"")).toLowerCase().includes(q))
       results.push({type:"ecg", icon:"❤️", color:C.red, bg:C.redLight,
-        title:e.title, sub:e.diagnosis||"ECG", nav:"ecg"});
+        title:e.title, sub:e.diagnosis||"ECG", nav:"ecg", id:e.id});
   });
 
   // RETEX
@@ -1209,7 +1228,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     const hay=[r.title,r.author,r.lieu,r.contexte,r.situation,r.bien,r.recit,r.takehome].filter(Boolean).join(" ");
     if(hay.toLowerCase().includes(q))
       results.push({type:"retex", icon:"🔬", color:C.green, bg:C.greenLight,
-        title:r.title, sub:(r.author||"")+(r.date?" - "+r.date:""), nav:"retex"});
+        title:r.title, sub:(r.author||"")+(r.date?" - "+r.date:""), nav:"retex", id:r.id});
   });
 
   // Divers
@@ -1217,7 +1236,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     const hay=[d.title,d.content,...(Array.isArray(d.tags)?d.tags:[])].filter(Boolean).join(" ");
     if(hay.toLowerCase().includes(q))
       results.push({type:"divers", icon:"⚡", color:C.navy, bg:C.blueLight,
-        title:d.title, sub:(Array.isArray(d.tags)?d.tags:[]).join(" ")||"Base de connaissances", nav:"divers"});
+        title:d.title, sub:(Array.isArray(d.tags)?d.tags:[]).join(" ")||"Base de connaissances", nav:"divers", id:d.id});
   });
 
   // Dilutions
@@ -1225,7 +1244,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     const hay=[d.title,d.subtitle,...(Array.isArray(d.tags)?d.tags:[])].filter(Boolean).join(" ");
     if(hay.toLowerCase().includes(q))
       results.push({type:"dilution", icon:"💉", color:"#E05260", bg:"#FDF0F1",
-        title:d.title, sub:d.subtitle||"Dilution", nav:"dilutions"});
+        title:d.title, sub:d.subtitle||"Dilution", nav:"dilutions", id:d.id});
   });
 
   // Gestes
@@ -1233,14 +1252,14 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     const hay=[g.title,(Array.isArray(g.tags)?g.tags:[]).join(" "),g.indications||""].join(" ");
     if(hay.toLowerCase().includes(q))
       results.push({type:"geste", icon:"✂️", color:"#C0392B", bg:"#FDECEA",
-        title:g.title, sub:(Array.isArray(g.tags)?g.tags:[]).join(" ")||"Geste technique", nav:"gestes"});
+        title:g.title, sub:(Array.isArray(g.tags)?g.tags:[]).join(" ")||"Geste technique", nav:"gestes", id:g.id});
   });
 
   // Agenda
   allData.agenda.forEach(ev=>{
     if((ev.title+(ev.lieu||"")+(ev.description||"")).toLowerCase().includes(q))
       results.push({type:"agenda", icon:"📅", color:C.amber, bg:C.amberLight,
-        title:ev.title, sub:ev.date+(ev.lieu?" — "+ev.lieu:""), nav:"agenda"});
+        title:ev.title, sub:ev.date+(ev.lieu?" — "+ev.lieu:""), nav:"agenda", id:ev.id});
   });
 
   // Annuaire
@@ -1249,14 +1268,38 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     const tel1 = p.telephones?.[0]?.numero || "";
     if((p.nom+(p.role||"")+(p.categorie||"")+tels).toLowerCase().includes(q))
       results.push({type:"annuaire", icon:"📒", color:"#2E6EA6", bg:"#E8F0FA",
-        title:p.nom, sub:(p.role||p.categorie||"")+(tel1?" · "+tel1:""), nav:"annuaire"});
+        title:p.nom, sub:(p.role||p.categorie||"")+(tel1?" · "+tel1:""), nav:"annuaire", id:p.id});
   });
 
   // Imagerie
   allData.imagerie.forEach(c=>{
     if((c.title+(c.context||"")+(c.type||"")).toLowerCase().includes(q))
       results.push({type:"imagerie", icon:"🖼️", color:"#9B59B6", bg:"#F3E8FF",
-        title:c.title, sub:c.type||"Imagerie", nav:"imagerie"});
+        title:c.title, sub:c.type||"Imagerie", nav:"imagerie", id:c.id});
+  });
+
+  // Scores
+  (allData.scores||[]).forEach(s=>{
+    const hay=[s.title,s.subtitle,...(Array.isArray(s.tags)?s.tags:[])].filter(Boolean).join(" ");
+    if(hay.toLowerCase().includes(q))
+      results.push({type:"score", icon:s.icon||"🧮", color:s.color||"#0D9488", bg:(s.color||"#0D9488")+"22",
+        title:s.title, sub:s.subtitle||"Score clinique", nav:"scores", id:s.id});
+  });
+
+  // Quiz
+  (allData.quizzes||[]).forEach(qz=>{
+    const hay=[qz.title,qz.description,qz.theme,...(Array.isArray(qz.tags)?qz.tags:[])].filter(Boolean).join(" ");
+    if(hay.toLowerCase().includes(q))
+      results.push({type:"quiz", icon:"🧠", color:"#6366F1", bg:"#EEF2FF",
+        title:qz.title, sub:qz.description||qz.theme||"Quiz", nav:"quiz", id:qz.id});
+  });
+
+  // Reco Flash
+  (allData.recoflash||[]).forEach(rf=>{
+    const hay=[rf.title,rf.subtitle,rf.source,...(Array.isArray(rf.tags)?rf.tags:[])].filter(Boolean).join(" ");
+    if(hay.toLowerCase().includes(q))
+      results.push({type:"reco", icon:"📋", color:"#0891B2", bg:"#CFFAFE",
+        title:rf.title, sub:rf.subtitle||rf.source||"Recommandation", nav:"recoflash", id:rf.id});
   });
 
   return (
@@ -1276,7 +1319,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
             {results.length} RESULTAT{results.length>1?"S":""}
           </div>
           {results.map((r,i)=>(
-            <button key={i} onClick={()=>{ onNav(r.nav); onClose(); }}
+            <button key={i} onClick={()=>{ onNav(r.nav, r.id ? {id:r.id} : undefined); onClose(); }}
               style={{width:"100%", background:"none", border:"none", borderTop:`1px solid ${C.border}`,
                 padding:"10px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10,
                 textAlign:"left"}}>
@@ -1346,6 +1389,7 @@ function HomeScreen({onNav}) {
     {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
     {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
     {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
+    {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
     
@@ -1686,7 +1730,7 @@ function DerniersAjoutsWidget({ onNav }) {
         if (!x.created_at) return;
         const title = x.title || (x.nom ? `${x.nom} ${x.prenom||""}`.trim() : null);
         if (!title) return;
-        all.push({ title, module: cfg.label, icon: cfg.icon, color: cfg.color, bg: cfg.bg, nav: cfg.nav, ts: x.created_at });
+        all.push({ title, module: cfg.label, icon: cfg.icon, color: cfg.color, bg: cfg.bg, nav: cfg.nav, id: x.id, ts: x.created_at });
       });
     }
     return all.sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 3);
@@ -1707,7 +1751,7 @@ function DerniersAjoutsWidget({ onNav }) {
       {/* Cartes */}
       <div style={{display:"flex", flexDirection:"column", gap:8}}>
         {derniers.map((item, i) => (
-          <button key={i} onClick={()=>onNav(item.nav)}
+          <button key={i} onClick={()=>onNav(item.nav, {id: item.id})}
             style={{display:"flex", alignItems:"center", gap:12,
               background:C.white, border:`1.5px solid ${C.border}`,
               borderLeft:`4px solid ${item.color}`,
@@ -2353,7 +2397,6 @@ function ECGScreen({ deepLinkId, onBack }) {
         </div>
         <Tag label={"ECG · À analyser"} color={e.color||C.red}/>
         <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 8px"}}>{e.title}</h2>
-        <div style={{fontSize:12, color:C.sub, marginBottom:8}}>{e.context}</div>
           {(e.tags&&e.tags.length>0) && (
             <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
               {e.tags.map((t,i)=>(
@@ -2361,6 +2404,17 @@ function ECGScreen({ deepLinkId, onBack }) {
               ))}
             </div>
           )}
+
+        {/* Encart contexte clinique — bien visible */}
+        {e.context && (
+          <div style={{background:"#EFF6FF", border:`2px solid #3B82F6`, borderRadius:12, padding:14, marginBottom:16}}>
+            <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
+              <span style={{fontSize:14}}>🩺</span>
+              <span style={{fontSize:11, fontWeight:800, color:"#1D4ED8", letterSpacing:.5}}>CONTEXTE CLINIQUE</span>
+            </div>
+            <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500}}>{e.context}</div>
+          </div>
+        )}
 
         <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData||e.imageUrl)?4:16, marginBottom:16}}>
           {(e.imageData||e.imageUrl) ? (
@@ -2489,7 +2543,15 @@ function IconoScreen({ deepLinkId, onBack }) {
         </div>
         <Tag label={c.type} color={c.color}/>
         <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 8px"}}>{c.title}</h2>
-        <div style={{fontSize:12, color:C.sub, marginBottom:16}}>{c.context}</div>
+        {c.context && (
+          <div style={{background:"#EFF6FF", border:`2px solid #3B82F6`, borderRadius:12, padding:14, marginBottom:16}}>
+            <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
+              <span style={{fontSize:14}}>🩺</span>
+              <span style={{fontSize:11, fontWeight:800, color:"#1D4ED8", letterSpacing:.5}}>CONTEXTE CLINIQUE</span>
+            </div>
+            <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500}}>{c.context}</div>
+          </div>
+        )}
         <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData?4:30, textAlign:"center", marginBottom:16}}>
           {(c.imageData||c.imageUrl) && c.isVideo ? (
             <video src={c.imageData||c.imageUrl} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
@@ -15697,6 +15759,367 @@ function ScoresScreen({ deepLinkId, onBack }) {
 }
 
 // - App -
+// ────────────────────────────────────────────────────────────────────────────
+// SondageScreen : module sondages avec vote temps réel
+// ────────────────────────────────────────────────────────────────────────────
+function SondageScreen({ onBack }) {
+  const C = useC();
+  const [view, setView] = useState("list"); // list | create | detail
+  const [sondages, setSondages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const deviceId = getDeviceId();
+
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[view, selected]);
+
+  async function loadSondages() {
+    setLoading(true);
+    try {
+      const rows = await supaFetch("/sondages?order=created_at.desc");
+      setSondages(rows);
+    } catch(e) { console.warn("loadSondages", e); }
+    setLoading(false);
+  }
+
+  useEffect(()=>{ loadSondages(); },[]);
+
+  // ── Création d'un sondage ──────────────────────────────────────────────
+  function CreateView() {
+    const [title, setTitle] = useState("");
+    const [description, setDescription] = useState("");
+    const [options, setOptions] = useState(["", ""]);
+    const [multiple, setMultiple] = useState(false);
+    const [author, setAuthor] = useState("");
+    const [closesAt, setClosesAt] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    const inp = { width:"100%", padding:"12px 14px", borderRadius:10, border:`1.5px solid ${C.border}`,
+      fontSize:14, color:C.text, background:C.white, outline:"none", marginBottom:12, boxSizing:"border-box" };
+    const lbl = { fontSize:12, fontWeight:700, color:C.text, marginBottom:6, display:"block" };
+
+    const validOptions = options.map(o=>o.trim()).filter(Boolean);
+    const canSubmit = title.trim() && validOptions.length >= 2;
+
+    async function submit() {
+      if (!canSubmit) return;
+      setSaving(true);
+      try {
+        await supaFetch("/sondages", "POST", {
+          title: title.trim(),
+          description: description.trim() || null,
+          options: validOptions,
+          multiple,
+          author: author.trim() || null,
+          closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+        });
+        await loadSondages();
+        setView("list");
+      } catch(e) { alert("Erreur lors de la création"); }
+      setSaving(false);
+    }
+
+    return (
+      <div>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:20}}>
+          <button onClick={()=>setView("list")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Nouveau sondage</div>
+        </div>
+
+        <label style={lbl}>Intitulé du sondage *</label>
+        <input style={inp} placeholder="Ex : Faut-il modifier le protocole sédation ?" value={title} onChange={e=>setTitle(e.target.value)}/>
+
+        <label style={lbl}>Description (optionnel)</label>
+        <textarea style={{...inp, minHeight:60, resize:"vertical"}} placeholder="Contexte, précisions..." value={description} onChange={e=>setDescription(e.target.value)}/>
+
+        <label style={lbl}>Propositions de réponse *</label>
+        {options.map((opt, i)=>(
+          <div key={i} style={{display:"flex", gap:8, alignItems:"center", marginBottom:8}}>
+            <input style={{...inp, marginBottom:0}} placeholder={`Option ${i+1}`} value={opt}
+              onChange={e=>{ const next=[...options]; next[i]=e.target.value; setOptions(next); }}/>
+            {options.length > 2 && (
+              <button onClick={()=>setOptions(options.filter((_,j)=>j!==i))}
+                style={{background:"#FEE2E2", border:"none", borderRadius:8, width:36, height:36, cursor:"pointer", color:"#EF4444", fontSize:16, flexShrink:0}}>✕</button>
+            )}
+          </div>
+        ))}
+        <button onClick={()=>setOptions([...options, ""])}
+          style={{background:C.blueLight, border:"none", borderRadius:8, padding:"8px 14px", cursor:"pointer", color:C.navy, fontSize:13, fontWeight:700, marginBottom:16}}>
+          + Ajouter une option
+        </button>
+
+        {/* Choix multiple */}
+        <div onClick={()=>setMultiple(v=>!v)} style={{display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:multiple?"#F3E8FF":C.white, border:`1.5px solid ${multiple?"#7C3AED":C.border}`, borderRadius:10, marginBottom:12, cursor:"pointer"}}>
+          <div style={{width:22, height:22, borderRadius:6, flexShrink:0, border:`2px solid ${multiple?"#7C3AED":C.border}`, background:multiple?"#7C3AED":"#fff", display:"flex", alignItems:"center", justifyContent:"center"}}>
+            {multiple && <span style={{color:"#fff", fontSize:14, fontWeight:900}}>✓</span>}
+          </div>
+          <span style={{fontSize:13, color:C.text, fontWeight:600}}>Autoriser le choix multiple</span>
+        </div>
+
+        <label style={lbl}>Date de clôture (optionnel)</label>
+        <input type="datetime-local" style={inp} value={closesAt} onChange={e=>setClosesAt(e.target.value)}/>
+
+        <label style={lbl}>Votre nom (optionnel)</label>
+        <input style={inp} placeholder="Laisser vide pour rester anonyme" value={author} onChange={e=>setAuthor(e.target.value)}/>
+
+        <button onClick={submit} disabled={!canSubmit||saving} style={{
+          width:"100%", padding:"14px", borderRadius:12, border:"none",
+          background:(canSubmit&&!saving)?"#7C3AED":"#CBD5E1", color:"#fff",
+          fontSize:14, fontWeight:800, cursor:(canSubmit&&!saving)?"pointer":"not-allowed", marginTop:8,
+        }}>
+          {saving?"Création...":"📊 Créer le sondage"}
+        </button>
+      </div>
+    );
+  }
+
+  // ── Détail + vote + résultats ──────────────────────────────────────────
+  function DetailView({ sondage }) {
+    const [votes, setVotes] = useState([]);
+    const [myVote, setMyVote] = useState(null);
+    const [loadingVotes, setLoadingVotes] = useState(true);
+    const [picks, setPicks] = useState([]);
+    const [voterName, setVoterName] = useState("");
+    const [submitting, setSubmitting] = useState(false);
+
+    const isClosed = sondage.closes_at && new Date(sondage.closes_at) < new Date();
+
+    async function loadVotes() {
+      setLoadingVotes(true);
+      try {
+        const rows = await supaFetch(`/sondage_votes?sondage_id=eq.${sondage.id}`);
+        setVotes(rows);
+        const mine = rows.find(v => v.device_id === deviceId);
+        setMyVote(mine || null);
+      } catch(e) { console.warn("loadVotes", e); }
+      setLoadingVotes(false);
+    }
+
+    useEffect(()=>{ loadVotes(); },[sondage.id]);
+
+    const togglePick = (i) => {
+      if (sondage.multiple) {
+        setPicks(p => p.includes(i) ? p.filter(x=>x!==i) : [...p, i]);
+      } else {
+        setPicks([i]);
+      }
+    };
+
+    async function submitVote() {
+      if (picks.length === 0 || isClosed) return;
+      setSubmitting(true);
+      try {
+        await supaFetch("/sondage_votes", "POST", {
+          sondage_id: sondage.id,
+          device_id: deviceId,
+          choices: picks,
+          voter_name: voterName.trim() || null,
+        });
+        await loadVotes();
+      } catch(e) {
+        if (String(e).includes("duplicate") || String(e).includes("409")) {
+          alert("Vous avez déjà voté pour ce sondage.");
+          await loadVotes();
+        } else {
+          alert("Erreur lors du vote.");
+        }
+      }
+      setSubmitting(false);
+    }
+
+    // Comptage des résultats
+    const counts = (sondage.options||[]).map((_, i) =>
+      votes.filter(v => (v.choices||[]).includes(i)).length
+    );
+    const totalVotes = votes.length;
+    const maxCount = Math.max(1, ...counts);
+
+    const showResults = !!myVote || isClosed;
+
+    return (
+      <div>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+          <button onClick={()=>{ setSelected(null); setView("list"); }} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+          <div style={{flex:1}}>
+            <div style={{display:"flex", alignItems:"center", gap:8}}>
+              <span style={{fontSize:10, fontWeight:800, padding:"2px 8px", borderRadius:20,
+                background: isClosed ? "#FEE2E2" : "#DCFCE7", color: isClosed ? "#DC2626" : "#16A34A"}}>
+                {isClosed ? "🔴 Clos" : "🟢 Ouvert"}
+              </span>
+              {sondage.multiple && <span style={{fontSize:10, color:C.sub}}>Choix multiple</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* En-tête sondage */}
+        <div style={{background:"linear-gradient(135deg, #7C3AED 0%, #9333EA 100%)", borderRadius:16, padding:18, marginBottom:18, color:"#fff"}}>
+          <div style={{fontSize:18, fontWeight:800, lineHeight:1.3, marginBottom:6}}>{sondage.title}</div>
+          {sondage.description && <div style={{fontSize:13, opacity:.9, lineHeight:1.5}}>{sondage.description}</div>}
+          <div style={{fontSize:11, opacity:.75, marginTop:10}}>
+            {sondage.author ? `Par ${sondage.author}` : "Anonyme"}
+            {sondage.closes_at && ` · Clôture : ${new Date(sondage.closes_at).toLocaleDateString("fr-FR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}`}
+          </div>
+        </div>
+
+        {loadingVotes ? (
+          <div style={{textAlign:"center", padding:30, color:C.sub}}>Chargement...</div>
+        ) : showResults ? (
+          // ── RÉSULTATS ──
+          <div>
+            {myVote && !isClosed && (
+              <div style={{background:"#DCFCE7", border:"1px solid #16A34A", borderRadius:10, padding:"8px 12px", marginBottom:14, fontSize:12, color:"#166534", fontWeight:600, textAlign:"center"}}>
+                ✓ Vous avez voté · Voici les résultats en temps réel
+              </div>
+            )}
+            {(sondage.options||[]).map((opt, i) => {
+              const count = counts[i];
+              const pct = totalVotes > 0 ? Math.round((count/totalVotes)*100) : 0;
+              const isMine = myVote && (myVote.choices||[]).includes(i);
+              return (
+                <div key={i} style={{marginBottom:12}}>
+                  <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+                    <span style={{fontSize:13, fontWeight:700, color:C.text}}>
+                      {opt} {isMine && <span style={{color:"#7C3AED"}}>✓</span>}
+                    </span>
+                    <span style={{fontSize:13, fontWeight:800, color:"#7C3AED"}}>{pct}% ({count})</span>
+                  </div>
+                  <div style={{background:C.bg, borderRadius:8, height:24, overflow:"hidden"}}>
+                    <div style={{
+                      width:`${pct}%`, height:"100%",
+                      background: isMine ? "linear-gradient(90deg, #7C3AED, #9333EA)" : "#C4B5FD",
+                      borderRadius:8, transition:"width .4s ease", minWidth: count>0?6:0,
+                    }}/>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{textAlign:"center", fontSize:12, color:C.sub, marginTop:14}}>
+              {totalVotes} vote{totalVotes>1?"s":""} au total
+            </div>
+            <button onClick={loadVotes} style={{width:"100%", marginTop:12, padding:"10px", borderRadius:10, border:`1.5px solid ${C.border}`, background:C.white, color:C.sub, fontSize:13, fontWeight:700, cursor:"pointer"}}>
+              ↻ Actualiser les résultats
+            </button>
+          </div>
+        ) : (
+          // ── VOTE ──
+          <div>
+            <div style={{fontSize:12, color:C.sub, marginBottom:12, textAlign:"center"}}>
+              {sondage.multiple ? "Sélectionnez une ou plusieurs réponses" : "Sélectionnez votre réponse"}
+            </div>
+            {(sondage.options||[]).map((opt, i) => {
+              const picked = picks.includes(i);
+              return (
+                <div key={i} onClick={()=>togglePick(i)} style={{
+                  display:"flex", alignItems:"center", gap:12, padding:"14px 16px",
+                  background: picked ? "#F3E8FF" : C.white,
+                  border:`2px solid ${picked ? "#7C3AED" : C.border}`,
+                  borderRadius:12, marginBottom:10, cursor:"pointer", transition:"all .15s",
+                }}>
+                  <div style={{
+                    width:24, height:24, flexShrink:0,
+                    borderRadius: sondage.multiple ? 6 : "50%",
+                    border:`2px solid ${picked ? "#7C3AED" : C.border}`,
+                    background: picked ? "#7C3AED" : "#fff",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                  }}>
+                    {picked && <span style={{color:"#fff", fontSize:14, fontWeight:900}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:14, fontWeight:600, color:C.text}}>{opt}</span>
+                </div>
+              );
+            })}
+
+            {/* Nom optionnel */}
+            <input
+              style={{width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:13, color:C.text, background:C.white, outline:"none", marginTop:6, marginBottom:12, boxSizing:"border-box"}}
+              placeholder="Votre nom (optionnel — laisser vide = anonyme)"
+              value={voterName} onChange={e=>setVoterName(e.target.value)}
+            />
+
+            <button onClick={submitVote} disabled={picks.length===0||submitting} style={{
+              width:"100%", padding:"14px", borderRadius:12, border:"none",
+              background: picks.length>0 && !submitting ? "#7C3AED" : "#CBD5E1",
+              color:"#fff", fontSize:14, fontWeight:800,
+              cursor: picks.length>0 && !submitting ? "pointer" : "not-allowed",
+            }}>
+              {submitting ? "Envoi..." : "🗳️ Voter"}
+            </button>
+            <div style={{fontSize:11, color:C.sub, textAlign:"center", marginTop:8}}>
+              Les résultats s'afficheront après votre vote
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Liste des sondages ─────────────────────────────────────────────────
+  if (view === "create") return <CreateView/>;
+  if (view === "detail" && selected) return <DetailView sondage={selected}/>;
+
+  return (
+    <div>
+      {onBack && (
+        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Accueil
+        </button>
+      )}
+
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <div style={{background:"#F3E8FF", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>📊</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Sondages</div>
+          <div style={{fontSize:12, color:C.sub}}>Avis de l'équipe en temps réel</div>
+        </div>
+      </div>
+
+      <button onClick={()=>setView("create")} style={{
+        width:"100%", padding:"13px", borderRadius:12, border:"none",
+        background:"#7C3AED", color:"#fff", fontSize:14, fontWeight:800, cursor:"pointer", marginBottom:18,
+      }}>
+        + Créer un sondage
+      </button>
+
+      {loading ? (
+        <div style={{textAlign:"center", padding:30, color:C.sub}}>Chargement...</div>
+      ) : sondages.length === 0 ? (
+        <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+          <div style={{fontSize:36, marginBottom:8}}>📊</div>
+          <div style={{fontSize:14, fontWeight:600}}>Aucun sondage pour l'instant</div>
+          <div style={{fontSize:12, marginTop:4}}>Créez le premier !</div>
+        </div>
+      ) : (
+        <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          {sondages.map(s => {
+            const isClosed = s.closes_at && new Date(s.closes_at) < new Date();
+            return (
+              <button key={s.id} onClick={()=>{ setSelected(s); setView("detail"); }} style={{
+                background:C.white, border:`1.5px solid ${C.border}`, borderLeft:"4px solid #7C3AED",
+                borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+                boxShadow:"0 1px 4px rgba(0,0,0,.05)",
+              }}>
+                <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+                  <span style={{fontSize:14, fontWeight:800, color:C.text, lineHeight:1.3}}>{s.title}</span>
+                  <span style={{fontSize:9, fontWeight:800, padding:"2px 7px", borderRadius:20, flexShrink:0,
+                    background: isClosed ? "#FEE2E2" : "#DCFCE7", color: isClosed ? "#DC2626" : "#16A34A"}}>
+                    {isClosed ? "Clos" : "Ouvert"}
+                  </span>
+                </div>
+                <div style={{fontSize:11, color:C.sub}}>
+                  {(s.options||[]).length} option{(s.options||[]).length>1?"s":""}
+                  {s.multiple && " · choix multiple"}
+                  {s.author && ` · ${s.author}`}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function App() {
   return (
     <DataProvider>
@@ -15751,7 +16174,8 @@ function AppInner() {
       return [...h, screen].slice(-10);   // max 10 niveaux
     });
     setScreen(screenId);
-    setDeepLink(favoriItem ? favoriItem.id : null);
+    setDeepLink(null); // reset pour forcer re-déclenchement du useEffect deepLinkId
+    setTimeout(() => setDeepLink(favoriItem ? favoriItem.id : null), 0);
     setNavVersion(v => v + 1);
     setNotifOpen(false);
   }
@@ -15895,8 +16319,9 @@ function AppInner() {
           const dx = e.changedTouches[0].clientX - (contentRef.current._swipeX || 0);
           const dy = e.changedTouches[0].clientY - (contentRef.current._swipeY || 0);
           // Swipe horizontal > 80px et plus horizontal que vertical → goBack
+          // Désactivé sur ECG (gêne le défilement/zoom des tracés)
           if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-            if (dx > 0 && screen !== "home") goBack(); // swipe droite = retour
+            if (dx > 0 && screen !== "home" && screen !== "ecg") goBack(); // swipe droite = retour
           }
         }}
       >
@@ -15912,6 +16337,7 @@ function AppInner() {
         {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
       </div>
