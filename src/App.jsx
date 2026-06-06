@@ -1390,6 +1390,7 @@ function HomeScreen({onNav}) {
     {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
     {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
+    {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
     
@@ -4161,6 +4162,8 @@ function AdminScreen({ onNewItem, onBack }) {
     { id:"recoflash", icon:"📋",  label:"Reco Flash",        color:"#0891B2", bg:"#CFFAFE",  count: (store.recoflash||[]).length },
     { id:"quiz",      icon:"🧠",  label:"Quiz",              color:"#6366F1", bg:"#EEF2FF",  count: (store.quizzes||[]).length },
     { id:"annuaire",  icon:"📒",  label:"Contacts",          color:"#1A3A5C", bg:"#F0FDF4",  count: (store.contacts||[]).length },
+    { id:"pediaFiches", icon:"👶", label:"Fiches réflexes pédia", color:"#EC4899", bg:"#FCE7F3", count: 0 },
+    { id:"pediaMedics", icon:"💉", label:"Médicaments pédia",     color:"#0EA5E9", bg:"#E0F2FE", count: 0 },
   ];
 
   return (
@@ -5301,6 +5304,10 @@ function AdminScreen({ onNewItem, onBack }) {
           )}
         </div>
       )}
+
+      {tab === "pediaFiches" && <PediaFichesEditor/>}
+
+      {tab === "pediaMedics" && <PediaMedicsEditor/>}
 
       {tab !== "home" && (
         <div style={{marginTop:20, padding:"12px 16px", background:C.amberLight, border:`1px solid ${C.amber}`, borderRadius:12, fontSize:11, color:C.text, lineHeight:1.6}}>
@@ -16175,6 +16182,2112 @@ function SondageScreen({ onBack }) {
 }
 
 
+// ────────────────────────────────────────────────────────────────────────────
+// Données normes physiologiques pédiatriques (APLS / ERC 2021)
+// ────────────────────────────────────────────────────────────────────────────
+const PEDIA_NORMES = [
+  { age:"Nouveau-né",     ageMois:"0-1 mois",  poids:"3-4 kg",    fc:"110-160", fr:"30-60", pas:"60-90",  sonde:"3.0-3.5", lame:"0 (droite)", defib:"4 J/kg" },
+  { age:"Nourrisson",     ageMois:"1-12 mois", poids:"4-10 kg",   fc:"100-150", fr:"25-40", pas:"70-100", sonde:"3.5-4.0", lame:"1",          defib:"4 J/kg" },
+  { age:"1-2 ans",        ageMois:"12-24 mois",poids:"10-12 kg",  fc:"90-140",  fr:"20-30", pas:"80-105", sonde:"4.0-4.5", lame:"1",          defib:"4 J/kg" },
+  { age:"2-5 ans",        ageMois:"2-5 ans",   poids:"12-18 kg",  fc:"80-130",  fr:"20-25", pas:"80-110", sonde:"4.5-5.0", lame:"2",          defib:"4 J/kg" },
+  { age:"5-8 ans",        ageMois:"5-8 ans",   poids:"18-26 kg",  fc:"70-110",  fr:"18-22", pas:"85-115", sonde:"5.5-6.0", lame:"2",          defib:"4 J/kg" },
+  { age:"8-12 ans",       ageMois:"8-12 ans",  poids:"26-40 kg",  fc:"60-100",  fr:"16-20", pas:"90-120", sonde:"6.0-6.5", lame:"2-3",        defib:"4 J/kg" },
+  { age:"> 12 ans",       ageMois:"> 12 ans",  poids:"> 40 kg",   fc:"55-95",   fr:"12-18", pas:"100-130",sonde:"6.5-7.5", lame:"3",          defib:"4 J/kg (max 200J)" },
+];
+
+// Formules d'estimation du poids (APLS)
+function estimatePoids(ageAnnees) {
+  if (ageAnnees == null || isNaN(ageAnnees)) return null;
+  const a = parseFloat(ageAnnees);
+  if (a < 1) return Math.round((0.5 * (a*12) + 4) * 10) / 10; // nourrisson : (mois/2)+4
+  if (a <= 5) return Math.round((2 * a + 8) * 10) / 10;       // 1-5 ans : 2×âge+8
+  return Math.round((3 * a + 7) * 10) / 10;                    // 6-12 ans : 3×âge+7
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Scores pédiatriques
+// ────────────────────────────────────────────────────────────────────────────
+const PEDIA_SCORES = [
+  {
+    id:"westley", title:"Score de Westley", subtitle:"Sévérité du croup (laryngite)",
+    icon:"🫁", color:"#0EA5E9",
+    items:[
+      { label:"Stridor", options:[{t:"Absent",v:0},{t:"Au repos (audible stéthoscope)",v:1},{t:"Au repos (audible sans stéthoscope)",v:2}] },
+      { label:"Tirage", options:[{t:"Absent",v:0},{t:"Léger",v:1},{t:"Modéré",v:2},{t:"Sévère",v:3}] },
+      { label:"Entrée d'air", options:[{t:"Normale",v:0},{t:"Diminuée",v:1},{t:"Très diminuée",v:2}] },
+      { label:"Cyanose", options:[{t:"Absente",v:0},{t:"À l'agitation",v:4},{t:"Au repos",v:5}] },
+      { label:"Conscience", options:[{t:"Normale",v:0},{t:"Altérée",v:5}] },
+    ],
+    strat:[
+      { max:2, label:"Croup léger", color:"#16A34A", reco:"Traitement ambulatoire — corticoïde dose unique" },
+      { max:5, label:"Croup modéré", color:"#CA8A04", reco:"Corticoïde + surveillance — adrénaline nébulisée si besoin" },
+      { max:11,label:"Croup sévère", color:"#DC2626", reco:"Adrénaline nébulisée + corticoïde + surveillance rapprochée" },
+      { max:17,label:"Insuffisance respiratoire imminente", color:"#991B1B", reco:"Réanimation — appel anesthésiste/réa pédiatrique" },
+    ]
+  },
+  {
+    id:"pews", title:"PEWS", subtitle:"Pediatric Early Warning Score",
+    icon:"⚠️", color:"#EA580C",
+    items:[
+      { label:"Comportement", options:[{t:"Joue / approprié",v:0},{t:"Endormi",v:1},{t:"Irritable",v:2},{t:"Léthargique / confus / réponse réduite à la douleur",v:3}] },
+      { label:"Cardiovasculaire", options:[{t:"Rose / TRC 1-2s",v:0},{t:"Pâle / TRC 3s",v:1},{t:"Gris / TRC 4s / tachycardie +20",v:2},{t:"Gris marbré / TRC ≥5s / tachycardie +30 ou bradycardie",v:3}] },
+      { label:"Respiratoire", options:[{t:"Normal",v:0},{t:"FR +10 / utilise muscles accessoires / FiO2 ≥30%",v:1},{t:"FR +20 / tirage / FiO2 ≥40%",v:2},{t:"FR -5 sous norme + tirage/geignement / FiO2 ≥50%",v:3}] },
+    ],
+    strat:[
+      { max:2, label:"Risque faible", color:"#16A34A", reco:"Surveillance standard" },
+      { max:4, label:"Risque intermédiaire", color:"#CA8A04", reco:"Réévaluation rapprochée — alerter le senior" },
+      { max:9, label:"Risque élevé", color:"#DC2626", reco:"Évaluation médicale urgente — envisager réa pédiatrique" },
+    ]
+  },
+  {
+    id:"deshydratation", title:"Déshydratation clinique", subtitle:"Évaluation du degré (OMS/Gorelick)",
+    icon:"💧", color:"#0891B2",
+    items:[
+      { label:"État général", options:[{t:"Normal",v:0},{t:"Agité / irritable",v:1},{t:"Léthargique / inconscient",v:2}] },
+      { label:"Yeux", options:[{t:"Normaux",v:0},{t:"Légèrement enfoncés",v:1},{t:"Très enfoncés",v:2}] },
+      { label:"Larmes", options:[{t:"Présentes",v:0},{t:"Diminuées",v:1},{t:"Absentes",v:2}] },
+      { label:"Bouche / langue", options:[{t:"Humide",v:0},{t:"Collante",v:1},{t:"Sèche",v:2}] },
+      { label:"Pli cutané", options:[{t:"Disparaît vite",v:0},{t:"Disparaît lentement",v:1},{t:"Persiste >2s",v:2}] },
+    ],
+    strat:[
+      { max:1, label:"Pas de déshydratation / minime (<3%)", color:"#16A34A", reco:"SRO à domicile, poursuivre alimentation" },
+      { max:5, label:"Déshydratation légère à modérée (3-9%)", color:"#CA8A04", reco:"Réhydratation orale (SRO) surveillée aux urgences" },
+      { max:10,label:"Déshydratation sévère (≥10%)", color:"#DC2626", reco:"Réhydratation IV / IO urgente — bolus 20 mL/kg NaCl 0.9%" },
+    ]
+  },
+  {
+    id:"glasgow_ped", title:"Glasgow pédiatrique", subtitle:"Score de coma adapté à l'âge",
+    icon:"🧠", color:"#6366F1",
+    ageVariants:[
+      { key:"<2", label:"< 2 ans" },
+      { key:"2-5", label:"2-5 ans" },
+      { key:">5", label:"> 5 ans" },
+    ],
+    itemsByAge:{
+      "<2":[
+        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
+        { label:"Réponse verbale", options:[{t:"Agit normalement",v:5},{t:"Pleure",v:4},{t:"Hurlements inappropriés",v:3},{t:"Gémissements",v:2},{t:"Aucune réponse",v:1}] },
+        { label:"Réponse motrice", options:[{t:"Mouvements spontanés intentionnels",v:6},{t:"Se retire au toucher",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
+      ],
+      "2-5":[
+        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
+        { label:"Réponse verbale", options:[{t:"Mots appropriés, sourit, fixe, suit du regard",v:5},{t:"Mots appropriés, pleure, consolable",v:4},{t:"Hurle, inconsolable",v:3},{t:"Gémit aux stimuli douloureux",v:2},{t:"Aucune réponse",v:1}] },
+        { label:"Réponse motrice", options:[{t:"Répond aux demandes",v:6},{t:"Localise la douleur",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
+      ],
+      ">5":[
+        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
+        { label:"Réponse verbale", options:[{t:"Orienté, parle",v:5},{t:"Désorienté, parle",v:4},{t:"Paroles inappropriées",v:3},{t:"Sons incompréhensibles",v:2},{t:"Aucune réponse",v:1}] },
+        { label:"Réponse motrice", options:[{t:"Répond aux demandes",v:6},{t:"Localise la douleur",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
+      ],
+    },
+    strat:[
+      { max:8,  label:"Coma grave (GCS ≤ 8)", color:"#DC2626", reco:"Protection des voies aériennes — envisager intubation" },
+      { max:12, label:"Atteinte modérée", color:"#CA8A04", reco:"Surveillance neurologique rapprochée" },
+      { max:15, label:"Atteinte légère / normal", color:"#16A34A", reco:"Surveillance selon contexte" },
+    ]
+  },
+  {
+    id:"avpu", title:"Score AVPU", subtitle:"Évaluation neurologique rapide",
+    icon:"🔔", color:"#0891B2",
+    items:[
+      { label:"Niveau de conscience", options:[
+        {t:"A — Alerte : conscient, réagit spontanément, suit les objets",v:0},
+        {t:"V — Verbal : répond aux commandes verbales, yeux ne s'ouvrent pas spontanément",v:1},
+        {t:"P — Pain : réagit aux stimuli douloureux uniquement",v:2},
+        {t:"U — Unresponsive : aucune réaction",v:3},
+      ] },
+    ],
+    strat:[
+      { max:0, label:"A — Alerte", color:"#16A34A", reco:"État de conscience normal" },
+      { max:1, label:"V — Réponse verbale", color:"#CA8A04", reco:"Vigilance altérée — surveillance" },
+      { max:2, label:"P — Réponse à la douleur", color:"#EA580C", reco:"Altération marquée — équivaut à GCS ~8, protéger les VAS" },
+      { max:3, label:"U — Aucune réponse", color:"#DC2626", reco:"Coma — intubation à envisager, réa" },
+    ]
+  },
+  {
+    id:"evendol", title:"EVENDOL", subtitle:"Évaluation de la douleur (0-7 ans)",
+    icon:"😣", color:"#DB2777",
+    items:[
+      { label:"Expression vocale/verbale (pleure, crie, gémit, dit qu'il a mal)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Mimique (front plissé, sourcils froncés, bouche crispée)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Mouvements (s'agite, se raidit, se crispe)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Positions (attitude inhabituelle, antalgique, se protège, immobile)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Relation avec l'environnement (consolable, joue, communique)", options:[{t:"Normale",v:0},{t:"Diminuée",v:1},{t:"Très diminuée",v:2},{t:"Absente",v:3}] },
+    ],
+    strat:[
+      { max:3,  label:"Pas de douleur significative", color:"#16A34A", reco:"Seuil de traitement : 4/15" },
+      { max:5,  label:"Douleur faible (< 6/15)", color:"#CA8A04", reco:"Antalgique palier 1 — réévaluer" },
+      { max:8,  label:"Douleur modérée (6-8/15)", color:"#EA580C", reco:"Antalgique palier 2 — réévaluer à 30-45 min" },
+      { max:15, label:"Douleur sévère (> 8/15)", color:"#DC2626", reco:"Antalgique palier 3 (morphine) — titration" },
+    ]
+  },
+];
+
+// ────────────────────────────────────────────────────────────────────────────
+// PediaScoreCalc : calculateur générique pour un score pédiatrique
+// ────────────────────────────────────────────────────────────────────────────
+function PediaScoreCalc({ score, onBack }) {
+  const C = useC();
+  const [picks, setPicks] = useState({});
+  const hasAgeVariants = !!score.ageVariants;
+  const [ageKey, setAgeKey] = useState(hasAgeVariants ? score.ageVariants[0].key : null);
+
+  // Items selon variante d'âge ou items fixes
+  const items = hasAgeVariants ? (score.itemsByAge[ageKey] || []) : score.items;
+
+  // Reset des réponses quand on change de tranche d'âge
+  const changeAge = (k) => { setAgeKey(k); setPicks({}); };
+
+  const total = items.reduce((acc, item, i) => {
+    const v = picks[i];
+    return acc + (v != null ? v : 0);
+  }, 0);
+  const allAnswered = items.every((_, i) => picks[i] != null);
+  const strat = allAnswered ? score.strat.find(s => total <= s.max) || score.strat[score.strat.length-1] : null;
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{background:score.color+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{score.icon}</div>
+        <div>
+          <div style={{fontSize:17, fontWeight:800, color:C.text}}>{score.title}</div>
+          <div style={{fontSize:12, color:C.sub}}>{score.subtitle}</div>
+        </div>
+      </div>
+
+      {/* Sélecteur d'âge (Glasgow pédiatrique) */}
+      {hasAgeVariants && (
+        <div style={{display:"flex", gap:6, marginBottom:14}}>
+          {score.ageVariants.map(v => (
+            <button key={v.key} onClick={()=>changeAge(v.key)} style={{
+              flex:1, padding:"9px 4px", borderRadius:9, cursor:"pointer", fontSize:12, fontWeight:700,
+              border:`2px solid ${ageKey===v.key ? score.color : C.border}`,
+              background: ageKey===v.key ? score.color+"15" : C.white,
+              color: ageKey===v.key ? score.color : C.sub,
+            }}>{v.label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Total */}
+      <div style={{background: strat ? strat.color+"15" : C.bg, border:`2px solid ${strat ? strat.color : C.border}`, borderRadius:16, padding:"12px 16px", marginBottom:18, display:"flex", alignItems:"center", gap:14}}>
+        <div style={{fontSize:40, fontWeight:900, color: strat ? strat.color : C.sub, minWidth:50, textAlign:"center"}}>{total}</div>
+        <div>
+          {strat ? (
+            <>
+              <div style={{fontSize:15, fontWeight:800, color:strat.color}}>{strat.label}</div>
+              <div style={{fontSize:12, color:C.text, marginTop:2, lineHeight:1.4}}>{strat.reco}</div>
+            </>
+          ) : <div style={{fontSize:13, color:C.sub}}>Répondez à tous les critères</div>}
+        </div>
+      </div>
+
+      {/* Items */}
+      {items.map((item, i) => (
+        <div key={i} style={{marginBottom:14}}>
+          <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:7}}>{item.label}</div>
+          <div style={{display:"flex", flexDirection:"column", gap:6}}>
+            {item.options.map((opt, j) => {
+              const active = picks[i] === opt.v;
+              return (
+                <button key={j} onClick={()=>setPicks(p=>({...p, [i]:opt.v}))} style={{
+                  display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+                  padding:"10px 14px", borderRadius:10, cursor:"pointer", textAlign:"left",
+                  border:`2px solid ${active ? score.color : C.border}`,
+                  background: active ? score.color+"15" : C.white,
+                }}>
+                  <span style={{fontSize:13, color:C.text, fontWeight: active?700:500}}>{opt.t}</span>
+                  <span style={{fontSize:12, fontWeight:800, color: active ? score.color : C.sub, flexShrink:0}}>+{opt.v}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <button onClick={()=>setPicks({})} style={{width:"100%", background:C.white, border:`1.5px solid ${C.border}`, borderRadius:12, padding:"11px", fontSize:13, fontWeight:700, color:C.sub, cursor:"pointer", marginTop:6, marginBottom:20}}>
+        ↺ Réinitialiser
+      </button>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PediaScreen : module pédiatrie (4 sections)
+// ────────────────────────────────────────────────────────────────────────────
+function PediaScreen({ onBack }) {
+  const C = useC();
+  const [section, setSection] = useState("home"); // home | cartes | doses | normes | fiches | scores
+  const [scoreSel, setScoreSel] = useState(null);
+  const [ficheSel, setFicheSel] = useState(null);
+  const [carteSel, setCarteSel] = useState(null);
+  const [dedieSel, setDedieSel] = useState(null); // Apgar/Silverman/Carvajal (calculateurs dédiés)
+
+  // Scores pédia avec calculateur dédié (réutilisés du module Scores)
+  const PEDIA_SCORES_DEDIES = [
+    { id:"apgar",     title:"Score d'Apgar",            subtitle:"Adaptation néonatale (1 / 5 min)", icon:"👶", color:"#EC4899" },
+    { id:"silverman", title:"Score de Silverman",       subtitle:"Détresse respiratoire du nouveau-né", icon:"🫁", color:"#EC4899" },
+    { id:"carvajal",  title:"Carvajal (brûlé enfant)",  subtitle:"Remplissage pédiatrique – SCB", icon:"🔥", color:"#DB2777" },
+  ];
+  const [fiches, setFiches] = useState([]);
+  const [medicaments, setMedicaments] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[section, scoreSel, ficheSel, carteSel, dedieSel]);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [f, m] = await Promise.all([
+        supaFetch("/pedia_fiches?order=created_at.desc"),
+        supaFetch("/pedia_medicaments?order=nom.asc"),
+      ]);
+      setFiches(f); setMedicaments(m);
+    } catch(e) { console.warn("loadPedia", e); }
+    setLoading(false);
+  }
+  useEffect(()=>{ loadData(); },[]);
+
+  const SECTIONS = [
+    { id:"broselow", icon:"📏", label:"Toise de Broselow", desc:"Taille → poids → carte d'urgence", color:"#1A3A5C", bg:"#EFF6FF" },
+    { id:"cartes", icon:"🚨", label:"Cartes d'urgences vitales", desc:"Doses pré-calculées par âge/poids", color:"#EC4899", bg:"#FCE7F3" },
+    { id:"doses",  icon:"💊", label:"Calculateur de doses", desc:"Doses selon le poids ou l'âge", color:"#0EA5E9", bg:"#E0F2FE" },
+    { id:"normes", icon:"📊", label:"Normes physiologiques", desc:"Constantes & matériel par âge", color:"#16A34A", bg:"#DCFCE7" },
+    { id:"fiches", icon:"📋", label:"Fiches réflexes", desc:"Sédation, maltraitance, urgences", color:"#EC4899", bg:"#FCE7F3" },
+    { id:"scores", icon:"🧮", label:"Scores pédiatriques", desc:"Westley, PEWS, déshydratation", color:"#7C3AED", bg:"#F3E8FF" },
+  ];
+
+  // ── Routing interne ──
+  if (section === "broselow") return (
+    <BroseloweScreen
+      onBack={()=>setSection("home")}
+      onSelectCarte={(carte)=>{ setCarteSel(carte); setSection("cartes"); }}
+    />
+  );
+  if (section === "cartes" && carteSel) return <PediaCarteDetail carte={carteSel} onBack={()=>setCarteSel(null)}/>;
+  if (section === "cartes") return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
+        <button onClick={()=>setSection("home")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Cartes d'urgences vitales</div>
+      </div>
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"9px 12px", marginBottom:16, fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        Sélectionnez la tranche d'âge/poids. Estimer le poids : parole du parent, toise (Broselow/Pawper), ou formule (âge + 4) × 2.
+      </div>
+      <div style={{display:"flex", flexDirection:"column", gap:8}}>
+        {[...PEDIA_CARTES].sort((a,b)=>a.poids-b.poids).map(c => (
+          <button key={c.id} onClick={()=>setCarteSel(c)} style={{
+            display:"flex", alignItems:"center", gap:12, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:"4px solid #EC4899",
+            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+          }}>
+            <div style={{background:"#FCE7F3", borderRadius:11, minWidth:52, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:"#BE185D", padding:"0 8px"}}>{c.poids} kg</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15, fontWeight:800, color:C.text}}>{c.age}</div>
+              <div style={{fontSize:11, color:C.sub}}>{c.taille}</div>
+            </div>
+            <span style={{color:"#EC4899", fontSize:18}}>›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  if (section === "scores" && dedieSel === "apgar")     return <ApgarCalculator onBack={()=>setDedieSel(null)}/>;
+  if (section === "scores" && dedieSel === "silverman") return <SilvermanCalculator onBack={()=>setDedieSel(null)}/>;
+  if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
+  if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
+  if (section === "doses")  return <PediaDoses medicaments={medicaments} loading={loading} onBack={()=>setSection("home")}/>;
+  if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
+  if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
+  if (section === "scores") return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <button onClick={()=>setSection("home")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Scores pédiatriques</div>
+      </div>
+      <div style={{display:"flex", flexDirection:"column", gap:10}}>
+        {PEDIA_SCORES.map(s => (
+          <button key={s.id} onClick={()=>setScoreSel(s)} style={{
+            display:"flex", alignItems:"center", gap:12, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${s.color}`,
+            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+          }}>
+            <div style={{background:s.color+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{s.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{s.title}</div>
+              <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
+            </div>
+            <span style={{color:s.color, fontSize:18}}>›</span>
+          </button>
+        ))}
+        {PEDIA_SCORES_DEDIES.map(s => (
+          <button key={s.id} onClick={()=>setDedieSel(s.id)} style={{
+            display:"flex", alignItems:"center", gap:12, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${s.color}`,
+            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+          }}>
+            <div style={{background:s.color+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{s.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{s.title}</div>
+              <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
+            </div>
+            <span style={{color:s.color, fontSize:18}}>›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ── Accueil du module ──
+  return (
+    <div>
+      {onBack && (
+        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Accueil
+        </button>
+      )}
+
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
+        <div style={{background:"#FCE7F3", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>👶</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Pédiatrie</div>
+          <div style={{fontSize:12, color:C.sub}}>Outils & références pédiatriques</div>
+        </div>
+      </div>
+
+      {/* Bandeau sécurité */}
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"9px 12px", margin:"12px 0 18px", fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        ⚠️ Aide à la décision — toute dose calculée doit être vérifiée cliniquement avant administration
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+        {SECTIONS.map(s => (
+          <button key={s.id} onClick={()=>setSection(s.id)} style={{
+            background:C.white, border:`1.5px solid ${C.border}`, borderRadius:16,
+            padding:"18px 14px", cursor:"pointer", textAlign:"left",
+            display:"flex", flexDirection:"column", gap:8, boxShadow:"0 1px 4px rgba(0,0,0,.06)",
+          }}>
+            <div style={{width:46, height:46, borderRadius:13, background:s.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>{s.icon}</div>
+            <div style={{fontSize:14, fontWeight:800, color:C.text, lineHeight:1.2}}>{s.label}</div>
+            <div style={{fontSize:11, color:C.sub, lineHeight:1.3}}>{s.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Section Normes physiologiques ──
+function PediaNormes({ onBack }) {
+  const C = useC();
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Normes physiologiques</div>
+      </div>
+
+      <div style={{fontSize:11, color:C.sub, marginBottom:14, lineHeight:1.5}}>
+        Constantes normales et matériel adapté par tranche d'âge (réf. APLS / ERC 2021). FC = battements/min, FR = cycles/min, PAS = mmHg.
+      </div>
+
+      <div style={{display:"flex", flexDirection:"column", gap:12}}>
+        {PEDIA_NORMES.map((n, i) => (
+          <div key={i} style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:"4px solid #16A34A", borderRadius:14, padding:"14px 16px"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
+              <span style={{fontSize:15, fontWeight:800, color:C.text}}>{n.age}</span>
+              <span style={{fontSize:11, fontWeight:700, color:"#16A34A", background:"#DCFCE7", borderRadius:8, padding:"2px 8px"}}>{n.poids}</span>
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+              <NormCell label="FC" value={n.fc} unit="/min" color="#E05260"/>
+              <NormCell label="FR" value={n.fr} unit="/min" color="#0EA5E9"/>
+              <NormCell label="PAS" value={n.pas} unit="mmHg" color="#7C3AED"/>
+              <NormCell label="Sonde IOT" value={n.sonde} unit="mm" color="#16A34A"/>
+              <NormCell label="Lame" value={n.lame} unit="" color="#CA8A04"/>
+              <NormCell label="Défib." value={n.defib} unit="" color="#DC2626"/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:C.bg, borderRadius:10, padding:"10px 12px", fontSize:10, color:C.sub, lineHeight:1.6, marginTop:14}}>
+        <strong>Formules d'estimation du poids (APLS) :</strong><br/>
+        • Nourrisson (&lt;1 an) : (âge en mois ÷ 2) + 4<br/>
+        • 1-5 ans : (2 × âge) + 8<br/>
+        • 6-12 ans : (3 × âge) + 7
+      </div>
+    </div>
+  );
+}
+
+function NormCell({ label, value, unit, color }) {
+  const C = useC();
+  return (
+    <div style={{background:C.bg, borderRadius:8, padding:"8px 10px"}}>
+      <div style={{fontSize:10, fontWeight:700, color:color, marginBottom:2}}>{label}</div>
+      <div style={{fontSize:13, fontWeight:800, color:C.text}}>{value} <span style={{fontSize:9, fontWeight:500, color:C.sub}}>{unit}</span></div>
+    </div>
+  );
+}
+
+// ── Section Calculateur de doses ──
+function PediaDoses({ medicaments, loading, onBack }) {
+  const C = useC();
+  const [mode, setMode] = useState("poids"); // poids | age
+  const [poids, setPoids] = useState("");
+  const [age, setAge] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Poids effectif (saisi ou estimé depuis l'âge)
+  const poidsEff = mode === "poids"
+    ? (parseFloat(poids) || null)
+    : estimatePoids(age);
+
+  const filtered = medicaments.filter(m => {
+    const q = search.toLowerCase();
+    return !q || (m.nom + (m.indication||"") + (m.categorie||"")).toLowerCase().includes(q);
+  });
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
+      </div>
+
+      {/* Toggle poids / âge */}
+      <div style={{display:"flex", gap:8, marginBottom:12}}>
+        {[{id:"poids",label:"Par poids"},{id:"age",label:"Par âge"}].map(t => (
+          <button key={t.id} onClick={()=>setMode(t.id)} style={{
+            flex:1, padding:"9px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
+            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
+            background: mode===t.id ? "#E0F2FE" : C.white, color: mode===t.id ? "#0369A1" : C.sub,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Saisie */}
+      {mode === "poids" ? (
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
+          <input type="number" inputMode="decimal" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="Poids de l'enfant"
+            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
+          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>kg</span>
+        </div>
+      ) : (
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
+          <input type="number" inputMode="decimal" value={age} onChange={e=>setAge(e.target.value)} placeholder="Âge de l'enfant"
+            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
+          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>ans</span>
+        </div>
+      )}
+
+      {/* Poids effectif affiché en permanence */}
+      {poidsEff && (
+        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:16, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
+          {mode === "age"
+            ? `Poids estimé : ${poidsEff} kg (formule APLS)`
+            : `Poids : ${poidsEff} kg`}
+        </div>
+      )}
+
+      {!poidsEff && (
+        <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
+          Saisissez {mode === "poids" ? "le poids" : "l'âge"} pour calculer les doses
+        </div>
+      )}
+
+      {/* Recherche médicament */}
+      {poidsEff && (
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Rechercher un médicament..."
+          style={{width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:13, color:C.text, background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}/>
+      )}
+
+      {/* Liste des médicaments avec doses calculées */}
+      {poidsEff && (
+        loading ? (
+          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
+            {medicaments.length === 0 ? "Aucun médicament enregistré. Ajoutez-les via l'éditeur." : "Aucun résultat"}
+          </div>
+        ) : (
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {filtered.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+function PediaDoseCard({ medic, poids }) {
+  const C = useC();
+  const color = medic.color || "#0EA5E9";
+
+  // Cas spécial : pas de dose_par_kg (ex: noradrénaline en PSE)
+  if (!medic.dose_par_kg) {
+    return (
+      <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+          <span style={{fontSize:14, fontWeight:800, color:C.text}}>{medic.nom}</span>
+          {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px"}}>{medic.voie}</span>}
+        </div>
+        {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:6}}>{medic.indication}</div>}
+        <div style={{background:color+"15", borderRadius:8, padding:"8px 10px", fontSize:12, color:C.text, fontWeight:600}}>
+          ⚙️ {medic.frequence || "Voir cartes Urg'Ara pour le débit selon le poids"}
+        </div>
+        {medic.remarques && <div style={{fontSize:11, color:C.sub, marginTop:6, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+      </div>
+    );
+  }
+
+  // Calcul dose
+  const dosePerKg = parseFloat(medic.dose_par_kg);
+  const doseMax   = medic.dose_max != null ? parseFloat(medic.dose_max) : null;
+  let dose = dosePerKg * poids;
+  const capped = doseMax != null && dose > doseMax;
+  if (capped) dose = doseMax;
+  const doseR = Math.round(dose * 100) / 100;
+
+  // Volume si concentration connue
+  const concVal = medic.concentration_value != null ? parseFloat(medic.concentration_value) : null;
+  const volume  = concVal ? Math.round((doseR / concVal) * 100) / 100 : null;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      {/* Ligne titre + voie */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      {/* Résultat principal — mise en évidence */}
+      <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:6}}>
+        <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
+          {/* Dose */}
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
+            <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>DOSE</span>
+            <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{doseR}</span>
+            <span style={{fontSize:11, fontWeight:600, color:C.sub}}>{medic.unite||"mg"}</span>
+          </div>
+          {/* Flèche */}
+          {volume != null && <span style={{fontSize:18, color:C.sub}}>→</span>}
+          {/* Volume */}
+          {volume != null && (
+            <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
+              <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>VOLUME</span>
+              <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{volume}</span>
+              <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL</span>
+            </div>
+          )}
+          {/* Infos calcul */}
+          <div style={{flex:1, minWidth:100}}>
+            <div style={{fontSize:10, color:C.sub, lineHeight:1.5}}>
+              {dosePerKg} {medic.unite||"mg"}/kg × {poids} kg
+              {medic.concentration && <><br/>{medic.concentration}</>}
+            </div>
+          </div>
+        </div>
+        {/* Alerte plafonnement */}
+        {capped && (
+          <div style={{marginTop:6, fontSize:11, fontWeight:800, color:"#DC2626", display:"flex", alignItems:"center", gap:4}}>
+            ⚠️ Dose plafonnée à {doseMax} {medic.unite||"mg"} (max absolu)
+          </div>
+        )}
+      </div>
+
+      {/* Infos secondaires */}
+      {medic.frequence && <div style={{fontSize:11, color:C.sub, marginBottom:3}}>⏱️ {medic.frequence}</div>}
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// Config affichage catégories (même ordre que cartes Urg'Ara)
+const PEDIA_DOSE_CATS = [
+  { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
+  { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
+  { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
+  { key:"osmotherapie",  label:"Osmothérapie",               icon:"💧",  color:"#CA8A04", bg:"#FEF9C3" },
+  { key:"antibiotique",  label:"Antibiotique",               icon:"🦠",  color:"#EA580C", bg:"#FFEDD5" },
+];
+
+function PediaDoses({ medicaments, loading, onBack }) {
+  const C = useC();
+  const [mode, setMode] = useState("poids");
+  const [poids, setPoids] = useState("");
+  const [age, setAge] = useState("");
+  const [search, setSearch] = useState("");
+  const [openCats, setOpenCats] = useState({}); // catégories dépliées
+
+  const poidsEff = mode === "poids"
+    ? (parseFloat(poids) || null)
+    : estimatePoids(age);
+
+  const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
+
+  // Filtrage
+  const q = search.toLowerCase();
+  const filtered = medicaments.filter(m =>
+    !q || (m.nom+(m.indication||"")+(m.categorie||"")).toLowerCase().includes(q)
+  );
+
+  // Groupement par catégorie dans l'ordre PEDIA_DOSE_CATS, puis "Autre" pour le reste
+  const grouped = PEDIA_DOSE_CATS.map(cat => ({
+    ...cat,
+    items: filtered.filter(m => m.categorie === cat.key),
+  })).filter(cat => cat.items.length > 0);
+  const autreItems = filtered.filter(m => !PEDIA_DOSE_CATS.find(c => c.key === m.categorie));
+  if (autreItems.length > 0) grouped.push({ key:"autre", label:"Autre", icon:"📋", color:"#64748B", bg:"#F1F5F9", items:autreItems });
+
+  return (
+    <div style={{maxWidth:"100%", overflowX:"hidden"}}>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text, flexShrink:0}}>←</button>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
+          <div style={{fontSize:12, color:C.sub}}>Dose × poids — plafonnement automatique</div>
+        </div>
+      </div>
+
+      {/* Bandeau sécurité */}
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"8px 12px", marginBottom:14, fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        ⚠️ Aide au calcul — vérification clinique obligatoire avant administration
+      </div>
+
+      {/* Toggle poids / âge */}
+      <div style={{display:"flex", gap:8, marginBottom:10}}>
+        {[{id:"poids",label:"📏 Par poids"},{id:"age",label:"🎂 Par âge"}].map(t => (
+          <button key={t.id} onClick={()=>setMode(t.id)} style={{
+            flex:1, padding:"10px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
+            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
+            background: mode===t.id ? "#E0F2FE" : C.white,
+            color: mode===t.id ? "#0369A1" : C.sub,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Saisie */}
+      <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8, boxSizing:"border-box"}}>
+        <input type="number" inputMode="numeric"
+          value={mode==="poids" ? poids : age}
+          onChange={e => mode==="poids" ? setPoids(e.target.value) : setAge(e.target.value)}
+          placeholder={mode==="poids" ? "Poids en kg" : "Âge en années"}
+          style={{flex:1, minWidth:0, padding:"14px 12px", borderRadius:12,
+            border:`2px solid ${poidsEff ? "#0EA5E9" : C.border}`,
+            fontSize:24, fontWeight:900, color:C.navy, background:C.white,
+            outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+            textAlign:"center", boxSizing:"border-box"}}
+        />
+        <div style={{flexShrink:0, background: poidsEff ? "#0EA5E9" : C.bg, borderRadius:10, padding:"10px 14px"}}>
+          <span style={{fontSize:15, fontWeight:800, color: poidsEff ? "#fff" : C.sub}}>
+            {mode==="poids" ? "kg" : "ans"}
+          </span>
+        </div>
+      </div>
+
+      {/* Poids affiché */}
+      {poidsEff && (
+        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:14, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
+          {mode==="age" ? `Poids estimé (formule APLS) : ` : "Poids : "}
+          <span style={{fontSize:20}}>{poidsEff} kg</span>
+        </div>
+      )}
+
+      {!poidsEff && (
+        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
+          Saisissez {mode==="poids" ? "le poids" : "l'âge"} pour voir les doses calculées
+        </div>
+      )}
+
+      {/* Recherche */}
+      {poidsEff && (
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="🔍 Rechercher un médicament..."
+          style={{width:"100%", padding:"10px 14px", borderRadius:10,
+            border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
+            background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
+        />
+      )}
+
+      {/* Médicaments groupés par catégorie */}
+      {poidsEff && (
+        loading ? (
+          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+        ) : grouped.length === 0 ? (
+          <div style={{textAlign:"center", padding:"20px", color:C.sub, fontSize:13}}>
+            {medicaments.length === 0 ? "Aucun médicament — ajoutez-les via l'éditeur." : "Aucun résultat"}
+          </div>
+        ) : (
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {grouped.map(cat => (
+              <div key={cat.key}>
+                {/* Header catégorie — cliquable pour déplier/plier */}
+                <button onClick={()=>toggleCat(cat.key)} style={{
+                  width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+                  padding:"10px 14px", borderRadius:12, border:"none",
+                  background:cat.bg, cursor:"pointer", marginBottom: openCats[cat.key]===false ? 0 : 8,
+                }}>
+                  <div style={{display:"flex", alignItems:"center", gap:8}}>
+                    <span style={{fontSize:16}}>{cat.icon}</span>
+                    <span style={{fontSize:13, fontWeight:800, color:cat.color}}>{cat.label}</span>
+                    <span style={{fontSize:11, color:cat.color, background:"#fff", borderRadius:10, padding:"1px 7px", fontWeight:700}}>{cat.items.length}</span>
+                  </div>
+                  <span style={{fontSize:14, color:cat.color}}>{openCats[cat.key]===false ? "▶" : "▼"}</span>
+                </button>
+                {/* Médicaments de la catégorie */}
+                {openCats[cat.key] !== false && (
+                  <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                    {cat.items.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+
+function PediaFiches({ fiches, loading, selected, setSelected, onBack }) {
+  const C = useC();
+
+  if (selected) {
+    const f = selected;
+    return (
+      <div>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+          <button onClick={()=>setSelected(null)} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+          <div style={{fontSize:17, fontWeight:800, color:C.text}}>{f.title}</div>
+        </div>
+
+        <div style={{background:`linear-gradient(135deg, ${f.color||"#EC4899"} 0%, ${f.color||"#EC4899"}CC 100%)`, borderRadius:16, padding:18, marginBottom:18, color:"#fff"}}>
+          <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <span style={{fontSize:28}}>{f.icon||"👶"}</span>
+            <div>
+              <div style={{fontSize:18, fontWeight:800}}>{f.title}</div>
+              {f.subtitle && <div style={{fontSize:12, opacity:.9}}>{f.subtitle}</div>}
+            </div>
+          </div>
+        </div>
+
+        {(f.image_data || f.image_url) && (
+          <div style={{borderRadius:14, overflow:"hidden", marginBottom:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
+            <ClickableImage src={f.image_data||f.image_url} alt={f.title} style={{borderRadius:14}}/>
+          </div>
+        )}
+
+        {(f.alertes||[]).length > 0 && (
+          <div style={{background:"#FEF2F2", border:"2px solid #EF4444", borderRadius:12, padding:14, marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#DC2626", marginBottom:8, letterSpacing:.5}}>🚨 SIGNAUX D'ALERTE</div>
+            {f.alertes.map((a,i)=>(
+              <div key={i} style={{display:"flex", gap:8, marginBottom:6, fontSize:13, color:"#7F1D1D", lineHeight:1.4}}>
+                <span style={{flexShrink:0}}>•</span><span>{a}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(f.points_cles||[]).length > 0 && (
+          <div style={{background:"#F0FDF4", border:"1.5px solid #86EFAC", borderRadius:12, padding:14, marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#16A34A", marginBottom:8, letterSpacing:.5}}>✓ POINTS CLÉS</div>
+            {f.points_cles.map((p,i)=>(
+              <div key={i} style={{display:"flex", gap:8, marginBottom:6, fontSize:13, color:C.text, lineHeight:1.4}}>
+                <span style={{color:"#16A34A", flexShrink:0}}>✓</span><span>{p}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {f.content && (
+          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:16, fontSize:14, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>
+            {f.content}
+          </div>
+        )}
+
+        {f.medias?.length > 0 && <div style={{marginTop:16}}><MediaGallery medias={f.medias}/></div>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Fiches réflexes</div>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+      ) : fiches.length === 0 ? (
+        <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+          <div style={{fontSize:36, marginBottom:8}}>📋</div>
+          <div style={{fontSize:14, fontWeight:600}}>Aucune fiche pour l'instant</div>
+          <div style={{fontSize:12, marginTop:4}}>Créez-les via l'éditeur de fiches</div>
+        </div>
+      ) : (
+        <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          {fiches.map(f => (
+            <button key={f.id} onClick={()=>setSelected(f)} style={{
+              display:"flex", alignItems:"center", gap:12, background:C.white,
+              border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${f.color||"#EC4899"}`,
+              borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+            }}>
+              <div style={{background:(f.color||"#EC4899")+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{f.icon||"👶"}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14, fontWeight:800, color:C.text}}>{f.title}</div>
+                {f.subtitle && <div style={{fontSize:11, color:C.sub}}>{f.subtitle}</div>}
+              </div>
+              <span style={{color:f.color||"#EC4899", fontSize:18}}>›</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cartes d'Urgences Vitales Pédiatriques (Urg'Ara / Pédi'Ara V1.0 - 01/2026)
+// Données pré-calculées par tranche d'âge/poids — aide cognitive
+// ────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Toise de Broselow — correspondance taille (cm) → bande couleur → carte pédia
+// Référence : Broselow-Luten 2017 (couleurs standard)
+// ────────────────────────────────────────────────────────────────────────────
+const BROSELOW_BANDES = [
+  { couleur:"Gris",    hex:"#9CA3AF", tailleMin:46,  tailleMax:59,  poids:"3-5 kg",   carteId:"nn3",  label:"Nouveau-né / 3 mois" },
+  { couleur:"Rose",    hex:"#F9A8D4", tailleMin:60,  tailleMax:69,  poids:"6-7 kg",   carteId:"m6",   label:"3-6 mois" },
+  { couleur:"Rouge",   hex:"#EF4444", tailleMin:70,  tailleMax:79,  poids:"8-9 kg",   carteId:"m9",   label:"6-12 mois" },
+  { couleur:"Violet",  hex:"#A855F7", tailleMin:80,  tailleMax:89,  poids:"10-11 kg", carteId:"m12",  label:"12-18 mois" },
+  { couleur:"Jaune",   hex:"#EAB308", tailleMin:90,  tailleMax:99,  poids:"12-14 kg", carteId:"m24",  label:"2-3 ans" },
+  { couleur:"Blanc",   hex:"#D1D5DB", tailleMin:100, tailleMax:109, poids:"15-18 kg", carteId:"a3",   label:"3-4 ans" },
+  { couleur:"Bleu",    hex:"#3B82F6", tailleMin:110, tailleMax:119, poids:"19-22 kg", carteId:"a5",   label:"4-6 ans" },
+  { couleur:"Orange",  hex:"#F97316", tailleMin:120, tailleMax:131, poids:"24-28 kg", carteId:"a7",   label:"6-8 ans" },
+  { couleur:"Vert",    hex:"#22C55E", tailleMin:132, tailleMax:143, poids:"29-36 kg", carteId:"a9",   label:"8-10 ans" },
+];
+
+const PEDIA_CARTES = [
+  // ── Nouveau-né 3 kg ──────────────────────────────────────────────────────
+  {
+    id:"nn3", age:"Nouveau-né", poids:3, taille:"47-52 cm",
+    normes:{ fr:"30-50", fc:"135 (100-180)", pas:"60", masseSang:"270",
+      pasMiniHorsTC:"50", pamHorsTC:"≥45", pasMiniTC:"70", pamTC:"≥55",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"00-0", lame:"Droite 0/1", mandrin:"6", sondeIOT:"3", repereOral:"9", aspiration:"6", igel:"1", guedel:"0-0", drain:"8", sng:"6", io:"Rose 15 mm" },
+    respi:{ mode:"VPC (pression contrôlée)", vt:"18-21 mL ou EtCO2 30-35", fr:"40", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"12 mL/h", cee:"12 J", remplissage:"30 mL à la seringue", transfusion:"60 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 0,9 mL/h · 0,5 = 4,5 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"30 mg/poche 50 mL", mode:"IVL 10 min", dose:"10 mg/kg = 30 mg", volume:"0,3 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,05 mg", volume:"0,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL puis prélever seringue 1 mL", mode:"IVD", dose:"0,05 mg/kg/5min = 0,15 mg", volume:"0,15 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 0,6 mg", volume:"0,6 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 1,5 mg", volume:"1,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3 mg/kg = 9 mg", volume:"0,9 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"2 mg/kg = 6 mg", volume:"0,5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 3 mg", volume:"0,3 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"0,3 → 0,9 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"1,2 → 2,4 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 0,8 µg", volume:"0,8 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"0,8 → 2 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 0,45 mg", volume:"0,9 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,15 mg", volume:"0,3 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVDL 5 min", dose:"3 mL/kg = 9 mL", volume:"9 mL à la seringue" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"1,8 g = 9 mL", volume:"Vitesse PSE 54 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"500 mg/50 mg", prepa:"1 flacon/10 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"150 mg", volume:"3 mL seringue mère/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+
+  // ── 12 mois 10 kg ────────────────────────────────────────────────────────
+  {
+    id:"m12", age:"12 mois", poids:10, taille:"74-84 cm",
+    normes:{ fr:"20-50", fc:"110 (100-170)", pas:"90", masseSang:"760",
+      pasMiniHorsTC:"72", pamHorsTC:"≥45", pasMiniTC:"90", pamTC:"≥55",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"1-2", lame:"1-2", mandrin:"10", sondeIOT:"4", repereOral:"11", aspiration:"8", igel:"1,5 ou 2", guedel:"1", drain:"10-12", sng:"8", io:"Bleu 25 mm" },
+    respi:{ mode:"VVC", vt:"60 mL (6 mL/kg)", fr:"25 (25-30)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"40 mL/h", cee:"50 J", remplissage:"100 mL à la seringue", transfusion:"200 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 3 mL/h · 0,5 = 15 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"100 mg/poche 50 mL", mode:"IVL 10 min", dose:"10 mg/kg = 100 mg", volume:"1 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,1 mg", volume:"1 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL puis prélever seringue 1 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 1 mg puis 0,5 mg", volume:"1 mL puis 0,5 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 2 mg", volume:"2 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 5 mg", volume:"5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 30 mg", volume:"3 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"2 mg/kg = 20 mg", volume:"2 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 10 mg", volume:"1 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"1 → 3 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"4 → 8 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 2 µg", volume:"2 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"2 → 5 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 1,5 mg", volume:"3 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,5 mg", volume:"1 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 30 mL", volume:"Une demi-poche" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"3 mL/kg = 30 mL", volume:"Vitesse PSE 180 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"500 mg/50 mg", prepa:"1 flacon/10 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"500 mg", volume:"10 mL seringue mère/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+
+  // ── 5-6 ans 20 kg ────────────────────────────────────────────────────────
+  {
+    id:"a5", age:"5-6 ans", poids:20, taille:"108-122 cm",
+    normes:{ fr:"17-30", fc:"100 (70-140)", pas:"105", masseSang:"1470",
+      pasMiniHorsTC:"82", pamHorsTC:"≥55", pasMiniTC:"100", pamTC:"≥70",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"2-3", lame:"10", mandrin:"5", sondeIOT:"15", repereOral:"10", aspiration:"—", igel:"2", guedel:"2", drain:"16", sng:"12", io:"Bleu 25 mm" },
+    respi:{ mode:"VVC", vt:"120 mL (6 mL/kg)", fr:"18 (15-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"60 mL/h", cee:"80 J", remplissage:"200 mL", transfusion:"1-2 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 6 mL/h · 0,5 = 30 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"350 mg/poche 50 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 350 mg", volume:"3,5 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,2 mg", volume:"2 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titré = 2 mg puis 1 mg", volume:"2 mL puis 1 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 4 mg", volume:"4 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"100 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 10 mg", volume:"2 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 70 mg", volume:"7 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 6 mg", volume:"3 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1,5 mg/kg = 30 mg", volume:"3 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 20 mg", volume:"2 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"2 → 6 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"8 → 16 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 4 µg", volume:"4 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"4 → 10 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"BOLUS", dose:"0,15 mg/kg = 3 mg", volume:"1,5 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"Entretien", dose:"0,05 mg/kg = 1 mg", volume:"0,5 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 60 mL", volume:"Une poche de 110 mL" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 190 mL", prepa:"Pure", mode:"IVL 10 min", dose:"3 mL/kg = 60 mL", volume:"Retirer 190 mL et passer 60 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"1 g/50 mg (2 flacons)", prepa:"Chaque flacon/10 mL EPPI = seringues mères", mode:"IVL 30 min", dose:"1 g", volume:"20 mL seringues mères/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 3 mois 5 kg ──────────────────────────────────────────────────────────
+  {
+    id:"m3", age:"3 mois", poids:5, taille:"55-59 cm",
+    normes:{ fr:"30-60", fc:"120 (110-180)", pas:"80", masseSang:"400",
+      pasMiniHorsTC:"70", pamHorsTC:"≥45", pasMiniTC:"84", pamTC:"≥55",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"0-1", lame:"Droite/courbe 1", mandrin:"6", sondeIOT:"3,5", repereOral:"10", aspiration:"6", igel:"1 ou 1,5", guedel:"0", drain:"8-10", sng:"6", io:"Bleu 25 mm" },
+    respi:{ mode:"VPC (pression contrôlée)", vt:"30-35 mL ou EtCO2 30-35", fr:"40 (30-50)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"20 mL/h", cee:"20 J", remplissage:"50 mL à la seringue", transfusion:"100 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 1,5 mL/h · 0,5 = 7,5 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"50 mg/poche 50 mL", mode:"IVL 10 min", dose:"10 mg/kg = 50 mg", volume:"0,5 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,05 mg", volume:"0,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL puis prélever seringue 1 mL", mode:"IVD", dose:"0,05 mg/kg/5min = 0,25 mg", volume:"0,25 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 1 mg", volume:"1 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 2,5 mg", volume:"2,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 15 mg", volume:"1,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"2 mg/kg = 10 mg", volume:"1 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 5 mg", volume:"0,5 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"0,5 → 1,5 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"2 → 4 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 1 µg", volume:"1 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"1 → 2,5 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 0,75 mg", volume:"1,5 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,25 mg", volume:"0,5 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVDL 5 min", dose:"3 mL/kg = 15 mL", volume:"15 mL à la seringue" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"3 mL/kg = 15 mL", volume:"Vitesse PSE 90 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"500 mg/50 mg", prepa:"1 flacon/10 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"250 mg", volume:"5 mL seringue mère/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 6 mois 7 kg ──────────────────────────────────────────────────────────
+  {
+    id:"m6", age:"6 mois", poids:7, taille:"59-67 cm",
+    normes:{ fr:"25-50", fc:"120 (100-180)", pas:"80", masseSang:"560",
+      pasMiniHorsTC:"70", pamHorsTC:"≥45", pasMiniTC:"84", pamTC:"≥55",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"0-1", lame:"1", mandrin:"6", sondeIOT:"3,5", repereOral:"10", aspiration:"6-8", igel:"1,5", guedel:"0", drain:"10", sng:"8", io:"16G longue" },
+    respi:{ mode:"VPC (pression contrôlée)", vt:"42-49 mL ou EtCO2 30-35", fr:"25 (25-30)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"28 mL/h", cee:"30 J", remplissage:"70 mL à la seringue", transfusion:"140 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 2,1 mL/h · 0,5 = 10,5 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"70 mg/poche 50 mL", mode:"IVL 10 min", dose:"10 mg/kg = 70 mg", volume:"0,7 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,1 mg", volume:"1 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL puis prélever seringue 1 mL", mode:"IVD", dose:"0,05 mg/kg/5min = 0,35 mg", volume:"0,35 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 1,4 mg", volume:"1,4 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 3,5 mg", volume:"3,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 25 mg", volume:"2,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"2 mg/kg = 14 mg", volume:"1,5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 7 mg", volume:"0,7 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"0,7 → 2,1 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"2,8 → 5,6 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 1,4 µg", volume:"1,4 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"1,4 → 3,5 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 1 mg", volume:"2 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,35 mg", volume:"0,7 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVDL 5 min", dose:"3 mL/kg = 21 mL", volume:"21 mL à la seringue" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"3 mL/kg = 21 mL", volume:"Vitesse PSE 126 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"500 mg/50 mg", prepa:"1 flacon/10 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"350 mg", volume:"7 mL seringue mère/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 9 mois 8 kg ──────────────────────────────────────────────────────────
+  {
+    id:"m9", age:"9 mois", poids:8, taille:"70-74 cm",
+    normes:{ fr:"30-50", fc:"120 (100-170)", pas:"80", masseSang:"560",
+      pasMiniHorsTC:"70", pamHorsTC:"≥45", pasMiniTC:"84", pamTC:"≥55",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"0-1", lame:"MAC 1-2", mandrin:"6", sondeIOT:"3,5", repereOral:"11", aspiration:"6-8", igel:"1,5", guedel:"0", drain:"10-12", sng:"8", io:"16G longue" },
+    respi:{ mode:"VPC (pression contrôlée)", vt:"48-56 mL ou EtCO2 30-35", fr:"25 (25-30)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"32 mL/h", cee:"35 J", remplissage:"80 mL à la seringue", transfusion:"160 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 2,4 mL/h · 0,5 = 12 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"80 mg/poche 50 mL", mode:"IVL 10 min", dose:"10 mg/kg = 80 mg", volume:"0,8 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,1 mg", volume:"1 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL puis prélever seringue 1 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 0,8 mg puis 0,4 mg", volume:"0,8 mL puis 0,4 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 1,6 mg", volume:"1,6 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 4 mg", volume:"4 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 25 mg", volume:"2,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"2 mg/kg = 16 mg", volume:"2 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 8 mg", volume:"0,8 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"0,8 → 2,4 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/250 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"3,2 → 6,4 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 1,6 µg", volume:"1,6 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"1,6 → 4 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 1,2 mg", volume:"2,4 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,4 mg", volume:"0,8 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVDL 5 min", dose:"3 mL/kg = 24 mL", volume:"24 mL à la seringue" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"3 mL/kg = 24 mL", volume:"Vitesse PSE 144 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"500 mg/50 mg", prepa:"1 flacon/10 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"400 mg", volume:"8 mL seringue mère/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 18 mois 11 kg ────────────────────────────────────────────────────────
+  {
+    id:"m18", age:"18 mois", poids:11, taille:"74-84 cm",
+    normes:{ fr:"25-40", fc:"110 (90-150)", pas:"90", masseSang:"805",
+      pasMiniHorsTC:"73", pamHorsTC:"≥45", pasMiniTC:"90", pamTC:"≥55",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"1-2", lame:"1-2", mandrin:"10", sondeIOT:"4", repereOral:"12", aspiration:"8", igel:"1,5 ou 2", guedel:"1", drain:"12", sng:"10", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"66 mL (6 mL/kg)", fr:"25 (20-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"50 mL/h", cee:"45 J", remplissage:"110 mL à la seringue", transfusion:"220 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 3,3 mL/h · 0,5 = 16 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"200 mg/poche 50 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 200 mg", volume:"2 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,15 mg", volume:"1,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 1 mg puis 0,5 mg", volume:"1 mL puis 0,5 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 2,2 mg", volume:"2,2 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 5,5 mg", volume:"5,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 35 mg", volume:"3,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"2 mg/kg = 22 mg", volume:"2,5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 11 mg", volume:"1,1 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"1,1 → 3,3 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"4,4 → 8,8 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 2,2 µg", volume:"2,2 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"2,2 → 5,6 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 1,6 mg", volume:"3,3 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,5 mg", volume:"1 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 33 mL", volume:"Une demi-poche" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"3 mL/kg = 33 mL", volume:"Vitesse PSE 200 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"500 mg/50 mg (2 flacons)", prepa:"Chaque flacon/10 mL EPPI = seringues mères", mode:"IVL 30 min", dose:"550 mg", volume:"11 mL seringues mères/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 24 mois 12 kg ────────────────────────────────────────────────────────
+  {
+    id:"m24", age:"24 mois", poids:12, taille:"84-96 cm",
+    normes:{ fr:"20-40", fc:"110 (90-160)", pas:"100", masseSang:"840",
+      pasMiniHorsTC:"74", pamHorsTC:"≥50", pasMiniTC:"90", pamTC:"≥60",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"1-2", lame:"1-2", mandrin:"10", sondeIOT:"4,5", repereOral:"12", aspiration:"8", igel:"1,5 ou 2", guedel:"1", drain:"12", sng:"10", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"72 mL (6 mL/kg)", fr:"25 (20-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"50 mL/h", cee:"50 J", remplissage:"120 mL à la seringue", transfusion:"240 mL" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 3,6 mL/h · 0,5 = 17 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"200 mg/poche 50 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 200 mg", volume:"2 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,15 mg", volume:"1,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 1,2 mg puis 0,6 mg", volume:"1,2 mL puis 0,6 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 2,4 mg", volume:"2,4 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 6 mg", volume:"6 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 40 mg", volume:"4 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 3,6 mg", volume:"2 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1,5 mg/kg = 18 mg", volume:"2 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 12 mg", volume:"1,2 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"1,2 → 3,6 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"4,8 → 9,6 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 2,4 µg", volume:"2,4 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"2,4 → 6 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 1,8 mg", volume:"3,6 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,6 mg", volume:"1,2 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 36 mL", volume:"Une demi-poche" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL", prepa:"Pure", mode:"IVDL 10 min ou PSE", dose:"3 mL/kg = 36 mL", volume:"Vitesse PSE 200 mL/h" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"1 g/50 mg (2 flacons)", prepa:"Chaque flacon/10 mL EPPI = seringues mères", mode:"IVL 30 min", dose:"600 mg", volume:"12 mL seringues mères/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 3 ans 15 kg ──────────────────────────────────────────────────────────
+  {
+    id:"a3", age:"3 ans", poids:15, taille:"96-108 cm",
+    normes:{ fr:"20-30", fc:"105 (80-160)", pas:"100", masseSang:"980",
+      pasMiniHorsTC:"76", pamHorsTC:"≥50", pasMiniTC:"90", pamTC:"≥60",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"3", lame:"1-2", mandrin:"10", sondeIOT:"4-5", repereOral:"13", aspiration:"8", igel:"2", guedel:"1", drain:"12-14", sng:"10", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"90 mL (6 mL/kg)", fr:"25 (20-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"50 mL/h", cee:"60 J", remplissage:"150 mL à la seringue", transfusion:"1 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 4,5 mL/h · 0,5 = 22 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"300 mg/poche 50 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 300 mg", volume:"3 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,15 mg", volume:"1,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 1,5 mg puis 0,7 mg", volume:"1,5 mL puis 0,7 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 3 mg", volume:"3 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 7,5 mg", volume:"7,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 50 mg", volume:"5 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 4,5 mg", volume:"2,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1,5 mg/kg = 22,5 mg", volume:"2,5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 15 mg", volume:"1,5 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"1,5 → 4,5 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"6 → 12 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 3 µg", volume:"3 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"3 → 7,5 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"BOLUS", dose:"0,15 mg/kg = 2,2 mg", volume:"4,4 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"10 mg/20 mL", mode:"Entretien", dose:"0,05 mg/kg = 0,7 mg", volume:"1,4 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 45 mL", volume:"Une demi-poche" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 205 mL", prepa:"Pure", mode:"IVL 10 min", dose:"3 mL/kg = 45 mL", volume:"Retirer 205 mL et passer 45 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"1 g/50 mg (2 flacons)", prepa:"Chaque flacon/10 mL EPPI = seringues mères", mode:"IVL 30 min", dose:"800 mg", volume:"15 mL seringues mères/poche 50 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 7-8 ans 25 kg ────────────────────────────────────────────────────────
+  {
+    id:"a7", age:"7-8 ans", poids:25, taille:"122-131 cm",
+    normes:{ fr:"16-20", fc:"95 (70-140)", pas:"105", masseSang:"1750",
+      pasMiniHorsTC:"86", pamHorsTC:"≥55", pasMiniTC:"100", pamTC:"≥70",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Ped", masque:"3-4", lame:"2-3", mandrin:"12", sondeIOT:"5,5", repereOral:"16", aspiration:"10", igel:"2 - 2,5", guedel:"2", drain:"16", sng:"12", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"150 mL (6 mL/kg)", fr:"18 (15-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"60 mL/h", cee:"100 J", remplissage:"250 mL", transfusion:"2 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"1 mg/50 mL G5% (0,02 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 7,5 mL/h · 0,5 = 37 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"400 mg/poche 50 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 400 mg", volume:"4 mL/poche 50 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,25 mg", volume:"2,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 2,5 mg puis 1,2 mg", volume:"2,5 mL puis 1,2 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 5 mg", volume:"5 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"100 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 12,5 mg", volume:"2,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 80 mg", volume:"8 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 7,5 mg", volume:"4 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1 mg/kg = 25 mg", volume:"2,5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 25 mg", volume:"2,5 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"2,5 → 7,5 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"10 → 20 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 5 µg", volume:"5 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"5 → 12,5 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"BOLUS", dose:"0,15 mg/kg = 3,7 mg", volume:"1,8 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"Entretien", dose:"0,05 mg/kg = 1,2 mg", volume:"0,6 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 75 mL", volume:"Une poche de 110 mL" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 175 mL", prepa:"Pure", mode:"IVL 10 min", dose:"3 mL/kg = 75 mL", volume:"Retirer 175 mL et passer 75 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"2 g/200 mg", prepa:"1 flacon/20 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"1250 mg", volume:"12,5 mL seringue mère/poche 100 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 9 ans 30 kg ──────────────────────────────────────────────────────────
+  {
+    id:"a9", age:"9 ans", poids:30, taille:"131-144 cm",
+    normes:{ fr:"16-20", fc:"95 (60-120)", pas:"105", masseSang:"1750",
+      pasMiniHorsTC:"88", pamHorsTC:"≥55", pasMiniTC:"100", pamTC:"≥70",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Adulte", masque:"3-4", lame:"3", mandrin:"14", sondeIOT:"6", repereOral:"17", aspiration:"12", igel:"2,5", guedel:"2", drain:"20", sng:"12", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"180 mL (6 mL/kg)", fr:"18 (15-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"80 mL/h", cee:"150 J", remplissage:"300 mL", transfusion:"2 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"4 mg/40 mL G5% (0,1 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 1,8 mL/h · 0,5 = 9 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"500 mg/poche 100 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 500 mg", volume:"5 mL/poche 100 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,3 mg", volume:"3 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 3 mg puis 1,5 mg", volume:"3 mL puis 1,5 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 6 mg", volume:"6 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"100 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 15 mg", volume:"3 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 100 mg", volume:"10 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 9 mg", volume:"4,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1 mg/kg = 30 mg", volume:"3 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 30 mg", volume:"3 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"3 → 9 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"12 → 24 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 6 µg", volume:"6 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"6 → 15 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"BOLUS", dose:"0,15 mg/kg = 4,5 mg", volume:"2,5 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"Entretien", dose:"0,05 mg/kg = 1,5 mg", volume:"0,7 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 90 mL", volume:"Une poche de 110 mL" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 160 mL", prepa:"Pure", mode:"IVL", dose:"3 mL/kg = 90 mL", volume:"Retirer 160 mL et passer 90 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"2 g/200 mg", prepa:"1 flacon/20 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"1500 mg", volume:"15 mL seringue mère/poche 100 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 10 ans 35 kg ─────────────────────────────────────────────────────────
+  {
+    id:"a10", age:"10 ans", poids:35, taille:"131-144 cm",
+    normes:{ fr:"14-25", fc:"95 (60-120)", pas:"105", masseSang:"2240",
+      pasMiniHorsTC:"90", pamHorsTC:"≥55", pasMiniTC:"100", pamTC:"≥70",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Adulte", masque:"4", lame:"3", mandrin:"14-15", sondeIOT:"6,5", repereOral:"17", aspiration:"12", igel:"2,5 ou 3", guedel:"2", drain:"20", sng:"12", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"210 mL (6 mL/kg)", fr:"18 (15-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"80 mL/h", cee:"150 J", remplissage:"350 mL", transfusion:"2 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"4 mg/40 mL G5% (0,1 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 2,1 mL/h · 0,5 = 10,5 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"600 mg/poche 100 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 600 mg", volume:"6 mL/poche 100 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,35 mg", volume:"3,5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 3 mg puis 1,5 mg", volume:"3 mL puis 1,5 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 7 mg", volume:"7 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"100 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 17,5 mg", volume:"3,5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 125 mg", volume:"12,5 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 10,5 mg", volume:"5,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1 mg/kg = 35 mg", volume:"3,5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 35 mg", volume:"3,5 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"3,5 → 9,5 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"14 → 28 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 7 µg", volume:"7 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"7 → 17,5 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"BOLUS", dose:"0,15 mg/kg = 5,2 mg", volume:"2,6 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"Entretien", dose:"0,05 mg/kg = 1,7 mg", volume:"0,8 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 105 mL", volume:"Une poche de 110 mL" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 145 mL", prepa:"Pure", mode:"IVL 10 min", dose:"3 mL/kg = 105 mL", volume:"Retirer 145 mL et passer 105 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"2 g/200 mg", prepa:"1 flacon/20 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"1750 mg", volume:"17,5 mL seringue mère/poche 100 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 12 ans 40 kg ─────────────────────────────────────────────────────────
+  {
+    id:"a12", age:"12 ans", poids:40, taille:"150 cm",
+    normes:{ fr:"14-18", fc:"80 (60-100)", pas:"110", masseSang:"2800",
+      pasMiniHorsTC:"90", pamHorsTC:"≥55", pasMiniTC:"110", pamTC:"≥80",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Adulte", masque:"4", lame:"3", mandrin:"14-15", sondeIOT:"6,5", repereOral:"18", aspiration:"12", igel:"3", guedel:"2-3", drain:"20", sng:"14", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"240 mL (6 mL/kg)", fr:"18 (15-25)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"80 mL/h", cee:"175 J", remplissage:"400 mL", transfusion:"2 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"4 mg/40 mL G5% (0,1 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 2,4 mL/h · 0,5 = 12 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"700 mg/poche 100 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 700 mg", volume:"7 mL/poche 100 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,4 mg", volume:"4 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titration = 3 mg puis 1,5 mg", volume:"3 mL puis 1,5 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 8 mg", volume:"8 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"100 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 20 mg", volume:"4 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 150 mg", volume:"15 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 12 mg", volume:"6 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1 mg/kg = 40 mg", volume:"4 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 40 mg", volume:"4 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"4 → 12 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"16 → 32 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 8 µg", volume:"8 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"8 → 20 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"BOLUS", dose:"0,15 mg/kg = 6 mg", volume:"3 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"Entretien", dose:"0,05 mg/kg = 2 mg", volume:"1 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"100 mL NaCl 0,9% + 10 mL NaCl 20%", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 120 mL", volume:"Une poche de 110 mL" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 130 mL", prepa:"Pure", mode:"IVL 10 min", dose:"3 mL/kg = 120 mL", volume:"Retirer 130 mL et passer 120 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"2 g/200 mg", prepa:"1 flacon/20 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"2000 mg", volume:"20 mL seringue mère/poche 100 mL NaCl 0,9%" },
+      ],
+    },
+  },
+  // ── 15 ans 50 kg ─────────────────────────────────────────────────────────
+  {
+    id:"a15", age:"15 ans", poids:50, taille:"160 cm",
+    normes:{ fr:"12-20", fc:"75 (60-100)", pas:"120", masseSang:"3500",
+      pasMiniHorsTC:"90", pamHorsTC:"≥55", pasMiniTC:"110", pamTC:"≥80",
+      spo2:"94-98%", etco2:"35-40", hbHorsTC:"7 g/dL", hbTC:"10 g/dL" },
+    materiel:{ insufflateur:"Adulte", masque:"4-5", lame:"3", mandrin:"14-15", sondeIOT:"7", repereOral:"19-20", aspiration:"12", igel:"3 ou 4", guedel:"2-3", drain:"24", sng:"14", io:"16G longue" },
+    respi:{ mode:"VVC", vt:"300 mL (6 mL/kg)", fr:"16 (12-20)", ie:"1/2", peep:"5", fio2:"100% puis QSP SpO2 94-98%" },
+    urgence:{ debitBase:"80 mL/h", cee:"200 J", remplissage:"500 mL", transfusion:"2 CGR" },
+    medicaments:{
+      hemodynamique:[
+        { nom:"Noradrénaline", amp:"8 mg/4 mL", prepa:"4 mg/40 mL G5% (0,1 mg/mL)", mode:"PSE", dose:"0,1 → 0,5 µg/kg/min (paliers 0,1/3min)", volume:"0,1 µg/kg/min = 3 mL/h · 0,5 = 15 mL/h" },
+        { nom:"Ac. tranexamique", amp:"500 mg/5 mL", prepa:"1 g (10 mL)/poche 100 mL", mode:"IVL 10 min", dose:"15-20 mg/kg = 1 g", volume:"10 mL/poche 100 mL" },
+        { nom:"Adrénaline (AC)", amp:"5 mg/5 mL", prepa:"1 mg/10 mL", mode:"IVD", dose:"0,01 mg/kg = 0,5 mg", volume:"5 mL" },
+      ],
+      analgesie:[
+        { nom:"Morphine", amp:"10 mg/1 mL", prepa:"10 mg/10 mL", mode:"IVD", dose:"0,1 mg/kg puis 0,05 mg/kg titré = 3 mg puis 1,5 mg", volume:"3 mL puis 1,5 mL" },
+        { nom:"Kétamine (analgésie)", amp:"250 mg/5 mL", prepa:"20 mg/20 mL", mode:"IVDL", dose:"0,2 mg/kg = 10 mg", volume:"10 mL" },
+        { nom:"Kétamine (sédation)", amp:"250 mg/5 mL", prepa:"100 mg/20 mL", mode:"IVDL", dose:"0,5 mg/kg = 25 mg", volume:"5 mL" },
+      ],
+      isr:[
+        { nom:"Kétamine (ISR)", amp:"250 mg/5 mL", prepa:"200 mg/20 mL", mode:"IVD", dose:"3-4 mg/kg = 170 mg", volume:"17 mL" },
+        { nom:"OU Étomidate (ISR)", amp:"20 mg/10 mL", prepa:"Pure 20 mg/10 mL", mode:"IVD", dose:"0,3 mg/kg = 15 mg", volume:"7,5 mL" },
+        { nom:"+ Suxaméthonium", amp:"100 mg/2 mL", prepa:"100 mg/10 mL", mode:"IVD", dose:"1 mg/kg = 50 mg", volume:"5 mL" },
+        { nom:"OU Rocuronium", amp:"50 mg/5 mL", prepa:"Pure 50 mg/5 mL", mode:"IVD", dose:"1 mg/kg = 50 mg", volume:"5 mL" },
+      ],
+      sedation:[
+        { nom:"Midazolam", amp:"50 mg/10 mL", prepa:"50 mg/50 mL", mode:"PSE", dose:"0,1 à 0,3 mg/kg/h", volume:"5 → 15 mL/h" },
+        { nom:"OU Kétamine (entretien)", amp:"250 mg/5 mL", prepa:"250 mg/50 mL", mode:"PSE", dose:"2 à 4 mg/kg/h", volume:"20 → 40 mL/h" },
+        { nom:"+ Sufentanil (bolus)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"BOLUS", dose:"0,2 µg/kg = 10 µg", volume:"10 mL" },
+        { nom:"+ Sufentanil (PSE)", amp:"50 µg/10 mL", prepa:"50 µg/50 mL", mode:"PSE", dose:"0,2 → 0,5 µg/kg/h", volume:"10 → 25 mL/h" },
+        { nom:"+/- Cisatracurium (bolus)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"BOLUS", dose:"0,15 mg/kg = 7,5 mg", volume:"3,7 mL" },
+        { nom:"+/- Cisatracurium (entretien/20min)", amp:"10 mg/5 mL", prepa:"Pure 10 mg/5 mL", mode:"Entretien", dose:"0,05 mg/kg = 2,5 mg", volume:"1,2 mL" },
+      ],
+      osmotherapie:[
+        { nom:"SSH 3%", amp:"2× (100 mL NaCl 0,9% + 10 mL NaCl 20%)", prepa:"À reconstituer", mode:"IVL 10 min", dose:"3 mL/kg = 150 mL", volume:"Une poche et demi" },
+        { nom:"OU Mannitol 20%", amp:"Poche 250 mL : retirer 100 mL", prepa:"Pure", mode:"IVL 10 min", dose:"3 mL/kg = 150 mL", volume:"Retirer 100 mL et passer 150 mL" },
+      ],
+      antibiotique:[
+        { nom:"Amoxicilline-Ac. clavulanique", amp:"2 g/200 mg (2 flacons)", prepa:"Chaque flacon/20 mL EPPI = seringue mère", mode:"IVL 30 min", dose:"2500 mg", volume:"25 mL seringues mères/poche 100 mL NaCl 0,9%" },
+      ],
+    },
+  },
+];
+
+const PEDIA_MED_CATS = [
+  { key:"hemodynamique", label:"Hémodynamique", icon:"❤️", color:"#DC2626", bg:"#FEE2E2" },
+  { key:"analgesie",     label:"Analgésie",     icon:"💊", color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"isr",           label:"Induction séquence rapide", icon:"⚡", color:"#0891B2", bg:"#CFFAFE" },
+  { key:"sedation",      label:"Sédation",      icon:"😴", color:"#6366F1", bg:"#EEF2FF" },
+  { key:"osmotherapie",  label:"Osmothérapie",  icon:"💧", color:"#CA8A04", bg:"#FEF9C3" },
+  { key:"antibiotique",  label:"Antibiotique",  icon:"🦠", color:"#EA580C", bg:"#FFEDD5" },
+];
+
+// ── Toise de Broselow ──
+function BroseloweScreen({ onBack, onSelectCarte }) {
+  const C = useC();
+  const [taille, setTaille] = useState("");
+
+  const tailleNum = parseFloat(taille);
+  const bande = !isNaN(tailleNum) && tailleNum > 0
+    ? BROSELOW_BANDES.find(b => tailleNum >= b.tailleMin && tailleNum <= b.tailleMax) || null
+    : null;
+  const horsPlage = !isNaN(tailleNum) && tailleNum > 0 && !bande;
+  const tropGrand = horsPlage && tailleNum > 143;
+  const tropPetit = horsPlage && tailleNum < 46;
+
+  const carte = bande ? PEDIA_CARTES.find(c => c.id === bande.carteId) : null;
+
+  return (
+    <div style={{maxWidth:"100%", overflowX:"hidden"}}>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text, flexShrink:0}}>←</button>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Toise de Broselow</div>
+          <div style={{fontSize:12, color:C.sub}}>Taille → poids estimé → carte d'urgence</div>
+        </div>
+      </div>
+
+      {/* Saisie de la taille */}
+      <div style={{background:"linear-gradient(135deg, #1A3A5C 0%, #2E5C8A 100%)", borderRadius:16, padding:16, marginBottom:16, boxSizing:"border-box"}}>
+        <div style={{fontSize:11, fontWeight:700, color:"rgba(255,255,255,.7)", marginBottom:10, textAlign:"center", letterSpacing:.5}}>TAILLE DE L'ENFANT</div>
+        <div style={{display:"flex", alignItems:"center", gap:8, boxSizing:"border-box"}}>
+          <input
+            type="number" inputMode="numeric"
+            value={taille} onChange={e => setTaille(e.target.value)}
+            placeholder="85"
+            style={{flex:1, minWidth:0, width:"100%", padding:"14px 10px",
+              borderRadius:12, border:"2px solid rgba(255,255,255,.35)",
+              fontSize:32, fontWeight:900, color:C.navy, background:"#fff",
+              outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+              textAlign:"center", boxSizing:"border-box"}}
+          />
+          <div style={{flexShrink:0, background:"rgba(255,255,255,.15)", borderRadius:10, padding:"10px 14px"}}>
+            <span style={{fontSize:18, fontWeight:900, color:"#fff"}}>cm</span>
+          </div>
+        </div>
+        <div style={{fontSize:11, color:"rgba(255,255,255,.55)", marginTop:8, textAlign:"center"}}>
+          De la tête aux talons — enfant allongé
+        </div>
+      </div>
+
+      {/* Résultat Broselow */}
+      {bande && (
+        <div style={{background:bande.hex+"22", border:`3px solid ${bande.hex}`, borderRadius:16, padding:18, marginBottom:16}}>
+          <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:12}}>
+            <div style={{width:52, height:52, borderRadius:14, background:bande.hex,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:11, fontWeight:900, color:"#fff", textAlign:"center", lineHeight:1.2, padding:"4px"}}>
+              {bande.couleur.toUpperCase()}
+            </div>
+            <div>
+              <div style={{fontSize:20, fontWeight:900, color:C.navy}}>Bande {bande.couleur}</div>
+              <div style={{fontSize:13, color:C.sub}}>{bande.label}</div>
+            </div>
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14, boxSizing:"border-box"}}>
+            <div style={{background:"#fff", borderRadius:10, padding:"10px 8px", textAlign:"center", minWidth:0}}>
+              <div style={{fontSize:10, color:C.sub, fontWeight:700, marginBottom:3}}>POIDS ESTIMÉ</div>
+              <div style={{fontSize:18, fontWeight:900, color:bande.hex}}>{bande.poids}</div>
+            </div>
+            <div style={{background:"#fff", borderRadius:10, padding:"10px 8px", textAlign:"center", minWidth:0}}>
+              <div style={{fontSize:10, color:C.sub, fontWeight:700, marginBottom:3}}>TAILLE SAISIE</div>
+              <div style={{fontSize:18, fontWeight:900, color:C.navy}}>{tailleNum} cm</div>
+            </div>
+          </div>
+          {/* Bouton vers la carte */}
+          {carte && (
+            <button onClick={()=>onSelectCarte(carte)} style={{
+              width:"100%", padding:"14px", borderRadius:12, border:"none",
+              background:bande.hex, color:"#fff", fontSize:14, fontWeight:800,
+              cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+            }}>
+              <span>🚨 Ouvrir la carte d'urgence · {carte.age} · {carte.poids} kg</span>
+              <span style={{fontSize:18}}>›</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Hors plage */}
+      {horsPlage && (
+        <div style={{background:"#FEF3C7", border:"2px solid #FCD34D", borderRadius:14, padding:16, marginBottom:16}}>
+          {tropGrand ? (
+            <>
+              <div style={{fontSize:15, fontWeight:800, color:"#92400E", marginBottom:6}}>⚠️ Enfant grand / Adolescent</div>
+              <div style={{fontSize:13, color:"#78350F", lineHeight:1.5}}>
+                Au-delà de 143 cm, utiliser les protocoles adultes ou la carte 15 ans (50 kg).
+              </div>
+              <button onClick={()=>{ const c=PEDIA_CARTES.find(x=>x.id==="a15"); if(c) onSelectCarte(c); }} style={{
+                marginTop:12, width:"100%", padding:"12px", borderRadius:10, border:"none",
+                background:"#F97316", color:"#fff", fontSize:13, fontWeight:800, cursor:"pointer"
+              }}>Voir carte 15 ans / 50 kg</button>
+            </>
+          ) : (
+            <>
+              <div style={{fontSize:15, fontWeight:800, color:"#92400E", marginBottom:6}}>⚠️ Nourrisson très jeune</div>
+              <div style={{fontSize:13, color:"#78350F", lineHeight:1.5}}>
+                En dessous de 46 cm — nouveau-né prématuré. Utiliser la carte nouveau-né.
+              </div>
+              <button onClick={()=>{ const c=PEDIA_CARTES.find(x=>x.id==="nn3"); if(c) onSelectCarte(c); }} style={{
+                marginTop:12, width:"100%", padding:"12px", borderRadius:10, border:"none",
+                background:"#9CA3AF", color:"#fff", fontSize:13, fontWeight:800, cursor:"pointer"
+              }}>Voir carte nouveau-né / 3 kg</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Graduation visuelle */}
+      {!taille && (
+        <div style={{marginTop:8}}>
+          <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:10, textTransform:"uppercase", letterSpacing:.5}}>
+            Référentiel des bandes
+          </div>
+          <div style={{display:"flex", flexDirection:"column", gap:4}}>
+            {BROSELOW_BANDES.map((b, i) => (
+              <div key={i} style={{display:"flex", alignItems:"center", gap:10,
+                padding:"9px 12px", borderRadius:10, background:b.hex+"18",
+                border:`1.5px solid ${b.hex}44`}}>
+                <div style={{width:28, height:28, borderRadius:8, background:b.hex, flexShrink:0}}/>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:12, fontWeight:700, color:C.text}}>{b.tailleMin}–{b.tailleMax} cm · {b.poids}</div>
+                  <div style={{fontSize:11, color:C.sub, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{b.couleur} · {b.label}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:10, color:C.sub, marginTop:10, lineHeight:1.6, textAlign:"center"}}>
+            Réf. Broselow-Luten 2017 · Aide cognitive — vérification clinique requise
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Composant Carte d'urgence vitale ──
+function PediaCarteDetail({ carte, onBack }) {
+  const C = useC();
+  const [tab, setTab] = useState("medicaments"); // medicaments | normes | materiel
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{flex:1}}>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>{carte.age}</div>
+          <div style={{fontSize:12, color:C.sub}}>{carte.poids} kg · {carte.taille}</div>
+        </div>
+      </div>
+
+      {/* Bandeau urgence */}
+      <div style={{background:"linear-gradient(135deg, #EC4899 0%, #DB2777 100%)", borderRadius:14, padding:14, marginBottom:14, color:"#fff"}}>
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, fontSize:11}}>
+          <div>⚡ <strong>CEE</strong> : {carte.urgence.cee}</div>
+          <div>💧 <strong>Débit base</strong> : {carte.urgence.debitBase}</div>
+          <div>🩸 <strong>Remplissage</strong> : {carte.urgence.remplissage}</div>
+          <div>🩹 <strong>Transfusion</strong> : {carte.urgence.transfusion}</div>
+        </div>
+      </div>
+
+      {/* Onglets */}
+      <div style={{display:"flex", gap:6, marginBottom:14}}>
+        {[{id:"medicaments",l:"💊 Médicaments"},{id:"normes",l:"📊 Normes"},{id:"materiel",l:"🧰 Matériel"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            flex:1, padding:"8px 4px", borderRadius:9, cursor:"pointer", fontSize:11, fontWeight:700,
+            border:`1.5px solid ${tab===t.id ? "#EC4899" : C.border}`,
+            background: tab===t.id ? "#FCE7F3" : C.white, color: tab===t.id ? "#BE185D" : C.sub,
+          }}>{t.l}</button>
+        ))}
+      </div>
+
+      {/* Médicaments */}
+      {tab === "medicaments" && (
+        <div>
+          {PEDIA_MED_CATS.map(cat => {
+            const meds = carte.medicaments[cat.key] || [];
+            if (!meds.length) return null;
+            return (
+              <div key={cat.key} style={{marginBottom:16}}>
+                <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:8}}>
+                  <div style={{background:cat.bg, borderRadius:8, width:30, height:30, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15}}>{cat.icon}</div>
+                  <span style={{fontSize:12, fontWeight:800, color:cat.color, textTransform:"uppercase", letterSpacing:.5}}>{cat.label}</span>
+                </div>
+                <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                  {meds.map((m,i)=>(
+                    <div key={i} style={{background:C.white, border:`1px solid ${C.border}`, borderLeft:`4px solid ${cat.color}`, borderRadius:10, padding:"10px 12px"}}>
+                      <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8, marginBottom:4}}>
+                        <span style={{fontSize:13, fontWeight:800, color:C.text}}>{m.nom}</span>
+                        {m.mode && <span style={{fontSize:9, fontWeight:800, color:cat.color, background:cat.bg, borderRadius:6, padding:"1px 6px", flexShrink:0}}>{m.mode}</span>}
+                      </div>
+                      {m.amp && <div style={{fontSize:10, color:C.sub, fontStyle:"italic", marginBottom:4}}>{m.amp}</div>}
+                      <div style={{display:"flex", flexDirection:"column", gap:3}}>
+                        {m.prepa && <DoseRow label="Prépa" value={m.prepa} C={C}/>}
+                        {m.dose && <DoseRow label="Dose" value={m.dose} C={C} bold/>}
+                        {m.volume && <DoseRow label="Volume" value={m.volume} C={C} color={cat.color} bold/>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Normes */}
+      {tab === "normes" && (
+        <div style={{display:"flex", flexDirection:"column", gap:8}}>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+            <NormCell label="FR" value={carte.normes.fr} unit="/min" color="#0EA5E9"/>
+            <NormCell label="FC" value={carte.normes.fc} unit="/min" color="#E05260"/>
+            <NormCell label="PAS normale" value={carte.normes.pas} unit="mmHg" color="#7C3AED"/>
+            <NormCell label="Masse sanguine" value={carte.normes.masseSang} unit="mL" color="#DC2626"/>
+            <NormCell label="SpO2" value={carte.normes.spo2} unit="" color="#16A34A"/>
+            <NormCell label="EtCO2" value={carte.normes.etco2} unit="mmHg" color="#CA8A04"/>
+          </div>
+          <div style={{background:"#EFF6FF", border:"1px solid #BFDBFE", borderRadius:10, padding:12, marginTop:6}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#1D4ED8", marginBottom:8}}>OBJECTIFS — Hors traumatisme crânien</div>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, fontSize:12, color:C.text}}>
+              <div>PAS mini : <strong>{carte.normes.pasMiniHorsTC}</strong></div>
+              <div>PAM : <strong>{carte.normes.pamHorsTC}</strong></div>
+              <div>Hb : <strong>{carte.normes.hbHorsTC}</strong></div>
+            </div>
+          </div>
+          <div style={{background:"#FEF2F2", border:"1px solid #FECACA", borderRadius:10, padding:12}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#DC2626", marginBottom:8}}>OBJECTIFS — Traumatisme crânien</div>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, fontSize:12, color:C.text}}>
+              <div>PAS mini : <strong>{carte.normes.pasMiniTC}</strong></div>
+              <div>PAM : <strong>{carte.normes.pamTC}</strong></div>
+              <div>Hb : <strong>{carte.normes.hbTC}</strong></div>
+            </div>
+          </div>
+          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:10, padding:12}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.text, marginBottom:8}}>RÉGLAGES RESPIRATEUR</div>
+            <div style={{fontSize:12, color:C.text, lineHeight:1.7}}>
+              Mode : <strong>{carte.respi.mode}</strong><br/>
+              Vt : <strong>{carte.respi.vt}</strong> · FR : <strong>{carte.respi.fr}</strong><br/>
+              I/E : <strong>{carte.respi.ie}</strong> · PEEP : <strong>{carte.respi.peep}</strong><br/>
+              FiO2 : <strong>{carte.respi.fio2}</strong>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Matériel */}
+      {tab === "materiel" && (
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+          <NormCell label="Insufflateur" value={carte.materiel.insufflateur} unit="" color="#0EA5E9"/>
+          <NormCell label="Masque facial" value={carte.materiel.masque} unit="" color="#0EA5E9"/>
+          <NormCell label="Lame laryngo" value={carte.materiel.lame} unit="" color="#7C3AED"/>
+          <NormCell label="Mandrin (CH)" value={carte.materiel.mandrin} unit="" color="#7C3AED"/>
+          <NormCell label="Sonde IOT" value={carte.materiel.sondeIOT} unit="" color="#DC2626"/>
+          <NormCell label="Repère oral" value={carte.materiel.repereOral} unit="cm" color="#DC2626"/>
+          <NormCell label="Aspiration (CH)" value={carte.materiel.aspiration} unit="" color="#16A34A"/>
+          <NormCell label="I-gel" value={carte.materiel.igel} unit="" color="#16A34A"/>
+          <NormCell label="Canule Guedel" value={carte.materiel.guedel} unit="" color="#CA8A04"/>
+          <NormCell label="Drain thoracique" value={carte.materiel.drain} unit="CH" color="#CA8A04"/>
+          <NormCell label="SNG (CH)" value={carte.materiel.sng} unit="" color="#0891B2"/>
+          <NormCell label="Aiguille IO" value={carte.materiel.io} unit="" color="#EC4899"/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DoseRow({ label, value, C, color, bold }) {
+  return (
+    <div style={{display:"flex", gap:8, fontSize:12, lineHeight:1.4}}>
+      <span style={{color:C.sub, fontWeight:600, minWidth:50, flexShrink:0}}>{label}</span>
+      <span style={{color: color || C.text, fontWeight: bold ? 800 : 500}}>{value}</span>
+    </div>
+  );
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// Éditeur des fiches réflexes pédiatriques (table pedia_fiches)
+// ────────────────────────────────────────────────────────────────────────────
+function PediaFichesEditor() {
+  const C = useC();
+  const inp = { width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:14, color:C.text, background:C.white, outline:"none", marginBottom:12, boxSizing:"border-box" };
+  const lbl = { fontSize:12, fontWeight:700, color:C.text, marginBottom:6, display:"block" };
+
+  const EMPTY = { title:"", subtitle:"", category:"", icon:"👶", color:"#EC4899", content:"", pointsCles:"", alertes:"", tags:"", medias:[] };
+  const [fiches, setFiches] = useState([]);
+  const [form, setForm] = useState(EMPTY);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try { setFiches(await supaFetch("/pedia_fiches?order=created_at.desc")); }
+    catch(e){ console.warn(e); }
+    setLoading(false);
+  }
+  useEffect(()=>{ load(); },[]);
+
+  async function save() {
+    if (!form.title.trim()) { alert("Le titre est obligatoire."); return; }
+    setSaving(true);
+    // Upload des médias vers Supabase Storage
+    let medias = form.medias || [];
+    try {
+      medias = await Promise.all(medias.map(async m => {
+        if (!m.data || m.isVideo || (m.url && m.url.startsWith("http"))) return m;
+        try { const url = await uploadMedia(m.name || ("pedia_"+Date.now()+".jpg"), m.data); return url ? {...m, url, data:null} : m; }
+        catch(e){ return m; }
+      }));
+    } catch(e){}
+
+    const payload = {
+      title: form.title.trim(),
+      subtitle: form.subtitle.trim() || null,
+      category: form.category.trim() || null,
+      icon: form.icon || "👶",
+      color: form.color || "#EC4899",
+      content: form.content || null,
+      points_cles: form.pointsCles ? form.pointsCles.split("\n").map(s=>s.trim()).filter(Boolean) : [],
+      alertes: form.alertes ? form.alertes.split("\n").map(s=>s.trim()).filter(Boolean) : [],
+      tags: form.tags ? form.tags.split(/[\s,]+/).filter(Boolean) : [],
+      medias,
+    };
+    try {
+      if (editingId) await supaFetch(`/pedia_fiches?id=eq.${editingId}`, "PATCH", payload);
+      else await supaFetch("/pedia_fiches", "POST", payload);
+      setForm(EMPTY); setEditingId(null);
+      await load();
+    } catch(e){ alert("Erreur lors de l'enregistrement."); }
+    setSaving(false);
+  }
+
+  function startEdit(f) {
+    setEditingId(f.id);
+    setForm({
+      title:f.title||"", subtitle:f.subtitle||"", category:f.category||"",
+      icon:f.icon||"👶", color:f.color||"#EC4899", content:f.content||"",
+      pointsCles: Array.isArray(f.points_cles) ? f.points_cles.join("\n") : "",
+      alertes: Array.isArray(f.alertes) ? f.alertes.join("\n") : "",
+      tags: Array.isArray(f.tags) ? f.tags.join(" ") : "",
+      medias: f.medias || [],
+    });
+    window.scrollTo(0,0);
+    const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0;
+  }
+
+  async function del(id) {
+    if (!window.confirm("Supprimer cette fiche réflexe ?")) return;
+    try { await supaFetch(`/pedia_fiches?id=eq.${id}`, "DELETE"); await load(); }
+    catch(e){ alert("Erreur lors de la suppression."); }
+  }
+
+  const ICONS = ["👶","🫁","💊","🚨","🧠","💧","🔥","🩺","⚠️","🦠","❤️","🧒"];
+  const COLORS = ["#EC4899","#DC2626","#7C3AED","#0EA5E9","#16A34A","#CA8A04","#EA580C","#0891B2"];
+
+  return (
+    <div>
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingId ? "✏️ Modifier la fiche réflexe" : "+ Nouvelle fiche réflexe"}</div>
+
+        <label style={lbl}>Titre * (ex: Sédation procédurale de l'enfant)</label>
+        <input style={inp} placeholder="Titre de la fiche" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+
+        <label style={lbl}>Sous-titre</label>
+        <input style={inp} placeholder="Précision courte" value={form.subtitle} onChange={e=>setForm({...form,subtitle:e.target.value})}/>
+
+        <label style={lbl}>Catégorie (ex: Sédation, Maltraitance, Détresse respiratoire…)</label>
+        <input style={inp} placeholder="Catégorie libre" value={form.category} onChange={e=>setForm({...form,category:e.target.value})}/>
+
+        <label style={lbl}>Icône</label>
+        <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
+          {ICONS.map(ic=>(
+            <button key={ic} onClick={()=>setForm({...form,icon:ic})} style={{
+              fontSize:20, width:40, height:40, borderRadius:9, cursor:"pointer",
+              border:`2px solid ${form.icon===ic ? "#EC4899" : C.border}`,
+              background: form.icon===ic ? "#FCE7F3" : C.white }}>{ic}</button>
+          ))}
+        </div>
+
+        <label style={lbl}>Couleur</label>
+        <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
+          {COLORS.map(co=>(
+            <button key={co} onClick={()=>setForm({...form,color:co})} style={{
+              width:34, height:34, borderRadius:"50%", cursor:"pointer", background:co,
+              border: form.color===co ? "3px solid #1A3A5C" : "2px solid #fff",
+              boxShadow:"0 1px 3px rgba(0,0,0,.2)" }}/>
+          ))}
+        </div>
+
+        <label style={lbl}>🚨 Signaux d'alerte (un par ligne)</label>
+        <textarea style={{...inp, minHeight:80, resize:"vertical", fontFamily:"inherit"}} placeholder={"Détresse respiratoire\nTroubles de conscience\n..."} value={form.alertes} onChange={e=>setForm({...form,alertes:e.target.value})}/>
+
+        <label style={lbl}>✓ Points clés (un par ligne)</label>
+        <textarea style={{...inp, minHeight:80, resize:"vertical", fontFamily:"inherit"}} placeholder={"Monitorage continu\nVoie veineuse\n..."} value={form.pointsCles} onChange={e=>setForm({...form,pointsCles:e.target.value})}/>
+
+        <label style={lbl}>Contenu détaillé</label>
+        <textarea style={{...inp, minHeight:140, resize:"vertical", fontFamily:"inherit", whiteSpace:"pre-wrap"}} placeholder="Corps de la fiche, conduite à tenir, protocole..." value={form.content} onChange={e=>setForm({...form,content:e.target.value})}/>
+
+        <label style={lbl}>Tags (séparés par espace ou virgule)</label>
+        <input style={inp} placeholder="#pédiatrie #sédation" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
+
+        <label style={lbl}>Photos / Schémas</label>
+        <div style={{marginBottom:12}}>
+          <MediaUploader medias={form.medias} onChange={m=>setForm({...form,medias:m})}/>
+        </div>
+
+        {editingId && <Btn onClick={()=>{ setEditingId(null); setForm(EMPTY); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+        <Btn onClick={save} color="#EC4899" style={{width:"100%"}} disabled={saving}>{saving ? "Enregistrement..." : (editingId ? "✅ Enregistrer les modifications" : "👶 Ajouter la fiche")}</Btn>
+      </Card>
+
+      {loading ? (
+        <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+      ) : fiches.length > 0 && (
+        <div>
+          <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Fiches réflexes ({fiches.length})</div>
+          {fiches.map(f => (
+            <div key={f.id} style={{background:C.white, borderRadius:10, padding:"10px 14px", marginBottom:8, border:`1px solid ${C.border}`, borderLeft:`4px solid ${f.color||"#EC4899"}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:13, fontWeight:700, color:C.text}}>{f.icon||"👶"} {f.title}</div>
+                <div style={{fontSize:11, color:C.sub}}>{[f.category, f.subtitle].filter(Boolean).join(" · ")}</div>
+              </div>
+              <div style={{display:"flex", gap:6, flexShrink:0}}>
+                <button onClick={()=>startEdit(f)} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                <button onClick={()=>del(f.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Éditeur des médicaments pédiatriques (table pedia_medicaments)
+// ────────────────────────────────────────────────────────────────────────────
+function PediaMedicsEditor() {
+  const C = useC();
+  const inp = { width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:14, color:C.text, background:C.white, outline:"none", marginBottom:12, boxSizing:"border-box" };
+  const lbl = { fontSize:12, fontWeight:700, color:C.text, marginBottom:6, display:"block" };
+
+  const EMPTY = { nom:"", indication:"", voie:"", doseParKg:"", unite:"mg", doseMax:"", concentration:"", concentrationValue:"", frequence:"", remarques:"", categorie:"", color:"#0EA5E9", tags:"" };
+  const [medics, setMedics] = useState([]);
+  const [form, setForm] = useState(EMPTY);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try { setMedics(await supaFetch("/pedia_medicaments?order=nom.asc")); }
+    catch(e){ console.warn(e); }
+    setLoading(false);
+  }
+  useEffect(()=>{ load(); },[]);
+
+  async function save() {
+    if (!form.nom.trim()) { alert("Le nom du médicament est obligatoire."); return; }
+    setSaving(true);
+    const payload = {
+      nom: form.nom.trim(),
+      indication: form.indication.trim() || null,
+      voie: form.voie.trim() || null,
+      dose_par_kg: form.doseParKg !== "" ? parseFloat(form.doseParKg) : null,
+      unite: form.unite || "mg",
+      dose_max: form.doseMax !== "" ? parseFloat(form.doseMax) : null,
+      concentration: form.concentration.trim() || null,
+      concentration_value: form.concentrationValue !== "" ? parseFloat(form.concentrationValue) : null,
+      frequence: form.frequence.trim() || null,
+      remarques: form.remarques.trim() || null,
+      categorie: form.categorie.trim() || null,
+      color: form.color || "#0EA5E9",
+      tags: form.tags ? form.tags.split(/[\s,]+/).filter(Boolean) : [],
+    };
+    try {
+      if (editingId) await supaFetch(`/pedia_medicaments?id=eq.${editingId}`, "PATCH", payload);
+      else await supaFetch("/pedia_medicaments", "POST", payload);
+      setForm(EMPTY); setEditingId(null);
+      await load();
+    } catch(e){ alert("Erreur lors de l'enregistrement."); }
+    setSaving(false);
+  }
+
+  function startEdit(m) {
+    setEditingId(m.id);
+    setForm({
+      nom:m.nom||"", indication:m.indication||"", voie:m.voie||"",
+      doseParKg: m.dose_par_kg!=null ? String(m.dose_par_kg) : "",
+      unite:m.unite||"mg",
+      doseMax: m.dose_max!=null ? String(m.dose_max) : "",
+      concentration:m.concentration||"",
+      concentrationValue: m.concentration_value!=null ? String(m.concentration_value) : "",
+      frequence:m.frequence||"", remarques:m.remarques||"",
+      categorie:m.categorie||"", color:m.color||"#0EA5E9",
+      tags: Array.isArray(m.tags) ? m.tags.join(" ") : "",
+    });
+    window.scrollTo(0,0);
+    const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0;
+  }
+
+  async function del(id) {
+    if (!window.confirm("Supprimer ce médicament ?")) return;
+    try { await supaFetch(`/pedia_medicaments?id=eq.${id}`, "DELETE"); await load(); }
+    catch(e){ alert("Erreur lors de la suppression."); }
+  }
+
+  const UNITES = ["mg","mcg","µg","g","mL","UI","mmol"];
+  const COLORS = ["#0EA5E9","#DC2626","#7C3AED","#16A34A","#CA8A04","#EA580C","#EC4899","#6366F1"];
+
+  return (
+    <div>
+      <Card style={{marginBottom:16}}>
+        <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:6}}>{editingId ? "✏️ Modifier le médicament" : "+ Nouveau médicament"}</div>
+        <div style={{fontSize:11, color:C.sub, marginBottom:14, lineHeight:1.5}}>Le calculateur multiplie la dose/kg par le poids saisi, plafonne à la dose max, et calcule le volume si la valeur de concentration est renseignée.</div>
+
+        <label style={lbl}>Nom * (ex: Adrénaline)</label>
+        <input style={inp} placeholder="Nom du médicament" value={form.nom} onChange={e=>setForm({...form,nom:e.target.value})}/>
+
+        <label style={lbl}>Indication (ex: Arrêt cardiaque)</label>
+        <input style={inp} placeholder="Indication principale" value={form.indication} onChange={e=>setForm({...form,indication:e.target.value})}/>
+
+        <label style={lbl}>Catégorie (ex: Hémodynamique, Analgésie, ISR…)</label>
+        <input style={inp} placeholder="Catégorie libre" value={form.categorie} onChange={e=>setForm({...form,categorie:e.target.value})}/>
+
+        <label style={lbl}>Voie (IV, IM, IO, PO, inhalé…)</label>
+        <input style={inp} placeholder="ex: IVD" value={form.voie} onChange={e=>setForm({...form,voie:e.target.value})}/>
+
+        <div style={{display:"flex", gap:10}}>
+          <div style={{flex:1}}>
+            <label style={lbl}>Dose par kg</label>
+            <input type="number" inputMode="decimal" style={inp} placeholder="0.01" value={form.doseParKg} onChange={e=>setForm({...form,doseParKg:e.target.value})}/>
+          </div>
+          <div style={{width:110}}>
+            <label style={lbl}>Unité</label>
+            <select style={{...inp, padding:"11px 8px"}} value={form.unite} onChange={e=>setForm({...form,unite:e.target.value})}>
+              {UNITES.map(u=><option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <label style={lbl}>Dose maximale ({form.unite}) — plafond absolu</label>
+        <input type="number" inputMode="decimal" style={inp} placeholder="ex: 1 (laisser vide si aucun plafond)" value={form.doseMax} onChange={e=>setForm({...form,doseMax:e.target.value})}/>
+
+        <label style={lbl}>Concentration (texte affiché, ex: 1 mg/mL)</label>
+        <input style={inp} placeholder="ex: 1 mg/mL" value={form.concentration} onChange={e=>setForm({...form,concentration:e.target.value})}/>
+
+        <label style={lbl}>Valeur concentration (nombre, pour calcul du volume — ex: 1)</label>
+        <input type="number" inputMode="decimal" style={inp} placeholder="ex: 1 → volume = dose ÷ 1" value={form.concentrationValue} onChange={e=>setForm({...form,concentrationValue:e.target.value})}/>
+
+        <label style={lbl}>Fréquence (ex: toutes les 3-5 min)</label>
+        <input style={inp} placeholder="Fréquence d'administration" value={form.frequence} onChange={e=>setForm({...form,frequence:e.target.value})}/>
+
+        <label style={lbl}>Remarques / précautions / dilution</label>
+        <textarea style={{...inp, minHeight:70, resize:"vertical", fontFamily:"inherit"}} placeholder="Précautions, mode de dilution..." value={form.remarques} onChange={e=>setForm({...form,remarques:e.target.value})}/>
+
+        <label style={lbl}>Couleur</label>
+        <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
+          {COLORS.map(co=>(
+            <button key={co} onClick={()=>setForm({...form,color:co})} style={{
+              width:34, height:34, borderRadius:"50%", cursor:"pointer", background:co,
+              border: form.color===co ? "3px solid #1A3A5C" : "2px solid #fff",
+              boxShadow:"0 1px 3px rgba(0,0,0,.2)" }}/>
+          ))}
+        </div>
+
+        <label style={lbl}>Tags (séparés par espace ou virgule)</label>
+        <input style={inp} placeholder="#urgence #réa" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
+
+        {editingId && <Btn onClick={()=>{ setEditingId(null); setForm(EMPTY); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+        <Btn onClick={save} color="#0EA5E9" style={{width:"100%"}} disabled={saving}>{saving ? "Enregistrement..." : (editingId ? "✅ Enregistrer les modifications" : "💉 Ajouter le médicament")}</Btn>
+      </Card>
+
+      {loading ? (
+        <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+      ) : medics.length > 0 && (
+        <div>
+          <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Médicaments ({medics.length})</div>
+          {medics.map(m => (
+            <div key={m.id} style={{background:C.white, borderRadius:10, padding:"10px 14px", marginBottom:8, border:`1px solid ${C.border}`, borderLeft:`4px solid ${m.color||"#0EA5E9"}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:13, fontWeight:700, color:C.text}}>{m.nom} {m.dose_par_kg!=null && <span style={{fontSize:11, color:C.sub, fontWeight:500}}>· {m.dose_par_kg} {m.unite||"mg"}/kg</span>}</div>
+                <div style={{fontSize:11, color:C.sub}}>{[m.categorie, m.indication, m.voie].filter(Boolean).join(" · ")}</div>
+              </div>
+              <div style={{display:"flex", gap:6, flexShrink:0}}>
+                <button onClick={()=>startEdit(m)} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                <button onClick={()=>del(m.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function App() {
   return (
     <DataProvider>
@@ -16393,6 +18506,7 @@ function AppInner() {
         {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
+        {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
       </div>
