@@ -17258,95 +17258,6 @@ function NormCell({ label, value, unit, color }) {
 }
 
 // ── Section Calculateur de doses ──
-function PediaDoses({ medicaments, loading, onBack }) {
-  const C = useC();
-  const [mode, setMode] = useState("poids"); // poids | age
-  const [poids, setPoids] = useState("");
-  const [age, setAge] = useState("");
-  const [search, setSearch] = useState("");
-
-  // Poids effectif (saisi ou estimé depuis l'âge)
-  const poidsEff = mode === "poids"
-    ? (parseFloat(poids) || null)
-    : estimatePoids(age);
-
-  const filtered = medicaments.filter(m => {
-    const q = search.toLowerCase();
-    return !q || (m.nom + (m.indication||"") + (m.categorie||"")).toLowerCase().includes(q);
-  });
-
-  return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
-      </div>
-
-      {/* Toggle poids / âge */}
-      <div style={{display:"flex", gap:8, marginBottom:12}}>
-        {[{id:"poids",label:"Par poids"},{id:"age",label:"Par âge"}].map(t => (
-          <button key={t.id} onClick={()=>setMode(t.id)} style={{
-            flex:1, padding:"9px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
-            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
-            background: mode===t.id ? "#E0F2FE" : C.white, color: mode===t.id ? "#0369A1" : C.sub,
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      {/* Saisie */}
-      {mode === "poids" ? (
-        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
-          <input type="number" inputMode="decimal" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="Poids de l'enfant"
-            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
-          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>kg</span>
-        </div>
-      ) : (
-        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
-          <input type="number" inputMode="decimal" value={age} onChange={e=>setAge(e.target.value)} placeholder="Âge de l'enfant"
-            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
-          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>ans</span>
-        </div>
-      )}
-
-      {/* Poids effectif affiché en permanence */}
-      {poidsEff && (
-        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:16, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
-          {mode === "age"
-            ? `Poids estimé : ${poidsEff} kg (formule APLS)`
-            : `Poids : ${poidsEff} kg`}
-        </div>
-      )}
-
-      {!poidsEff && (
-        <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
-          Saisissez {mode === "poids" ? "le poids" : "l'âge"} pour calculer les doses
-        </div>
-      )}
-
-      {/* Recherche médicament */}
-      {poidsEff && (
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Rechercher un médicament..."
-          style={{width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:13, color:C.text, background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}/>
-      )}
-
-      {/* Liste des médicaments avec doses calculées */}
-      {poidsEff && (
-        loading ? (
-          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
-            {medicaments.length === 0 ? "Aucun médicament enregistré. Ajoutez-les via l'éditeur." : "Aucun résultat"}
-          </div>
-        ) : (
-          <div style={{display:"flex", flexDirection:"column", gap:10}}>
-            {filtered.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
-          </div>
-        )
-      )}
-    </div>
-  );
-}
-
 // Config affichage catégories (même ordre que cartes Urg'Ara)
 const PEDIA_DOSE_CATS = [
   { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
@@ -17370,7 +17281,6 @@ function PediaDoseCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
 
-  // Cas spécial : pas de dose_par_kg (ex: noradrénaline en PSE)
   if (!medic.dose_par_kg) {
     return (
       <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
@@ -17387,39 +17297,30 @@ function PediaDoseCard({ medic, poids }) {
     );
   }
 
-  // Calcul dose
   const dosePerKg = parseFloat(medic.dose_par_kg);
   const doseMax   = medic.dose_max != null ? parseFloat(medic.dose_max) : null;
   let dose = dosePerKg * poids;
   const capped = doseMax != null && dose > doseMax;
   if (capped) dose = doseMax;
   const doseR = Math.round(dose * 100) / 100;
-
-  // Volume si concentration connue
   const concVal = medic.concentration_value != null ? parseFloat(medic.concentration_value) : null;
   const volume  = concVal ? Math.round((doseR / concVal) * 100) / 100 : null;
 
   return (
     <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
-      {/* Ligne titre + voie */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
         <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
         {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
       </div>
       {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
-
-      {/* Résultat principal — mise en évidence */}
       <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:6}}>
         <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
-          {/* Dose */}
           <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
             <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>DOSE</span>
             <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{doseR}</span>
             <span style={{fontSize:11, fontWeight:600, color:C.sub}}>{medic.unite||"mg"}</span>
           </div>
-          {/* Flèche */}
           {volume != null && <span style={{fontSize:18, color:C.sub}}>→</span>}
-          {/* Volume */}
           {volume != null && (
             <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
               <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>VOLUME</span>
@@ -17427,7 +17328,6 @@ function PediaDoseCard({ medic, poids }) {
               <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL</span>
             </div>
           )}
-          {/* Infos calcul */}
           <div style={{flex:1, minWidth:100}}>
             <div style={{fontSize:10, color:C.sub, lineHeight:1.5}}>
               {dosePerKg} {medic.unite||"mg"}/kg × {poids} kg
@@ -17435,21 +17335,17 @@ function PediaDoseCard({ medic, poids }) {
             </div>
           </div>
         </div>
-        {/* Alerte plafonnement */}
         {capped && (
-          <div style={{marginTop:6, fontSize:11, fontWeight:800, color:"#DC2626", display:"flex", alignItems:"center", gap:4}}>
+          <div style={{marginTop:6, fontSize:11, fontWeight:800, color:"#DC2626"}}>
             ⚠️ Dose plafonnée à {doseMax} {medic.unite||"mg"} (max absolu)
           </div>
         )}
       </div>
-
-      {/* Infos secondaires */}
       {medic.frequence && <div style={{fontSize:11, color:C.sub, marginBottom:3}}>⏱️ {medic.frequence}</div>}
       {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
     </div>
   );
 }
-
 
 function PediaDoses({ medicaments, loading, onBack }) {
   const C = useC();
