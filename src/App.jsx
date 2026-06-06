@@ -16206,859 +16206,7 @@ function estimatePoids(ageAnnees) {
 
 // ────────────────────────────────────────────────────────────────────────────
 // Scores pédiatriques
-// ────────────────────────────────────────────────────────────────────────────
-const PEDIA_SCORES = [
-  {
-    id:"westley", title:"Score de Westley", subtitle:"Sévérité du croup (laryngite)",
-    icon:"🫁", color:"#0EA5E9",
-    items:[
-      { label:"Stridor", options:[{t:"Absent",v:0},{t:"Au repos (audible stéthoscope)",v:1},{t:"Au repos (audible sans stéthoscope)",v:2}] },
-      { label:"Tirage", options:[{t:"Absent",v:0},{t:"Léger",v:1},{t:"Modéré",v:2},{t:"Sévère",v:3}] },
-      { label:"Entrée d'air", options:[{t:"Normale",v:0},{t:"Diminuée",v:1},{t:"Très diminuée",v:2}] },
-      { label:"Cyanose", options:[{t:"Absente",v:0},{t:"À l'agitation",v:4},{t:"Au repos",v:5}] },
-      { label:"Conscience", options:[{t:"Normale",v:0},{t:"Altérée",v:5}] },
-    ],
-    strat:[
-      { max:2, label:"Croup léger", color:"#16A34A", reco:"Traitement ambulatoire — corticoïde dose unique" },
-      { max:5, label:"Croup modéré", color:"#CA8A04", reco:"Corticoïde + surveillance — adrénaline nébulisée si besoin" },
-      { max:11,label:"Croup sévère", color:"#DC2626", reco:"Adrénaline nébulisée + corticoïde + surveillance rapprochée" },
-      { max:17,label:"Insuffisance respiratoire imminente", color:"#991B1B", reco:"Réanimation — appel anesthésiste/réa pédiatrique" },
-    ]
-  },
-  {
-    id:"pews", title:"PEWS", subtitle:"Pediatric Early Warning Score",
-    icon:"⚠️", color:"#EA580C",
-    items:[
-      { label:"Comportement", options:[{t:"Joue / approprié",v:0},{t:"Endormi",v:1},{t:"Irritable",v:2},{t:"Léthargique / confus / réponse réduite à la douleur",v:3}] },
-      { label:"Cardiovasculaire", options:[{t:"Rose / TRC 1-2s",v:0},{t:"Pâle / TRC 3s",v:1},{t:"Gris / TRC 4s / tachycardie +20",v:2},{t:"Gris marbré / TRC ≥5s / tachycardie +30 ou bradycardie",v:3}] },
-      { label:"Respiratoire", options:[{t:"Normal",v:0},{t:"FR +10 / utilise muscles accessoires / FiO2 ≥30%",v:1},{t:"FR +20 / tirage / FiO2 ≥40%",v:2},{t:"FR -5 sous norme + tirage/geignement / FiO2 ≥50%",v:3}] },
-    ],
-    strat:[
-      { max:2, label:"Risque faible", color:"#16A34A", reco:"Surveillance standard" },
-      { max:4, label:"Risque intermédiaire", color:"#CA8A04", reco:"Réévaluation rapprochée — alerter le senior" },
-      { max:9, label:"Risque élevé", color:"#DC2626", reco:"Évaluation médicale urgente — envisager réa pédiatrique" },
-    ]
-  },
-  {
-    id:"deshydratation", title:"Déshydratation clinique", subtitle:"Évaluation du degré (OMS/Gorelick)",
-    icon:"💧", color:"#0891B2",
-    items:[
-      { label:"État général", options:[{t:"Normal",v:0},{t:"Agité / irritable",v:1},{t:"Léthargique / inconscient",v:2}] },
-      { label:"Yeux", options:[{t:"Normaux",v:0},{t:"Légèrement enfoncés",v:1},{t:"Très enfoncés",v:2}] },
-      { label:"Larmes", options:[{t:"Présentes",v:0},{t:"Diminuées",v:1},{t:"Absentes",v:2}] },
-      { label:"Bouche / langue", options:[{t:"Humide",v:0},{t:"Collante",v:1},{t:"Sèche",v:2}] },
-      { label:"Pli cutané", options:[{t:"Disparaît vite",v:0},{t:"Disparaît lentement",v:1},{t:"Persiste >2s",v:2}] },
-    ],
-    strat:[
-      { max:1, label:"Pas de déshydratation / minime (<3%)", color:"#16A34A", reco:"SRO à domicile, poursuivre alimentation" },
-      { max:5, label:"Déshydratation légère à modérée (3-9%)", color:"#CA8A04", reco:"Réhydratation orale (SRO) surveillée aux urgences" },
-      { max:10,label:"Déshydratation sévère (≥10%)", color:"#DC2626", reco:"Réhydratation IV / IO urgente — bolus 20 mL/kg NaCl 0.9%" },
-    ]
-  },
-  {
-    id:"glasgow_ped", title:"Glasgow pédiatrique", subtitle:"Score de coma adapté à l'âge",
-    icon:"🧠", color:"#6366F1",
-    ageVariants:[
-      { key:"<2", label:"< 2 ans" },
-      { key:"2-5", label:"2-5 ans" },
-      { key:">5", label:"> 5 ans" },
-    ],
-    itemsByAge:{
-      "<2":[
-        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
-        { label:"Réponse verbale", options:[{t:"Agit normalement",v:5},{t:"Pleure",v:4},{t:"Hurlements inappropriés",v:3},{t:"Gémissements",v:2},{t:"Aucune réponse",v:1}] },
-        { label:"Réponse motrice", options:[{t:"Mouvements spontanés intentionnels",v:6},{t:"Se retire au toucher",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
-      ],
-      "2-5":[
-        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
-        { label:"Réponse verbale", options:[{t:"Mots appropriés, sourit, fixe, suit du regard",v:5},{t:"Mots appropriés, pleure, consolable",v:4},{t:"Hurle, inconsolable",v:3},{t:"Gémit aux stimuli douloureux",v:2},{t:"Aucune réponse",v:1}] },
-        { label:"Réponse motrice", options:[{t:"Répond aux demandes",v:6},{t:"Localise la douleur",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
-      ],
-      ">5":[
-        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
-        { label:"Réponse verbale", options:[{t:"Orienté, parle",v:5},{t:"Désorienté, parle",v:4},{t:"Paroles inappropriées",v:3},{t:"Sons incompréhensibles",v:2},{t:"Aucune réponse",v:1}] },
-        { label:"Réponse motrice", options:[{t:"Répond aux demandes",v:6},{t:"Localise la douleur",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
-      ],
-    },
-    strat:[
-      { max:8,  label:"Coma grave (GCS ≤ 8)", color:"#DC2626", reco:"Protection des voies aériennes — envisager intubation" },
-      { max:12, label:"Atteinte modérée", color:"#CA8A04", reco:"Surveillance neurologique rapprochée" },
-      { max:15, label:"Atteinte légère / normal", color:"#16A34A", reco:"Surveillance selon contexte" },
-    ]
-  },
-  {
-    id:"avpu", title:"Score AVPU", subtitle:"Évaluation neurologique rapide",
-    icon:"🔔", color:"#0891B2",
-    items:[
-      { label:"Niveau de conscience", options:[
-        {t:"A — Alerte : conscient, réagit spontanément, suit les objets",v:0},
-        {t:"V — Verbal : répond aux commandes verbales, yeux ne s'ouvrent pas spontanément",v:1},
-        {t:"P — Pain : réagit aux stimuli douloureux uniquement",v:2},
-        {t:"U — Unresponsive : aucune réaction",v:3},
-      ] },
-    ],
-    strat:[
-      { max:0, label:"A — Alerte", color:"#16A34A", reco:"État de conscience normal" },
-      { max:1, label:"V — Réponse verbale", color:"#CA8A04", reco:"Vigilance altérée — surveillance" },
-      { max:2, label:"P — Réponse à la douleur", color:"#EA580C", reco:"Altération marquée — équivaut à GCS ~8, protéger les VAS" },
-      { max:3, label:"U — Aucune réponse", color:"#DC2626", reco:"Coma — intubation à envisager, réa" },
-    ]
-  },
-  {
-    id:"evendol", title:"EVENDOL", subtitle:"Évaluation de la douleur (0-7 ans)",
-    icon:"😣", color:"#DB2777",
-    items:[
-      { label:"Expression vocale/verbale (pleure, crie, gémit, dit qu'il a mal)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
-      { label:"Mimique (front plissé, sourcils froncés, bouche crispée)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
-      { label:"Mouvements (s'agite, se raidit, se crispe)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
-      { label:"Positions (attitude inhabituelle, antalgique, se protège, immobile)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
-      { label:"Relation avec l'environnement (consolable, joue, communique)", options:[{t:"Normale",v:0},{t:"Diminuée",v:1},{t:"Très diminuée",v:2},{t:"Absente",v:3}] },
-    ],
-    strat:[
-      { max:3,  label:"Pas de douleur significative", color:"#16A34A", reco:"Seuil de traitement : 4/15" },
-      { max:5,  label:"Douleur faible (< 6/15)", color:"#CA8A04", reco:"Antalgique palier 1 — réévaluer" },
-      { max:8,  label:"Douleur modérée (6-8/15)", color:"#EA580C", reco:"Antalgique palier 2 — réévaluer à 30-45 min" },
-      { max:15, label:"Douleur sévère (> 8/15)", color:"#DC2626", reco:"Antalgique palier 3 (morphine) — titration" },
-    ]
-  },
-];
-
-// ────────────────────────────────────────────────────────────────────────────
-// PediaScoreCalc : calculateur générique pour un score pédiatrique
-// ────────────────────────────────────────────────────────────────────────────
-function PediaScoreCalc({ score, onBack }) {
-  const C = useC();
-  const [picks, setPicks] = useState({});
-  const hasAgeVariants = !!score.ageVariants;
-  const [ageKey, setAgeKey] = useState(hasAgeVariants ? score.ageVariants[0].key : null);
-
-  // Items selon variante d'âge ou items fixes
-  const items = hasAgeVariants ? (score.itemsByAge[ageKey] || []) : score.items;
-
-  // Reset des réponses quand on change de tranche d'âge
-  const changeAge = (k) => { setAgeKey(k); setPicks({}); };
-
-  const total = items.reduce((acc, item, i) => {
-    const v = picks[i];
-    return acc + (v != null ? v : 0);
-  }, 0);
-  const allAnswered = items.every((_, i) => picks[i] != null);
-  const strat = allAnswered ? score.strat.find(s => total <= s.max) || score.strat[score.strat.length-1] : null;
-
-  return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{background:score.color+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{score.icon}</div>
-        <div>
-          <div style={{fontSize:17, fontWeight:800, color:C.text}}>{score.title}</div>
-          <div style={{fontSize:12, color:C.sub}}>{score.subtitle}</div>
-        </div>
-      </div>
-
-      {/* Sélecteur d'âge (Glasgow pédiatrique) */}
-      {hasAgeVariants && (
-        <div style={{display:"flex", gap:6, marginBottom:14}}>
-          {score.ageVariants.map(v => (
-            <button key={v.key} onClick={()=>changeAge(v.key)} style={{
-              flex:1, padding:"9px 4px", borderRadius:9, cursor:"pointer", fontSize:12, fontWeight:700,
-              border:`2px solid ${ageKey===v.key ? score.color : C.border}`,
-              background: ageKey===v.key ? score.color+"15" : C.white,
-              color: ageKey===v.key ? score.color : C.sub,
-            }}>{v.label}</button>
-          ))}
-        </div>
-      )}
-
-      {/* Total */}
-      <div style={{background: strat ? strat.color+"15" : C.bg, border:`2px solid ${strat ? strat.color : C.border}`, borderRadius:16, padding:"12px 16px", marginBottom:18, display:"flex", alignItems:"center", gap:14}}>
-        <div style={{fontSize:40, fontWeight:900, color: strat ? strat.color : C.sub, minWidth:50, textAlign:"center"}}>{total}</div>
-        <div>
-          {strat ? (
-            <>
-              <div style={{fontSize:15, fontWeight:800, color:strat.color}}>{strat.label}</div>
-              <div style={{fontSize:12, color:C.text, marginTop:2, lineHeight:1.4}}>{strat.reco}</div>
-            </>
-          ) : <div style={{fontSize:13, color:C.sub}}>Répondez à tous les critères</div>}
-        </div>
-      </div>
-
-      {/* Items */}
-      {items.map((item, i) => (
-        <div key={i} style={{marginBottom:14}}>
-          <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:7}}>{item.label}</div>
-          <div style={{display:"flex", flexDirection:"column", gap:6}}>
-            {item.options.map((opt, j) => {
-              const active = picks[i] === opt.v;
-              return (
-                <button key={j} onClick={()=>setPicks(p=>({...p, [i]:opt.v}))} style={{
-                  display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
-                  padding:"10px 14px", borderRadius:10, cursor:"pointer", textAlign:"left",
-                  border:`2px solid ${active ? score.color : C.border}`,
-                  background: active ? score.color+"15" : C.white,
-                }}>
-                  <span style={{fontSize:13, color:C.text, fontWeight: active?700:500}}>{opt.t}</span>
-                  <span style={{fontSize:12, fontWeight:800, color: active ? score.color : C.sub, flexShrink:0}}>+{opt.v}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-
-      <button onClick={()=>setPicks({})} style={{width:"100%", background:C.white, border:`1.5px solid ${C.border}`, borderRadius:12, padding:"11px", fontSize:13, fontWeight:700, color:C.sub, cursor:"pointer", marginTop:6, marginBottom:20}}>
-        ↺ Réinitialiser
-      </button>
-    </div>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// PediaScreen : module pédiatrie (4 sections)
-// ────────────────────────────────────────────────────────────────────────────
-function PediaScreen({ onBack }) {
-  const C = useC();
-  const [section, setSection] = useState("home"); // home | cartes | doses | normes | fiches | scores
-  const [scoreSel, setScoreSel] = useState(null);
-  const [ficheSel, setFicheSel] = useState(null);
-  const [carteSel, setCarteSel] = useState(null);
-  const [dedieSel, setDedieSel] = useState(null); // Apgar/Silverman/Carvajal (calculateurs dédiés)
-
-  // Scores pédia avec calculateur dédié (réutilisés du module Scores)
-  const PEDIA_SCORES_DEDIES = [
-    { id:"apgar",     title:"Score d'Apgar",            subtitle:"Adaptation néonatale (1 / 5 min)", icon:"👶", color:"#EC4899" },
-    { id:"silverman", title:"Score de Silverman",       subtitle:"Détresse respiratoire du nouveau-né", icon:"🫁", color:"#EC4899" },
-    { id:"carvajal",  title:"Carvajal (brûlé enfant)",  subtitle:"Remplissage pédiatrique – SCB", icon:"🔥", color:"#DB2777" },
-  ];
-  const [fiches, setFiches] = useState([]);
-  const [medicaments, setMedicaments] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[section, scoreSel, ficheSel, carteSel, dedieSel]);
-
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [f, m] = await Promise.all([
-        supaFetch("/pedia_fiches?order=created_at.desc"),
-        supaFetch("/pedia_medicaments?order=nom.asc"),
-      ]);
-      setFiches(f); setMedicaments(m);
-    } catch(e) { console.warn("loadPedia", e); }
-    setLoading(false);
-  }
-  useEffect(()=>{ loadData(); },[]);
-
-  const SECTIONS = [
-    { id:"broselow", icon:"📏", label:"Toise de Broselow", desc:"Taille → poids → carte d'urgence", color:"#1A3A5C", bg:"#EFF6FF" },
-    { id:"cartes", icon:"🚨", label:"Cartes d'urgences vitales", desc:"Doses pré-calculées par âge/poids", color:"#EC4899", bg:"#FCE7F3" },
-    { id:"doses",  icon:"💊", label:"Calculateur de doses", desc:"Doses selon le poids ou l'âge", color:"#0EA5E9", bg:"#E0F2FE" },
-    { id:"normes", icon:"📊", label:"Normes physiologiques", desc:"Constantes & matériel par âge", color:"#16A34A", bg:"#DCFCE7" },
-    { id:"fiches", icon:"📋", label:"Fiches réflexes", desc:"Sédation, maltraitance, urgences", color:"#EC4899", bg:"#FCE7F3" },
-    { id:"scores", icon:"🧮", label:"Scores pédiatriques", desc:"Westley, PEWS, déshydratation", color:"#7C3AED", bg:"#F3E8FF" },
-  ];
-
-  // ── Routing interne ──
-  if (section === "broselow") return (
-    <BroseloweScreen
-      onBack={()=>setSection("home")}
-      onSelectCarte={(carte)=>{ setCarteSel(carte); setSection("cartes"); }}
-    />
-  );
-  if (section === "cartes" && carteSel) return <PediaCarteDetail carte={carteSel} onBack={()=>setCarteSel(null)}/>;
-  if (section === "cartes") return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
-        <button onClick={()=>setSection("home")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Cartes d'urgences vitales</div>
-      </div>
-      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"9px 12px", marginBottom:16, fontSize:11, color:"#92400E", lineHeight:1.5}}>
-        Sélectionnez la tranche d'âge/poids. Estimer le poids : parole du parent, toise (Broselow/Pawper), ou formule (âge + 4) × 2.
-      </div>
-      <div style={{display:"flex", flexDirection:"column", gap:8}}>
-        {[...PEDIA_CARTES].sort((a,b)=>a.poids-b.poids).map(c => (
-          <button key={c.id} onClick={()=>setCarteSel(c)} style={{
-            display:"flex", alignItems:"center", gap:12, background:C.white,
-            border:`1.5px solid ${C.border}`, borderLeft:"4px solid #EC4899",
-            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
-          }}>
-            <div style={{background:"#FCE7F3", borderRadius:11, minWidth:52, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:"#BE185D", padding:"0 8px"}}>{c.poids} kg</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:15, fontWeight:800, color:C.text}}>{c.age}</div>
-              <div style={{fontSize:11, color:C.sub}}>{c.taille}</div>
-            </div>
-            <span style={{color:"#EC4899", fontSize:18}}>›</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-  if (section === "scores" && dedieSel === "apgar")     return <ApgarCalculator onBack={()=>setDedieSel(null)}/>;
-  if (section === "scores" && dedieSel === "silverman") return <SilvermanCalculator onBack={()=>setDedieSel(null)}/>;
-  if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
-  if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
-  if (section === "doses")  return <PediaDoses medicaments={medicaments} loading={loading} onBack={()=>setSection("home")}/>;
-  if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
-  if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
-  if (section === "scores") return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
-        <button onClick={()=>setSection("home")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Scores pédiatriques</div>
-      </div>
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {PEDIA_SCORES.map(s => (
-          <button key={s.id} onClick={()=>setScoreSel(s)} style={{
-            display:"flex", alignItems:"center", gap:12, background:C.white,
-            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${s.color}`,
-            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
-          }}>
-            <div style={{background:s.color+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{s.icon}</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{s.title}</div>
-              <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
-            </div>
-            <span style={{color:s.color, fontSize:18}}>›</span>
-          </button>
-        ))}
-        {PEDIA_SCORES_DEDIES.map(s => (
-          <button key={s.id} onClick={()=>setDedieSel(s.id)} style={{
-            display:"flex", alignItems:"center", gap:12, background:C.white,
-            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${s.color}`,
-            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
-          }}>
-            <div style={{background:s.color+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{s.icon}</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{s.title}</div>
-              <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
-            </div>
-            <span style={{color:s.color, fontSize:18}}>›</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  // ── Accueil du module ──
-  return (
-    <div>
-      {onBack && (
-        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Accueil
-        </button>
-      )}
-
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
-        <div style={{background:"#FCE7F3", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>👶</div>
-        <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Pédiatrie</div>
-          <div style={{fontSize:12, color:C.sub}}>Outils & références pédiatriques</div>
-        </div>
-      </div>
-
-      {/* Bandeau sécurité */}
-      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"9px 12px", margin:"12px 0 18px", fontSize:11, color:"#92400E", lineHeight:1.5}}>
-        ⚠️ Aide à la décision — toute dose calculée doit être vérifiée cliniquement avant administration
-      </div>
-
-      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
-        {SECTIONS.map(s => (
-          <button key={s.id} onClick={()=>setSection(s.id)} style={{
-            background:C.white, border:`1.5px solid ${C.border}`, borderRadius:16,
-            padding:"18px 14px", cursor:"pointer", textAlign:"left",
-            display:"flex", flexDirection:"column", gap:8, boxShadow:"0 1px 4px rgba(0,0,0,.06)",
-          }}>
-            <div style={{width:46, height:46, borderRadius:13, background:s.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>{s.icon}</div>
-            <div style={{fontSize:14, fontWeight:800, color:C.text, lineHeight:1.2}}>{s.label}</div>
-            <div style={{fontSize:11, color:C.sub, lineHeight:1.3}}>{s.desc}</div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Section Normes physiologiques ──
-function PediaNormes({ onBack }) {
-  const C = useC();
-  return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Normes physiologiques</div>
-      </div>
-
-      <div style={{fontSize:11, color:C.sub, marginBottom:14, lineHeight:1.5}}>
-        Constantes normales et matériel adapté par tranche d'âge (réf. APLS / ERC 2021). FC = battements/min, FR = cycles/min, PAS = mmHg.
-      </div>
-
-      <div style={{display:"flex", flexDirection:"column", gap:12}}>
-        {PEDIA_NORMES.map((n, i) => (
-          <div key={i} style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:"4px solid #16A34A", borderRadius:14, padding:"14px 16px"}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
-              <span style={{fontSize:15, fontWeight:800, color:C.text}}>{n.age}</span>
-              <span style={{fontSize:11, fontWeight:700, color:"#16A34A", background:"#DCFCE7", borderRadius:8, padding:"2px 8px"}}>{n.poids}</span>
-            </div>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
-              <NormCell label="FC" value={n.fc} unit="/min" color="#E05260"/>
-              <NormCell label="FR" value={n.fr} unit="/min" color="#0EA5E9"/>
-              <NormCell label="PAS" value={n.pas} unit="mmHg" color="#7C3AED"/>
-              <NormCell label="Sonde IOT" value={n.sonde} unit="mm" color="#16A34A"/>
-              <NormCell label="Lame" value={n.lame} unit="" color="#CA8A04"/>
-              <NormCell label="Défib." value={n.defib} unit="" color="#DC2626"/>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{background:C.bg, borderRadius:10, padding:"10px 12px", fontSize:10, color:C.sub, lineHeight:1.6, marginTop:14}}>
-        <strong>Formules d'estimation du poids (APLS) :</strong><br/>
-        • Nourrisson (&lt;1 an) : (âge en mois ÷ 2) + 4<br/>
-        • 1-5 ans : (2 × âge) + 8<br/>
-        • 6-12 ans : (3 × âge) + 7
-      </div>
-    </div>
-  );
-}
-
-function NormCell({ label, value, unit, color }) {
-  const C = useC();
-  return (
-    <div style={{background:C.bg, borderRadius:8, padding:"8px 10px"}}>
-      <div style={{fontSize:10, fontWeight:700, color:color, marginBottom:2}}>{label}</div>
-      <div style={{fontSize:13, fontWeight:800, color:C.text}}>{value} <span style={{fontSize:9, fontWeight:500, color:C.sub}}>{unit}</span></div>
-    </div>
-  );
-}
-
-// ── Section Calculateur de doses ──
-function PediaDoses({ medicaments, loading, onBack }) {
-  const C = useC();
-  const [mode, setMode] = useState("poids"); // poids | age
-  const [poids, setPoids] = useState("");
-  const [age, setAge] = useState("");
-  const [search, setSearch] = useState("");
-
-  // Poids effectif (saisi ou estimé depuis l'âge)
-  const poidsEff = mode === "poids"
-    ? (parseFloat(poids) || null)
-    : estimatePoids(age);
-
-  const filtered = medicaments.filter(m => {
-    const q = search.toLowerCase();
-    return !q || (m.nom + (m.indication||"") + (m.categorie||"")).toLowerCase().includes(q);
-  });
-
-  return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
-      </div>
-
-      {/* Toggle poids / âge */}
-      <div style={{display:"flex", gap:8, marginBottom:12}}>
-        {[{id:"poids",label:"Par poids"},{id:"age",label:"Par âge"}].map(t => (
-          <button key={t.id} onClick={()=>setMode(t.id)} style={{
-            flex:1, padding:"9px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
-            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
-            background: mode===t.id ? "#E0F2FE" : C.white, color: mode===t.id ? "#0369A1" : C.sub,
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      {/* Saisie */}
-      {mode === "poids" ? (
-        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
-          <input type="number" inputMode="decimal" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="Poids de l'enfant"
-            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
-          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>kg</span>
-        </div>
-      ) : (
-        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
-          <input type="number" inputMode="decimal" value={age} onChange={e=>setAge(e.target.value)} placeholder="Âge de l'enfant"
-            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
-          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>ans</span>
-        </div>
-      )}
-
-      {/* Poids effectif affiché en permanence */}
-      {poidsEff && (
-        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:16, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
-          {mode === "age"
-            ? `Poids estimé : ${poidsEff} kg (formule APLS)`
-            : `Poids : ${poidsEff} kg`}
-        </div>
-      )}
-
-      {!poidsEff && (
-        <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
-          Saisissez {mode === "poids" ? "le poids" : "l'âge"} pour calculer les doses
-        </div>
-      )}
-
-      {/* Recherche médicament */}
-      {poidsEff && (
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Rechercher un médicament..."
-          style={{width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:13, color:C.text, background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}/>
-      )}
-
-      {/* Liste des médicaments avec doses calculées */}
-      {poidsEff && (
-        loading ? (
-          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
-            {medicaments.length === 0 ? "Aucun médicament enregistré. Ajoutez-les via l'éditeur." : "Aucun résultat"}
-          </div>
-        ) : (
-          <div style={{display:"flex", flexDirection:"column", gap:10}}>
-            {filtered.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
-          </div>
-        )
-      )}
-    </div>
-  );
-}
-
-function PediaDoseCard({ medic, poids }) {
-  const C = useC();
-  const color = medic.color || "#0EA5E9";
-
-  // Cas spécial : pas de dose_par_kg (ex: noradrénaline en PSE)
-  if (!medic.dose_par_kg) {
-    return (
-      <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
-        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
-          <span style={{fontSize:14, fontWeight:800, color:C.text}}>{medic.nom}</span>
-          {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px"}}>{medic.voie}</span>}
-        </div>
-        {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:6}}>{medic.indication}</div>}
-        <div style={{background:color+"15", borderRadius:8, padding:"8px 10px", fontSize:12, color:C.text, fontWeight:600}}>
-          ⚙️ {medic.frequence || "Voir cartes Urg'Ara pour le débit selon le poids"}
-        </div>
-        {medic.remarques && <div style={{fontSize:11, color:C.sub, marginTop:6, lineHeight:1.4}}>📌 {medic.remarques}</div>}
-      </div>
-    );
-  }
-
-  // Calcul dose
-  const dosePerKg = parseFloat(medic.dose_par_kg);
-  const doseMax   = medic.dose_max != null ? parseFloat(medic.dose_max) : null;
-  let dose = dosePerKg * poids;
-  const capped = doseMax != null && dose > doseMax;
-  if (capped) dose = doseMax;
-  const doseR = Math.round(dose * 100) / 100;
-
-  // Volume si concentration connue
-  const concVal = medic.concentration_value != null ? parseFloat(medic.concentration_value) : null;
-  const volume  = concVal ? Math.round((doseR / concVal) * 100) / 100 : null;
-
-  return (
-    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
-      {/* Ligne titre + voie */}
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
-        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
-        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
-      </div>
-      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
-
-      {/* Résultat principal — mise en évidence */}
-      <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:6}}>
-        <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
-          {/* Dose */}
-          <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
-            <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>DOSE</span>
-            <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{doseR}</span>
-            <span style={{fontSize:11, fontWeight:600, color:C.sub}}>{medic.unite||"mg"}</span>
-          </div>
-          {/* Flèche */}
-          {volume != null && <span style={{fontSize:18, color:C.sub}}>→</span>}
-          {/* Volume */}
-          {volume != null && (
-            <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
-              <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>VOLUME</span>
-              <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{volume}</span>
-              <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL</span>
-            </div>
-          )}
-          {/* Infos calcul */}
-          <div style={{flex:1, minWidth:100}}>
-            <div style={{fontSize:10, color:C.sub, lineHeight:1.5}}>
-              {dosePerKg} {medic.unite||"mg"}/kg × {poids} kg
-              {medic.concentration && <><br/>{medic.concentration}</>}
-            </div>
-          </div>
-        </div>
-        {/* Alerte plafonnement */}
-        {capped && (
-          <div style={{marginTop:6, fontSize:11, fontWeight:800, color:"#DC2626", display:"flex", alignItems:"center", gap:4}}>
-            ⚠️ Dose plafonnée à {doseMax} {medic.unite||"mg"} (max absolu)
-          </div>
-        )}
-      </div>
-
-      {/* Infos secondaires */}
-      {medic.frequence && <div style={{fontSize:11, color:C.sub, marginBottom:3}}>⏱️ {medic.frequence}</div>}
-      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
-    </div>
-  );
-}
-
-// Config affichage catégories (même ordre que cartes Urg'Ara)
-const PEDIA_DOSE_CATS = [
-  { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
-  { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
-  { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
-  { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
-  { key:"osmotherapie",  label:"Osmothérapie",               icon:"💧",  color:"#CA8A04", bg:"#FEF9C3" },
-  { key:"antibiotique",  label:"Antibiotique",               icon:"🦠",  color:"#EA580C", bg:"#FFEDD5" },
-];
-
-function PediaDoses({ medicaments, loading, onBack }) {
-  const C = useC();
-  const [mode, setMode] = useState("poids");
-  const [poids, setPoids] = useState("");
-  const [age, setAge] = useState("");
-  const [search, setSearch] = useState("");
-  const [openCats, setOpenCats] = useState({}); // catégories dépliées
-
-  const poidsEff = mode === "poids"
-    ? (parseFloat(poids) || null)
-    : estimatePoids(age);
-
-  const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
-
-  // Filtrage
-  const q = search.toLowerCase();
-  const filtered = medicaments.filter(m =>
-    !q || (m.nom+(m.indication||"")+(m.categorie||"")).toLowerCase().includes(q)
-  );
-
-  // Groupement par catégorie dans l'ordre PEDIA_DOSE_CATS, puis "Autre" pour le reste
-  const grouped = PEDIA_DOSE_CATS.map(cat => ({
-    ...cat,
-    items: filtered.filter(m => m.categorie === cat.key),
-  })).filter(cat => cat.items.length > 0);
-  const autreItems = filtered.filter(m => !PEDIA_DOSE_CATS.find(c => c.key === m.categorie));
-  if (autreItems.length > 0) grouped.push({ key:"autre", label:"Autre", icon:"📋", color:"#64748B", bg:"#F1F5F9", items:autreItems });
-
-  return (
-    <div style={{maxWidth:"100%", overflowX:"hidden"}}>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text, flexShrink:0}}>←</button>
-        <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
-          <div style={{fontSize:12, color:C.sub}}>Dose × poids — plafonnement automatique</div>
-        </div>
-      </div>
-
-      {/* Bandeau sécurité */}
-      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"8px 12px", marginBottom:14, fontSize:11, color:"#92400E", lineHeight:1.5}}>
-        ⚠️ Aide au calcul — vérification clinique obligatoire avant administration
-      </div>
-
-      {/* Toggle poids / âge */}
-      <div style={{display:"flex", gap:8, marginBottom:10}}>
-        {[{id:"poids",label:"📏 Par poids"},{id:"age",label:"🎂 Par âge"}].map(t => (
-          <button key={t.id} onClick={()=>setMode(t.id)} style={{
-            flex:1, padding:"10px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
-            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
-            background: mode===t.id ? "#E0F2FE" : C.white,
-            color: mode===t.id ? "#0369A1" : C.sub,
-          }}>{t.label}</button>
-        ))}
-      </div>
-
-      {/* Saisie */}
-      <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8, boxSizing:"border-box"}}>
-        <input type="number" inputMode="numeric"
-          value={mode==="poids" ? poids : age}
-          onChange={e => mode==="poids" ? setPoids(e.target.value) : setAge(e.target.value)}
-          placeholder={mode==="poids" ? "Poids en kg" : "Âge en années"}
-          style={{flex:1, minWidth:0, padding:"14px 12px", borderRadius:12,
-            border:`2px solid ${poidsEff ? "#0EA5E9" : C.border}`,
-            fontSize:24, fontWeight:900, color:C.navy, background:C.white,
-            outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
-            textAlign:"center", boxSizing:"border-box"}}
-        />
-        <div style={{flexShrink:0, background: poidsEff ? "#0EA5E9" : C.bg, borderRadius:10, padding:"10px 14px"}}>
-          <span style={{fontSize:15, fontWeight:800, color: poidsEff ? "#fff" : C.sub}}>
-            {mode==="poids" ? "kg" : "ans"}
-          </span>
-        </div>
-      </div>
-
-      {/* Poids affiché */}
-      {poidsEff && (
-        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:14, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
-          {mode==="age" ? `Poids estimé (formule APLS) : ` : "Poids : "}
-          <span style={{fontSize:20}}>{poidsEff} kg</span>
-        </div>
-      )}
-
-      {!poidsEff && (
-        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
-          Saisissez {mode==="poids" ? "le poids" : "l'âge"} pour voir les doses calculées
-        </div>
-      )}
-
-      {/* Recherche */}
-      {poidsEff && (
-        <input value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder="🔍 Rechercher un médicament..."
-          style={{width:"100%", padding:"10px 14px", borderRadius:10,
-            border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
-            background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
-        />
-      )}
-
-      {/* Médicaments groupés par catégorie */}
-      {poidsEff && (
-        loading ? (
-          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
-        ) : grouped.length === 0 ? (
-          <div style={{textAlign:"center", padding:"20px", color:C.sub, fontSize:13}}>
-            {medicaments.length === 0 ? "Aucun médicament — ajoutez-les via l'éditeur." : "Aucun résultat"}
-          </div>
-        ) : (
-          <div style={{display:"flex", flexDirection:"column", gap:10}}>
-            {grouped.map(cat => (
-              <div key={cat.key}>
-                {/* Header catégorie — cliquable pour déplier/plier */}
-                <button onClick={()=>toggleCat(cat.key)} style={{
-                  width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
-                  padding:"10px 14px", borderRadius:12, border:"none",
-                  background:cat.bg, cursor:"pointer", marginBottom: openCats[cat.key]===false ? 0 : 8,
-                }}>
-                  <div style={{display:"flex", alignItems:"center", gap:8}}>
-                    <span style={{fontSize:16}}>{cat.icon}</span>
-                    <span style={{fontSize:13, fontWeight:800, color:cat.color}}>{cat.label}</span>
-                    <span style={{fontSize:11, color:cat.color, background:"#fff", borderRadius:10, padding:"1px 7px", fontWeight:700}}>{cat.items.length}</span>
-                  </div>
-                  <span style={{fontSize:14, color:cat.color}}>{openCats[cat.key]===false ? "▶" : "▼"}</span>
-                </button>
-                {/* Médicaments de la catégorie */}
-                {openCats[cat.key] !== false && (
-                  <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                    {cat.items.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )
-      )}
-    </div>
-  );
-}
-
-
-function PediaFiches({ fiches, loading, selected, setSelected, onBack }) {
-  const C = useC();
-
-  if (selected) {
-    const f = selected;
-    return (
-      <div>
-        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
-          <button onClick={()=>setSelected(null)} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-          <div style={{fontSize:17, fontWeight:800, color:C.text}}>{f.title}</div>
-        </div>
-
-        <div style={{background:`linear-gradient(135deg, ${f.color||"#EC4899"} 0%, ${f.color||"#EC4899"}CC 100%)`, borderRadius:16, padding:18, marginBottom:18, color:"#fff"}}>
-          <div style={{display:"flex", alignItems:"center", gap:10}}>
-            <span style={{fontSize:28}}>{f.icon||"👶"}</span>
-            <div>
-              <div style={{fontSize:18, fontWeight:800}}>{f.title}</div>
-              {f.subtitle && <div style={{fontSize:12, opacity:.9}}>{f.subtitle}</div>}
-            </div>
-          </div>
-        </div>
-
-        {(f.image_data || f.image_url) && (
-          <div style={{borderRadius:14, overflow:"hidden", marginBottom:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
-            <ClickableImage src={f.image_data||f.image_url} alt={f.title} style={{borderRadius:14}}/>
-          </div>
-        )}
-
-        {(f.alertes||[]).length > 0 && (
-          <div style={{background:"#FEF2F2", border:"2px solid #EF4444", borderRadius:12, padding:14, marginBottom:14}}>
-            <div style={{fontSize:11, fontWeight:800, color:"#DC2626", marginBottom:8, letterSpacing:.5}}>🚨 SIGNAUX D'ALERTE</div>
-            {f.alertes.map((a,i)=>(
-              <div key={i} style={{display:"flex", gap:8, marginBottom:6, fontSize:13, color:"#7F1D1D", lineHeight:1.4}}>
-                <span style={{flexShrink:0}}>•</span><span>{a}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {(f.points_cles||[]).length > 0 && (
-          <div style={{background:"#F0FDF4", border:"1.5px solid #86EFAC", borderRadius:12, padding:14, marginBottom:14}}>
-            <div style={{fontSize:11, fontWeight:800, color:"#16A34A", marginBottom:8, letterSpacing:.5}}>✓ POINTS CLÉS</div>
-            {f.points_cles.map((p,i)=>(
-              <div key={i} style={{display:"flex", gap:8, marginBottom:6, fontSize:13, color:C.text, lineHeight:1.4}}>
-                <span style={{color:"#16A34A", flexShrink:0}}>✓</span><span>{p}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {f.content && (
-          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:16, fontSize:14, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>
-            {f.content}
-          </div>
-        )}
-
-        {f.medias?.length > 0 && <div style={{marginTop:16}}><MediaGallery medias={f.medias}/></div>}
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
-        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Fiches réflexes</div>
-      </div>
-
-      {loading ? (
-        <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
-      ) : fiches.length === 0 ? (
-        <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
-          <div style={{fontSize:36, marginBottom:8}}>📋</div>
-          <div style={{fontSize:14, fontWeight:600}}>Aucune fiche pour l'instant</div>
-          <div style={{fontSize:12, marginTop:4}}>Créez-les via l'éditeur de fiches</div>
-        </div>
-      ) : (
-        <div style={{display:"flex", flexDirection:"column", gap:10}}>
-          {fiches.map(f => (
-            <button key={f.id} onClick={()=>setSelected(f)} style={{
-              display:"flex", alignItems:"center", gap:12, background:C.white,
-              border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${f.color||"#EC4899"}`,
-              borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
-            }}>
-              <div style={{background:(f.color||"#EC4899")+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{f.icon||"👶"}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:14, fontWeight:800, color:C.text}}>{f.title}</div>
-                {f.subtitle && <div style={{fontSize:11, color:C.sub}}>{f.subtitle}</div>}
-              </div>
-              <span style={{color:f.color||"#EC4899", fontSize:18}}>›</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ────────────────────────────────────────────────────────────────────────────
-// Cartes d'Urgences Vitales Pédiatriques (Urg'Ara / Pédi'Ara V1.0 - 01/2026)
-// Données pré-calculées par tranche d'âge/poids — aide cognitive
-// ────────────────────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────// ────────────────────────────────────────────────────────────────────────────
 // Toise de Broselow — correspondance taille (cm) → bande couleur → carte pédia
 // Référence : Broselow-Luten 2017 (couleurs standard)
 // ────────────────────────────────────────────────────────────────────────────
@@ -17684,6 +16832,868 @@ const PEDIA_MED_CATS = [
   { key:"antibiotique",  label:"Antibiotique",  icon:"🦠", color:"#EA580C", bg:"#FFEDD5" },
 ];
 
+const PEDIA_SCORES = [
+  {
+    id:"westley", title:"Score de Westley", subtitle:"Sévérité du croup (laryngite)",
+    icon:"🫁", color:"#0EA5E9",
+    items:[
+      { label:"Stridor", options:[{t:"Absent",v:0},{t:"Au repos (audible stéthoscope)",v:1},{t:"Au repos (audible sans stéthoscope)",v:2}] },
+      { label:"Tirage", options:[{t:"Absent",v:0},{t:"Léger",v:1},{t:"Modéré",v:2},{t:"Sévère",v:3}] },
+      { label:"Entrée d'air", options:[{t:"Normale",v:0},{t:"Diminuée",v:1},{t:"Très diminuée",v:2}] },
+      { label:"Cyanose", options:[{t:"Absente",v:0},{t:"À l'agitation",v:4},{t:"Au repos",v:5}] },
+      { label:"Conscience", options:[{t:"Normale",v:0},{t:"Altérée",v:5}] },
+    ],
+    strat:[
+      { max:2, label:"Croup léger", color:"#16A34A", reco:"Traitement ambulatoire — corticoïde dose unique" },
+      { max:5, label:"Croup modéré", color:"#CA8A04", reco:"Corticoïde + surveillance — adrénaline nébulisée si besoin" },
+      { max:11,label:"Croup sévère", color:"#DC2626", reco:"Adrénaline nébulisée + corticoïde + surveillance rapprochée" },
+      { max:17,label:"Insuffisance respiratoire imminente", color:"#991B1B", reco:"Réanimation — appel anesthésiste/réa pédiatrique" },
+    ]
+  },
+  {
+    id:"pews", title:"PEWS", subtitle:"Pediatric Early Warning Score",
+    icon:"⚠️", color:"#EA580C",
+    items:[
+      { label:"Comportement", options:[{t:"Joue / approprié",v:0},{t:"Endormi",v:1},{t:"Irritable",v:2},{t:"Léthargique / confus / réponse réduite à la douleur",v:3}] },
+      { label:"Cardiovasculaire", options:[{t:"Rose / TRC 1-2s",v:0},{t:"Pâle / TRC 3s",v:1},{t:"Gris / TRC 4s / tachycardie +20",v:2},{t:"Gris marbré / TRC ≥5s / tachycardie +30 ou bradycardie",v:3}] },
+      { label:"Respiratoire", options:[{t:"Normal",v:0},{t:"FR +10 / utilise muscles accessoires / FiO2 ≥30%",v:1},{t:"FR +20 / tirage / FiO2 ≥40%",v:2},{t:"FR -5 sous norme + tirage/geignement / FiO2 ≥50%",v:3}] },
+    ],
+    strat:[
+      { max:2, label:"Risque faible", color:"#16A34A", reco:"Surveillance standard" },
+      { max:4, label:"Risque intermédiaire", color:"#CA8A04", reco:"Réévaluation rapprochée — alerter le senior" },
+      { max:9, label:"Risque élevé", color:"#DC2626", reco:"Évaluation médicale urgente — envisager réa pédiatrique" },
+    ]
+  },
+  {
+    id:"deshydratation", title:"Déshydratation clinique", subtitle:"Évaluation du degré (OMS/Gorelick)",
+    icon:"💧", color:"#0891B2",
+    items:[
+      { label:"État général", options:[{t:"Normal",v:0},{t:"Agité / irritable",v:1},{t:"Léthargique / inconscient",v:2}] },
+      { label:"Yeux", options:[{t:"Normaux",v:0},{t:"Légèrement enfoncés",v:1},{t:"Très enfoncés",v:2}] },
+      { label:"Larmes", options:[{t:"Présentes",v:0},{t:"Diminuées",v:1},{t:"Absentes",v:2}] },
+      { label:"Bouche / langue", options:[{t:"Humide",v:0},{t:"Collante",v:1},{t:"Sèche",v:2}] },
+      { label:"Pli cutané", options:[{t:"Disparaît vite",v:0},{t:"Disparaît lentement",v:1},{t:"Persiste >2s",v:2}] },
+    ],
+    strat:[
+      { max:1, label:"Pas de déshydratation / minime (<3%)", color:"#16A34A", reco:"SRO à domicile, poursuivre alimentation" },
+      { max:5, label:"Déshydratation légère à modérée (3-9%)", color:"#CA8A04", reco:"Réhydratation orale (SRO) surveillée aux urgences" },
+      { max:10,label:"Déshydratation sévère (≥10%)", color:"#DC2626", reco:"Réhydratation IV / IO urgente — bolus 20 mL/kg NaCl 0.9%" },
+    ]
+  },
+  {
+    id:"glasgow_ped", title:"Glasgow pédiatrique", subtitle:"Score de coma adapté à l'âge",
+    icon:"🧠", color:"#6366F1",
+    ageVariants:[
+      { key:"<2", label:"< 2 ans" },
+      { key:"2-5", label:"2-5 ans" },
+      { key:">5", label:"> 5 ans" },
+    ],
+    itemsByAge:{
+      "<2":[
+        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
+        { label:"Réponse verbale", options:[{t:"Agit normalement",v:5},{t:"Pleure",v:4},{t:"Hurlements inappropriés",v:3},{t:"Gémissements",v:2},{t:"Aucune réponse",v:1}] },
+        { label:"Réponse motrice", options:[{t:"Mouvements spontanés intentionnels",v:6},{t:"Se retire au toucher",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
+      ],
+      "2-5":[
+        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
+        { label:"Réponse verbale", options:[{t:"Mots appropriés, sourit, fixe, suit du regard",v:5},{t:"Mots appropriés, pleure, consolable",v:4},{t:"Hurle, inconsolable",v:3},{t:"Gémit aux stimuli douloureux",v:2},{t:"Aucune réponse",v:1}] },
+        { label:"Réponse motrice", options:[{t:"Répond aux demandes",v:6},{t:"Localise la douleur",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
+      ],
+      ">5":[
+        { label:"Ouverture des yeux", options:[{t:"Spontanée",v:4},{t:"Aux stimuli verbaux",v:3},{t:"Aux stimuli douloureux",v:2},{t:"Pas d'ouverture",v:1}] },
+        { label:"Réponse verbale", options:[{t:"Orienté, parle",v:5},{t:"Désorienté, parle",v:4},{t:"Paroles inappropriées",v:3},{t:"Sons incompréhensibles",v:2},{t:"Aucune réponse",v:1}] },
+        { label:"Réponse motrice", options:[{t:"Répond aux demandes",v:6},{t:"Localise la douleur",v:5},{t:"Se retire à la douleur",v:4},{t:"Flexion à la douleur (décortication)",v:3},{t:"Extension à la douleur (décérébration)",v:2},{t:"Aucune réponse",v:1}] },
+      ],
+    },
+    strat:[
+      { max:8,  label:"Coma grave (GCS ≤ 8)", color:"#DC2626", reco:"Protection des voies aériennes — envisager intubation" },
+      { max:12, label:"Atteinte modérée", color:"#CA8A04", reco:"Surveillance neurologique rapprochée" },
+      { max:15, label:"Atteinte légère / normal", color:"#16A34A", reco:"Surveillance selon contexte" },
+    ]
+  },
+  {
+    id:"avpu", title:"Score AVPU", subtitle:"Évaluation neurologique rapide",
+    icon:"🔔", color:"#0891B2",
+    items:[
+      { label:"Niveau de conscience", options:[
+        {t:"A — Alerte : conscient, réagit spontanément, suit les objets",v:0},
+        {t:"V — Verbal : répond aux commandes verbales, yeux ne s'ouvrent pas spontanément",v:1},
+        {t:"P — Pain : réagit aux stimuli douloureux uniquement",v:2},
+        {t:"U — Unresponsive : aucune réaction",v:3},
+      ] },
+    ],
+    strat:[
+      { max:0, label:"A — Alerte", color:"#16A34A", reco:"État de conscience normal" },
+      { max:1, label:"V — Réponse verbale", color:"#CA8A04", reco:"Vigilance altérée — surveillance" },
+      { max:2, label:"P — Réponse à la douleur", color:"#EA580C", reco:"Altération marquée — équivaut à GCS ~8, protéger les VAS" },
+      { max:3, label:"U — Aucune réponse", color:"#DC2626", reco:"Coma — intubation à envisager, réa" },
+    ]
+  },
+  {
+    id:"evendol", title:"EVENDOL", subtitle:"Évaluation de la douleur (0-7 ans)",
+    icon:"😣", color:"#DB2777",
+    items:[
+      { label:"Expression vocale/verbale (pleure, crie, gémit, dit qu'il a mal)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Mimique (front plissé, sourcils froncés, bouche crispée)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Mouvements (s'agite, se raidit, se crispe)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Positions (attitude inhabituelle, antalgique, se protège, immobile)", options:[{t:"Absent",v:0},{t:"Faible/passager",v:1},{t:"Moyen (½ du temps)",v:2},{t:"Fort/quasi permanent",v:3}] },
+      { label:"Relation avec l'environnement (consolable, joue, communique)", options:[{t:"Normale",v:0},{t:"Diminuée",v:1},{t:"Très diminuée",v:2},{t:"Absente",v:3}] },
+    ],
+    strat:[
+      { max:3,  label:"Pas de douleur significative", color:"#16A34A", reco:"Seuil de traitement : 4/15" },
+      { max:5,  label:"Douleur faible (< 6/15)", color:"#CA8A04", reco:"Antalgique palier 1 — réévaluer" },
+      { max:8,  label:"Douleur modérée (6-8/15)", color:"#EA580C", reco:"Antalgique palier 2 — réévaluer à 30-45 min" },
+      { max:15, label:"Douleur sévère (> 8/15)", color:"#DC2626", reco:"Antalgique palier 3 (morphine) — titration" },
+    ]
+  },
+];
+
+// ────────────────────────────────────────────────────────────────────────────
+// PediaScoreCalc : calculateur générique pour un score pédiatrique
+// ────────────────────────────────────────────────────────────────────────────
+function PediaScoreCalc({ score, onBack }) {
+  const C = useC();
+  const [picks, setPicks] = useState({});
+  const hasAgeVariants = !!score.ageVariants;
+  const [ageKey, setAgeKey] = useState(hasAgeVariants ? score.ageVariants[0].key : null);
+
+  // Items selon variante d'âge ou items fixes
+  const items = hasAgeVariants ? (score.itemsByAge[ageKey] || []) : score.items;
+
+  // Reset des réponses quand on change de tranche d'âge
+  const changeAge = (k) => { setAgeKey(k); setPicks({}); };
+
+  const total = items.reduce((acc, item, i) => {
+    const v = picks[i];
+    return acc + (v != null ? v : 0);
+  }, 0);
+  const allAnswered = items.every((_, i) => picks[i] != null);
+  const strat = allAnswered ? score.strat.find(s => total <= s.max) || score.strat[score.strat.length-1] : null;
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{background:score.color+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{score.icon}</div>
+        <div>
+          <div style={{fontSize:17, fontWeight:800, color:C.text}}>{score.title}</div>
+          <div style={{fontSize:12, color:C.sub}}>{score.subtitle}</div>
+        </div>
+      </div>
+
+      {/* Sélecteur d'âge (Glasgow pédiatrique) */}
+      {hasAgeVariants && (
+        <div style={{display:"flex", gap:6, marginBottom:14}}>
+          {score.ageVariants.map(v => (
+            <button key={v.key} onClick={()=>changeAge(v.key)} style={{
+              flex:1, padding:"9px 4px", borderRadius:9, cursor:"pointer", fontSize:12, fontWeight:700,
+              border:`2px solid ${ageKey===v.key ? score.color : C.border}`,
+              background: ageKey===v.key ? score.color+"15" : C.white,
+              color: ageKey===v.key ? score.color : C.sub,
+            }}>{v.label}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Total */}
+      <div style={{background: strat ? strat.color+"15" : C.bg, border:`2px solid ${strat ? strat.color : C.border}`, borderRadius:16, padding:"12px 16px", marginBottom:18, display:"flex", alignItems:"center", gap:14}}>
+        <div style={{fontSize:40, fontWeight:900, color: strat ? strat.color : C.sub, minWidth:50, textAlign:"center"}}>{total}</div>
+        <div>
+          {strat ? (
+            <>
+              <div style={{fontSize:15, fontWeight:800, color:strat.color}}>{strat.label}</div>
+              <div style={{fontSize:12, color:C.text, marginTop:2, lineHeight:1.4}}>{strat.reco}</div>
+            </>
+          ) : <div style={{fontSize:13, color:C.sub}}>Répondez à tous les critères</div>}
+        </div>
+      </div>
+
+      {/* Items */}
+      {items.map((item, i) => (
+        <div key={i} style={{marginBottom:14}}>
+          <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:7}}>{item.label}</div>
+          <div style={{display:"flex", flexDirection:"column", gap:6}}>
+            {item.options.map((opt, j) => {
+              const active = picks[i] === opt.v;
+              return (
+                <button key={j} onClick={()=>setPicks(p=>({...p, [i]:opt.v}))} style={{
+                  display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+                  padding:"10px 14px", borderRadius:10, cursor:"pointer", textAlign:"left",
+                  border:`2px solid ${active ? score.color : C.border}`,
+                  background: active ? score.color+"15" : C.white,
+                }}>
+                  <span style={{fontSize:13, color:C.text, fontWeight: active?700:500}}>{opt.t}</span>
+                  <span style={{fontSize:12, fontWeight:800, color: active ? score.color : C.sub, flexShrink:0}}>+{opt.v}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <button onClick={()=>setPicks({})} style={{width:"100%", background:C.white, border:`1.5px solid ${C.border}`, borderRadius:12, padding:"11px", fontSize:13, fontWeight:700, color:C.sub, cursor:"pointer", marginTop:6, marginBottom:20}}>
+        ↺ Réinitialiser
+      </button>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PediaScreen : module pédiatrie (4 sections)
+// ────────────────────────────────────────────────────────────────────────────
+function PediaScreen({ onBack }) {
+  const C = useC();
+  const [section, setSection] = useState("home"); // home | cartes | doses | normes | fiches | scores
+  const [scoreSel, setScoreSel] = useState(null);
+  const [ficheSel, setFicheSel] = useState(null);
+  const [carteSel, setCarteSel] = useState(null);
+  const [dedieSel, setDedieSel] = useState(null); // Apgar/Silverman/Carvajal (calculateurs dédiés)
+
+  // Scores pédia avec calculateur dédié (réutilisés du module Scores)
+  const PEDIA_SCORES_DEDIES = [
+    { id:"apgar",     title:"Score d'Apgar",            subtitle:"Adaptation néonatale (1 / 5 min)", icon:"👶", color:"#EC4899" },
+    { id:"silverman", title:"Score de Silverman",       subtitle:"Détresse respiratoire du nouveau-né", icon:"🫁", color:"#EC4899" },
+    { id:"carvajal",  title:"Carvajal (brûlé enfant)",  subtitle:"Remplissage pédiatrique – SCB", icon:"🔥", color:"#DB2777" },
+  ];
+  const [fiches, setFiches] = useState([]);
+  const [medicaments, setMedicaments] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[section, scoreSel, ficheSel, carteSel, dedieSel]);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [f, m] = await Promise.all([
+        supaFetch("/pedia_fiches?order=created_at.desc"),
+        supaFetch("/pedia_medicaments?order=nom.asc"),
+      ]);
+      setFiches(f); setMedicaments(m);
+    } catch(e) { console.warn("loadPedia", e); }
+    setLoading(false);
+  }
+  useEffect(()=>{ loadData(); },[]);
+
+  const SECTIONS = [
+    { id:"broselow", icon:"📏", label:"Toise de Broselow", desc:"Taille → poids → carte d'urgence", color:"#1A3A5C", bg:"#EFF6FF" },
+    { id:"cartes", icon:"🚨", label:"Cartes d'urgences vitales", desc:"Doses pré-calculées par âge/poids", color:"#EC4899", bg:"#FCE7F3" },
+    { id:"doses",  icon:"💊", label:"Calculateur de doses", desc:"Doses selon le poids ou l'âge", color:"#0EA5E9", bg:"#E0F2FE" },
+    { id:"normes", icon:"📊", label:"Normes physiologiques", desc:"Constantes & matériel par âge", color:"#16A34A", bg:"#DCFCE7" },
+    { id:"fiches", icon:"📋", label:"Fiches réflexes", desc:"Sédation, maltraitance, urgences", color:"#EC4899", bg:"#FCE7F3" },
+    { id:"scores", icon:"🧮", label:"Scores pédiatriques", desc:"Westley, PEWS, déshydratation", color:"#7C3AED", bg:"#F3E8FF" },
+  ];
+
+  // ── Routing interne ──
+  if (section === "broselow") return (
+    <BroseloweScreen
+      onBack={()=>setSection("home")}
+      onSelectCarte={(carte)=>{ setCarteSel(carte); setSection("cartes"); }}
+    />
+  );
+  if (section === "cartes" && carteSel) return <PediaCarteDetail carte={carteSel} onBack={()=>setCarteSel(null)}/>;
+  if (section === "cartes") return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
+        <button onClick={()=>setSection("home")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Cartes d'urgences vitales</div>
+      </div>
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"9px 12px", marginBottom:16, fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        Sélectionnez la tranche d'âge/poids. Estimer le poids : parole du parent, toise (Broselow/Pawper), ou formule (âge + 4) × 2.
+      </div>
+      <div style={{display:"flex", flexDirection:"column", gap:8}}>
+        {[...PEDIA_CARTES].sort((a,b)=>a.poids-b.poids).map(c => (
+          <button key={c.id} onClick={()=>setCarteSel(c)} style={{
+            display:"flex", alignItems:"center", gap:12, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:"4px solid #EC4899",
+            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+          }}>
+            <div style={{background:"#FCE7F3", borderRadius:11, minWidth:52, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:800, color:"#BE185D", padding:"0 8px"}}>{c.poids} kg</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15, fontWeight:800, color:C.text}}>{c.age}</div>
+              <div style={{fontSize:11, color:C.sub}}>{c.taille}</div>
+            </div>
+            <span style={{color:"#EC4899", fontSize:18}}>›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  if (section === "scores" && dedieSel === "apgar")     return <ApgarCalculator onBack={()=>setDedieSel(null)}/>;
+  if (section === "scores" && dedieSel === "silverman") return <SilvermanCalculator onBack={()=>setDedieSel(null)}/>;
+  if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
+  if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
+  if (section === "doses")  return <PediaDoses medicaments={medicaments} loading={loading} onBack={()=>setSection("home")}/>;
+  if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
+  if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
+  if (section === "scores") return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <button onClick={()=>setSection("home")} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Scores pédiatriques</div>
+      </div>
+      <div style={{display:"flex", flexDirection:"column", gap:10}}>
+        {PEDIA_SCORES.map(s => (
+          <button key={s.id} onClick={()=>setScoreSel(s)} style={{
+            display:"flex", alignItems:"center", gap:12, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${s.color}`,
+            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+          }}>
+            <div style={{background:s.color+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{s.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{s.title}</div>
+              <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
+            </div>
+            <span style={{color:s.color, fontSize:18}}>›</span>
+          </button>
+        ))}
+        {PEDIA_SCORES_DEDIES.map(s => (
+          <button key={s.id} onClick={()=>setDedieSel(s.id)} style={{
+            display:"flex", alignItems:"center", gap:12, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${s.color}`,
+            borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+          }}>
+            <div style={{background:s.color+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{s.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{s.title}</div>
+              <div style={{fontSize:11, color:C.sub}}>{s.subtitle}</div>
+            </div>
+            <span style={{color:s.color, fontSize:18}}>›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ── Accueil du module ──
+  return (
+    <div>
+      {onBack && (
+        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Accueil
+        </button>
+      )}
+
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
+        <div style={{background:"#FCE7F3", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>👶</div>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Pédiatrie</div>
+          <div style={{fontSize:12, color:C.sub}}>Outils & références pédiatriques</div>
+        </div>
+      </div>
+
+      {/* Bandeau sécurité */}
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"9px 12px", margin:"12px 0 18px", fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        ⚠️ Aide à la décision — toute dose calculée doit être vérifiée cliniquement avant administration
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+        {SECTIONS.map(s => (
+          <button key={s.id} onClick={()=>setSection(s.id)} style={{
+            background:C.white, border:`1.5px solid ${C.border}`, borderRadius:16,
+            padding:"18px 14px", cursor:"pointer", textAlign:"left",
+            display:"flex", flexDirection:"column", gap:8, boxShadow:"0 1px 4px rgba(0,0,0,.06)",
+          }}>
+            <div style={{width:46, height:46, borderRadius:13, background:s.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>{s.icon}</div>
+            <div style={{fontSize:14, fontWeight:800, color:C.text, lineHeight:1.2}}>{s.label}</div>
+            <div style={{fontSize:11, color:C.sub, lineHeight:1.3}}>{s.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Section Normes physiologiques ──
+function PediaNormes({ onBack }) {
+  const C = useC();
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Normes physiologiques</div>
+      </div>
+
+      <div style={{fontSize:11, color:C.sub, marginBottom:14, lineHeight:1.5}}>
+        Constantes normales et matériel adapté par tranche d'âge (réf. APLS / ERC 2021). FC = battements/min, FR = cycles/min, PAS = mmHg.
+      </div>
+
+      <div style={{display:"flex", flexDirection:"column", gap:12}}>
+        {PEDIA_NORMES.map((n, i) => (
+          <div key={i} style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:"4px solid #16A34A", borderRadius:14, padding:"14px 16px"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10}}>
+              <span style={{fontSize:15, fontWeight:800, color:C.text}}>{n.age}</span>
+              <span style={{fontSize:11, fontWeight:700, color:"#16A34A", background:"#DCFCE7", borderRadius:8, padding:"2px 8px"}}>{n.poids}</span>
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:8}}>
+              <NormCell label="FC" value={n.fc} unit="/min" color="#E05260"/>
+              <NormCell label="FR" value={n.fr} unit="/min" color="#0EA5E9"/>
+              <NormCell label="PAS" value={n.pas} unit="mmHg" color="#7C3AED"/>
+              <NormCell label="Sonde IOT" value={n.sonde} unit="mm" color="#16A34A"/>
+              <NormCell label="Lame" value={n.lame} unit="" color="#CA8A04"/>
+              <NormCell label="Défib." value={n.defib} unit="" color="#DC2626"/>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{background:C.bg, borderRadius:10, padding:"10px 12px", fontSize:10, color:C.sub, lineHeight:1.6, marginTop:14}}>
+        <strong>Formules d'estimation du poids (APLS) :</strong><br/>
+        • Nourrisson (&lt;1 an) : (âge en mois ÷ 2) + 4<br/>
+        • 1-5 ans : (2 × âge) + 8<br/>
+        • 6-12 ans : (3 × âge) + 7
+      </div>
+    </div>
+  );
+}
+
+function NormCell({ label, value, unit, color }) {
+  const C = useC();
+  return (
+    <div style={{background:C.bg, borderRadius:8, padding:"8px 10px"}}>
+      <div style={{fontSize:10, fontWeight:700, color:color, marginBottom:2}}>{label}</div>
+      <div style={{fontSize:13, fontWeight:800, color:C.text}}>{value} <span style={{fontSize:9, fontWeight:500, color:C.sub}}>{unit}</span></div>
+    </div>
+  );
+}
+
+// ── Section Calculateur de doses ──
+function PediaDoses({ medicaments, loading, onBack }) {
+  const C = useC();
+  const [mode, setMode] = useState("poids"); // poids | age
+  const [poids, setPoids] = useState("");
+  const [age, setAge] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Poids effectif (saisi ou estimé depuis l'âge)
+  const poidsEff = mode === "poids"
+    ? (parseFloat(poids) || null)
+    : estimatePoids(age);
+
+  const filtered = medicaments.filter(m => {
+    const q = search.toLowerCase();
+    return !q || (m.nom + (m.indication||"") + (m.categorie||"")).toLowerCase().includes(q);
+  });
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
+      </div>
+
+      {/* Toggle poids / âge */}
+      <div style={{display:"flex", gap:8, marginBottom:12}}>
+        {[{id:"poids",label:"Par poids"},{id:"age",label:"Par âge"}].map(t => (
+          <button key={t.id} onClick={()=>setMode(t.id)} style={{
+            flex:1, padding:"9px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
+            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
+            background: mode===t.id ? "#E0F2FE" : C.white, color: mode===t.id ? "#0369A1" : C.sub,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Saisie */}
+      {mode === "poids" ? (
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
+          <input type="number" inputMode="decimal" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="Poids de l'enfant"
+            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
+          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>kg</span>
+        </div>
+      ) : (
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
+          <input type="number" inputMode="decimal" value={age} onChange={e=>setAge(e.target.value)} placeholder="Âge de l'enfant"
+            style={{flex:1, padding:"13px 16px", borderRadius:12, border:`2px solid ${C.border}`, fontSize:18, fontWeight:700, color:C.text, background:C.white, outline:"none", WebkitAppearance:"none"}}/>
+          <span style={{fontSize:15, fontWeight:700, color:C.sub}}>ans</span>
+        </div>
+      )}
+
+      {/* Poids effectif affiché en permanence */}
+      {poidsEff && (
+        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:16, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
+          {mode === "age"
+            ? `Poids estimé : ${poidsEff} kg (formule APLS)`
+            : `Poids : ${poidsEff} kg`}
+        </div>
+      )}
+
+      {!poidsEff && (
+        <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
+          Saisissez {mode === "poids" ? "le poids" : "l'âge"} pour calculer les doses
+        </div>
+      )}
+
+      {/* Recherche médicament */}
+      {poidsEff && (
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 Rechercher un médicament..."
+          style={{width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:13, color:C.text, background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}/>
+      )}
+
+      {/* Liste des médicaments avec doses calculées */}
+      {poidsEff && (
+        loading ? (
+          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{textAlign:"center", padding:"30px 20px", color:C.sub, fontSize:13}}>
+            {medicaments.length === 0 ? "Aucun médicament enregistré. Ajoutez-les via l'éditeur." : "Aucun résultat"}
+          </div>
+        ) : (
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {filtered.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// Config affichage catégories (même ordre que cartes Urg'Ara)
+const PEDIA_DOSE_CATS = [
+  { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
+  { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
+  { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
+  { key:"osmotherapie",  label:"Osmothérapie",               icon:"💧",  color:"#CA8A04", bg:"#FEF9C3" },
+  { key:"antibiotique",  label:"Antibiotique",               icon:"🦠",  color:"#EA580C", bg:"#FFEDD5" },
+];
+
+function DoseRow({ label, value, C, color, bold }) {
+  return (
+    <div style={{display:"flex", gap:8, fontSize:12, lineHeight:1.4}}>
+      <span style={{color:C.sub, fontWeight:600, minWidth:50, flexShrink:0}}>{label}</span>
+      <span style={{color: color || C.text, fontWeight: bold ? 800 : 500}}>{value}</span>
+    </div>
+  );
+}
+
+function PediaDoseCard({ medic, poids }) {
+  const C = useC();
+  const color = medic.color || "#0EA5E9";
+
+  // Cas spécial : pas de dose_par_kg (ex: noradrénaline en PSE)
+  if (!medic.dose_par_kg) {
+    return (
+      <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4}}>
+          <span style={{fontSize:14, fontWeight:800, color:C.text}}>{medic.nom}</span>
+          {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px"}}>{medic.voie}</span>}
+        </div>
+        {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:6}}>{medic.indication}</div>}
+        <div style={{background:color+"15", borderRadius:8, padding:"8px 10px", fontSize:12, color:C.text, fontWeight:600}}>
+          ⚙️ {medic.frequence || "Voir cartes Urg'Ara pour le débit selon le poids"}
+        </div>
+        {medic.remarques && <div style={{fontSize:11, color:C.sub, marginTop:6, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+      </div>
+    );
+  }
+
+  // Calcul dose
+  const dosePerKg = parseFloat(medic.dose_par_kg);
+  const doseMax   = medic.dose_max != null ? parseFloat(medic.dose_max) : null;
+  let dose = dosePerKg * poids;
+  const capped = doseMax != null && dose > doseMax;
+  if (capped) dose = doseMax;
+  const doseR = Math.round(dose * 100) / 100;
+
+  // Volume si concentration connue
+  const concVal = medic.concentration_value != null ? parseFloat(medic.concentration_value) : null;
+  const volume  = concVal ? Math.round((doseR / concVal) * 100) / 100 : null;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      {/* Ligne titre + voie */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      {/* Résultat principal — mise en évidence */}
+      <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:6}}>
+        <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
+          {/* Dose */}
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
+            <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>DOSE</span>
+            <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{doseR}</span>
+            <span style={{fontSize:11, fontWeight:600, color:C.sub}}>{medic.unite||"mg"}</span>
+          </div>
+          {/* Flèche */}
+          {volume != null && <span style={{fontSize:18, color:C.sub}}>→</span>}
+          {/* Volume */}
+          {volume != null && (
+            <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
+              <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>VOLUME</span>
+              <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{volume}</span>
+              <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL</span>
+            </div>
+          )}
+          {/* Infos calcul */}
+          <div style={{flex:1, minWidth:100}}>
+            <div style={{fontSize:10, color:C.sub, lineHeight:1.5}}>
+              {dosePerKg} {medic.unite||"mg"}/kg × {poids} kg
+              {medic.concentration && <><br/>{medic.concentration}</>}
+            </div>
+          </div>
+        </div>
+        {/* Alerte plafonnement */}
+        {capped && (
+          <div style={{marginTop:6, fontSize:11, fontWeight:800, color:"#DC2626", display:"flex", alignItems:"center", gap:4}}>
+            ⚠️ Dose plafonnée à {doseMax} {medic.unite||"mg"} (max absolu)
+          </div>
+        )}
+      </div>
+
+      {/* Infos secondaires */}
+      {medic.frequence && <div style={{fontSize:11, color:C.sub, marginBottom:3}}>⏱️ {medic.frequence}</div>}
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+
+function PediaDoses({ medicaments, loading, onBack }) {
+  const C = useC();
+  const [mode, setMode] = useState("poids");
+  const [poids, setPoids] = useState("");
+  const [age, setAge] = useState("");
+  const [search, setSearch] = useState("");
+  const [openCats, setOpenCats] = useState({}); // catégories dépliées
+
+  const poidsEff = mode === "poids"
+    ? (parseFloat(poids) || null)
+    : estimatePoids(age);
+
+  const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
+
+  // Filtrage
+  const q = search.toLowerCase();
+  const filtered = medicaments.filter(m =>
+    !q || (m.nom+(m.indication||"")+(m.categorie||"")).toLowerCase().includes(q)
+  );
+
+  // Groupement par catégorie dans l'ordre PEDIA_DOSE_CATS, puis "Autre" pour le reste
+  const grouped = PEDIA_DOSE_CATS.map(cat => ({
+    ...cat,
+    items: filtered.filter(m => m.categorie === cat.key),
+  })).filter(cat => cat.items.length > 0);
+  const autreItems = filtered.filter(m => !PEDIA_DOSE_CATS.find(c => c.key === m.categorie));
+  if (autreItems.length > 0) grouped.push({ key:"autre", label:"Autre", icon:"📋", color:"#64748B", bg:"#F1F5F9", items:autreItems });
+
+  return (
+    <div style={{maxWidth:"100%", overflowX:"hidden"}}>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text, flexShrink:0}}>←</button>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur de doses</div>
+          <div style={{fontSize:12, color:C.sub}}>Dose × poids — plafonnement automatique</div>
+        </div>
+      </div>
+
+      {/* Bandeau sécurité */}
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10, padding:"8px 12px", marginBottom:14, fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        ⚠️ Aide au calcul — vérification clinique obligatoire avant administration
+      </div>
+
+      {/* Toggle poids / âge */}
+      <div style={{display:"flex", gap:8, marginBottom:10}}>
+        {[{id:"poids",label:"📏 Par poids"},{id:"age",label:"🎂 Par âge"}].map(t => (
+          <button key={t.id} onClick={()=>setMode(t.id)} style={{
+            flex:1, padding:"10px", borderRadius:10, cursor:"pointer", fontSize:13, fontWeight:700,
+            border:`2px solid ${mode===t.id ? "#0EA5E9" : C.border}`,
+            background: mode===t.id ? "#E0F2FE" : C.white,
+            color: mode===t.id ? "#0369A1" : C.sub,
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Saisie */}
+      <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8, boxSizing:"border-box"}}>
+        <input type="number" inputMode="numeric"
+          value={mode==="poids" ? poids : age}
+          onChange={e => mode==="poids" ? setPoids(e.target.value) : setAge(e.target.value)}
+          placeholder={mode==="poids" ? "Poids en kg" : "Âge en années"}
+          style={{flex:1, minWidth:0, padding:"14px 12px", borderRadius:12,
+            border:`2px solid ${poidsEff ? "#0EA5E9" : C.border}`,
+            fontSize:24, fontWeight:900, color:C.navy, background:C.white,
+            outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+            textAlign:"center", boxSizing:"border-box"}}
+        />
+        <div style={{flexShrink:0, background: poidsEff ? "#0EA5E9" : C.bg, borderRadius:10, padding:"10px 14px"}}>
+          <span style={{fontSize:15, fontWeight:800, color: poidsEff ? "#fff" : C.sub}}>
+            {mode==="poids" ? "kg" : "ans"}
+          </span>
+        </div>
+      </div>
+
+      {/* Poids affiché */}
+      {poidsEff && (
+        <div style={{background:"#E0F2FE", border:"1px solid #7DD3FC", borderRadius:10, padding:"8px 14px", marginBottom:14, fontSize:13, color:"#0369A1", fontWeight:700, textAlign:"center"}}>
+          {mode==="age" ? `Poids estimé (formule APLS) : ` : "Poids : "}
+          <span style={{fontSize:20}}>{poidsEff} kg</span>
+        </div>
+      )}
+
+      {!poidsEff && (
+        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
+          Saisissez {mode==="poids" ? "le poids" : "l'âge"} pour voir les doses calculées
+        </div>
+      )}
+
+      {/* Recherche */}
+      {poidsEff && (
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="🔍 Rechercher un médicament..."
+          style={{width:"100%", padding:"10px 14px", borderRadius:10,
+            border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
+            background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
+        />
+      )}
+
+      {/* Médicaments groupés par catégorie */}
+      {poidsEff && (
+        loading ? (
+          <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+        ) : grouped.length === 0 ? (
+          <div style={{textAlign:"center", padding:"20px", color:C.sub, fontSize:13}}>
+            {medicaments.length === 0 ? "Aucun médicament — ajoutez-les via l'éditeur." : "Aucun résultat"}
+          </div>
+        ) : (
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {grouped.map(cat => (
+              <div key={cat.key}>
+                {/* Header catégorie — cliquable pour déplier/plier */}
+                <button onClick={()=>toggleCat(cat.key)} style={{
+                  width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+                  padding:"10px 14px", borderRadius:12, border:"none",
+                  background:cat.bg, cursor:"pointer", marginBottom: openCats[cat.key]===false ? 0 : 8,
+                }}>
+                  <div style={{display:"flex", alignItems:"center", gap:8}}>
+                    <span style={{fontSize:16}}>{cat.icon}</span>
+                    <span style={{fontSize:13, fontWeight:800, color:cat.color}}>{cat.label}</span>
+                    <span style={{fontSize:11, color:cat.color, background:"#fff", borderRadius:10, padding:"1px 7px", fontWeight:700}}>{cat.items.length}</span>
+                  </div>
+                  <span style={{fontSize:14, color:cat.color}}>{openCats[cat.key]===false ? "▶" : "▼"}</span>
+                </button>
+                {/* Médicaments de la catégorie */}
+                {openCats[cat.key] !== false && (
+                  <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                    {cat.items.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+
+function PediaFiches({ fiches, loading, selected, setSelected, onBack }) {
+  const C = useC();
+
+  if (selected) {
+    const f = selected;
+    return (
+      <div>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+          <button onClick={()=>setSelected(null)} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+          <div style={{fontSize:17, fontWeight:800, color:C.text}}>{f.title}</div>
+        </div>
+
+        <div style={{background:`linear-gradient(135deg, ${f.color||"#EC4899"} 0%, ${f.color||"#EC4899"}CC 100%)`, borderRadius:16, padding:18, marginBottom:18, color:"#fff"}}>
+          <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <span style={{fontSize:28}}>{f.icon||"👶"}</span>
+            <div>
+              <div style={{fontSize:18, fontWeight:800}}>{f.title}</div>
+              {f.subtitle && <div style={{fontSize:12, opacity:.9}}>{f.subtitle}</div>}
+            </div>
+          </div>
+        </div>
+
+        {(f.image_data || f.image_url) && (
+          <div style={{borderRadius:14, overflow:"hidden", marginBottom:16, background:"#f8f9fa", border:"1px solid #e0e0e0"}}>
+            <ClickableImage src={f.image_data||f.image_url} alt={f.title} style={{borderRadius:14}}/>
+          </div>
+        )}
+
+        {(f.alertes||[]).length > 0 && (
+          <div style={{background:"#FEF2F2", border:"2px solid #EF4444", borderRadius:12, padding:14, marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#DC2626", marginBottom:8, letterSpacing:.5}}>🚨 SIGNAUX D'ALERTE</div>
+            {f.alertes.map((a,i)=>(
+              <div key={i} style={{display:"flex", gap:8, marginBottom:6, fontSize:13, color:"#7F1D1D", lineHeight:1.4}}>
+                <span style={{flexShrink:0}}>•</span><span>{a}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {(f.points_cles||[]).length > 0 && (
+          <div style={{background:"#F0FDF4", border:"1.5px solid #86EFAC", borderRadius:12, padding:14, marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:"#16A34A", marginBottom:8, letterSpacing:.5}}>✓ POINTS CLÉS</div>
+            {f.points_cles.map((p,i)=>(
+              <div key={i} style={{display:"flex", gap:8, marginBottom:6, fontSize:13, color:C.text, lineHeight:1.4}}>
+                <span style={{color:"#16A34A", flexShrink:0}}>✓</span><span>{p}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {f.content && (
+          <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:16, fontSize:14, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>
+            {f.content}
+          </div>
+        )}
+
+        {f.medias?.length > 0 && <div style={{marginTop:16}}><MediaGallery medias={f.medias}/></div>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer", fontSize:22, padding:"4px 8px", color:C.text}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Fiches réflexes</div>
+      </div>
+
+      {loading ? (
+        <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
+      ) : fiches.length === 0 ? (
+        <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+          <div style={{fontSize:36, marginBottom:8}}>📋</div>
+          <div style={{fontSize:14, fontWeight:600}}>Aucune fiche pour l'instant</div>
+          <div style={{fontSize:12, marginTop:4}}>Créez-les via l'éditeur de fiches</div>
+        </div>
+      ) : (
+        <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          {fiches.map(f => (
+            <button key={f.id} onClick={()=>setSelected(f)} style={{
+              display:"flex", alignItems:"center", gap:12, background:C.white,
+              border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${f.color||"#EC4899"}`,
+              borderRadius:14, padding:"14px 16px", cursor:"pointer", textAlign:"left",
+            }}>
+              <div style={{background:(f.color||"#EC4899")+"22", borderRadius:11, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{f.icon||"👶"}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14, fontWeight:800, color:C.text}}>{f.title}</div>
+                {f.subtitle && <div style={{fontSize:11, color:C.sub}}>{f.subtitle}</div>}
+              </div>
+              <span style={{color:f.color||"#EC4899", fontSize:18}}>›</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// Cartes d'Urgences Vitales Pédiatriques (Urg'Ara / Pédi'Ara V1.0 - 01/2026)
+// Données pré-calculées par tranche d'âge/poids — aide cognitive
+// ────────────────────────────────────────────────────────────────────────────
+
 // ── Toise de Broselow ──
 function BroseloweScreen({ onBack, onSelectCarte }) {
   const C = useC();
@@ -17953,15 +17963,6 @@ function PediaCarteDetail({ carte, onBack }) {
           <NormCell label="Aiguille IO" value={carte.materiel.io} unit="" color="#EC4899"/>
         </div>
       )}
-    </div>
-  );
-}
-
-function DoseRow({ label, value, C, color, bold }) {
-  return (
-    <div style={{display:"flex", gap:8, fontSize:12, lineHeight:1.4}}>
-      <span style={{color:C.sub, fontWeight:600, minWidth:50, flexShrink:0}}>{label}</span>
-      <span style={{color: color || C.text, fontWeight: bold ? 800 : 500}}>{value}</span>
     </div>
   );
 }
