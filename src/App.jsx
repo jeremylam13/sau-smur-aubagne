@@ -18312,7 +18312,22 @@ function AppInner() {
   // Enregistrement du Service Worker
   React.useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      navigator.serviceWorker.register("/sw.js").then(reg => {
+        // Vérifier une mise à jour immédiatement puis toutes les 60s
+        reg.update();
+        setInterval(() => reg.update(), 60000);
+        // Dès qu'un nouveau SW est prêt, recharger la page automatiquement
+        reg.addEventListener("updatefound", () => {
+          const newSW = reg.installing;
+          if (!newSW) return;
+          newSW.addEventListener("statechange", () => {
+            if (newSW.state === "activated") {
+              console.log("[SW] Nouvelle version — rechargement");
+              window.location.reload();
+            }
+          });
+        });
+      }).catch(() => {});
     }
   }, []);
   const [deepLink, setDeepLink] = useState(null);
