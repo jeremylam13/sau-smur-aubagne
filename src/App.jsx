@@ -1391,6 +1391,7 @@ function HomeScreen({onNav}) {
     {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
+    {id:"calcAdulte",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
     
@@ -18185,6 +18186,271 @@ function PediaMedicsEditor() {
 }
 
 
+// ────────────────────────────────────────────────────────────────────────────
+// Calculateur de doses adulte — SAU/SMUR Aubagne
+// Données validées par l'équipe médicale
+// ────────────────────────────────────────────────────────────────────────────
+const CALC_ADULTE_MEDICAMENTS = [
+  // ── ISR — Hypnotiques ────────────────────────────────────────────────────
+  {
+    id:"etomidate", cat:"isr", groupe:"Hypnotique ISR",
+    nom:"Étomidate", amp:"20 mg / 10 mL", concentration:2, unite:"mg",
+    doseMin:0.3, doseMax:0.5,
+    voie:"IVD lente", remarques:"Injection lente en 30-60s. Myoclonies fréquentes.",
+    color:"#0891B2",
+  },
+  {
+    id:"ketamine_isr", cat:"isr", groupe:"Hypnotique ISR",
+    nom:"Kétamine", amp:"250 mg / 5 mL", concentration:50, unite:"mg",
+    doseMin:1, doseMax:4.5,
+    voie:"IVD", remarques:"Dissociatif. Maintien des réflexes. Bronchodilatateur.",
+    color:"#0891B2",
+  },
+  {
+    id:"propofol_isr", cat:"isr", groupe:"Hypnotique ISR",
+    nom:"Propofol", amp:"200 mg / 20 mL", concentration:10, unite:"mg",
+    doseMin:1.5, doseMax:2.5,
+    voie:"IVD lente", remarques:"Réduire chez le sujet âgé ou hémodynamiquement instable.",
+    color:"#0891B2",
+  },
+  // ── ISR — Curares ────────────────────────────────────────────────────────
+  {
+    id:"celocurine", cat:"isr", groupe:"Curare ISR",
+    nom:"Célocurine (Suxaméthonium)", amp:"100 mg / 2 mL", concentration:50, unite:"mg",
+    doseMin:1, doseMax:1,
+    voie:"IVD", remarques:"Délai d'action 45-60s. Durée 10-15 min. CI : hyperkaliémie, brûlés, crush.",
+    color:"#7C3AED",
+  },
+  // ── Analgésie IV ─────────────────────────────────────────────────────────
+  {
+    id:"propofol_analgesie", cat:"analgesie", groupe:"Analgésie IV",
+    nom:"Propofol (sédation procédurale)", amp:"200 mg / 20 mL", concentration:10, unite:"mg",
+    doseMin:0.5, doseMax:1,
+    doseAlt:{ label:"Sujet âgé", doseMin:0.5, doseMax:0.5 },
+    voie:"IVD lente", remarques:"Injection lente. Surveiller apnée et hypotension.",
+    color:"#EA580C",
+  },
+  {
+    id:"ketamine_analgesie", cat:"analgesie", groupe:"Analgésie IV",
+    nom:"Kétamine (sub-dissociative)", amp:"250 mg / 5 mL", concentration:50, unite:"mg",
+    doseMin:0.5, doseMax:1,
+    voie:"IVDL", remarques:"Diluer avant injection. Effet analgésique sans sédation profonde.",
+    color:"#EA580C",
+  },
+  {
+    id:"morphine", cat:"analgesie", groupe:"Analgésie IV",
+    nom:"Morphine (titration)", amp:"10 mg / 1 mL", concentration:10, unite:"mg",
+    doseMin:0.05, doseMax:0.05,
+    voie:"IVD / 5 min", remarques:"Renouvelable toutes les 5 min jusqu'à EVA < 3. Diluer 1 mg/mL.",
+    color:"#EA580C",
+  },
+  // ── Sédation ─────────────────────────────────────────────────────────────
+  {
+    id:"sufentanil_sed", cat:"sedation", groupe:"Sédation IV",
+    nom:"Sufentanil (entretien)", amp:"250 µg / 5 mL", concentration:50, unite:"µg",
+    doseMin:0.5, doseMax:1,
+    voie:"IVSE", remarques:"Dose en µg/kg/h. Diluer dans NaCl 0,9%. Adapter RASS cible.",
+    isPerHour: true,
+    color:"#6366F1",
+  },
+];
+
+// Catégories avec config affichage
+const CALC_ADULTE_CATS = [
+  { key:"isr",       label:"Induction séquence rapide", icon:"⚡", color:"#0891B2", bg:"#CFFAFE" },
+  { key:"analgesie", label:"Analgésie IV",              icon:"💊", color:"#EA580C", bg:"#FFEDD5" },
+  { key:"sedation",  label:"Sédation",                  icon:"😴", color:"#6366F1", bg:"#EEF2FF" },
+];
+
+// ── Composant carte médicament ──
+function CalcAdulteCard({ medic, poids }) {
+  const C = useC();
+  const color = medic.color || "#0EA5E9";
+
+  const doseMinCalc = Math.round(medic.doseMin * poids * 100) / 100;
+  const doseMaxCalc = Math.round(medic.doseMax * poids * 100) / 100;
+  const isRange     = medic.doseMin !== medic.doseMax;
+
+  // Volume
+  const volMin = Math.round((doseMinCalc / medic.concentration) * 10) / 10;
+  const volMax = Math.round((doseMaxCalc / medic.concentration) * 10) / 10;
+
+  // Dose alt (ex: sujet âgé)
+  let altMin = null, altMax = null;
+  if (medic.doseAlt) {
+    altMin = Math.round(medic.doseAlt.doseMin * poids * 100) / 100;
+    altMax = Math.round(medic.doseAlt.doseMax * poids * 100) / 100;
+  }
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`,
+      borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px",
+      marginBottom:8}}>
+
+      {/* Titre + voie */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        <span style={{fontSize:10, fontWeight:800, color, background:color+"18",
+          borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>
+      </div>
+      <div style={{fontSize:10, color:C.sub, marginBottom:10, fontStyle:"italic"}}>
+        {medic.amp} · {medic.concentration} {medic.unite}/mL
+      </div>
+
+      {/* Résultat principal */}
+      <div style={{background:color+"10", border:`1.5px solid ${color+"33"}`,
+        borderRadius:10, padding:"10px 12px", marginBottom:6}}>
+
+        {/* Dose */}
+        <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>
+              DOSE {medic.isPerHour ? "(µg/kg/h)" : `(${medic.doseMin}${isRange?` → ${medic.doseMax}`:""} ${medic.unite}/kg)`}
+            </div>
+            <div style={{fontSize:28, fontWeight:900, color, lineHeight:1}}>
+              {isRange ? `${doseMinCalc} – ${doseMaxCalc}` : doseMinCalc}
+              <span style={{fontSize:14, fontWeight:700, color:C.sub, marginLeft:4}}>
+                {medic.unite}{medic.isPerHour ? "/h" : ""}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Volume — plus petit, discret */}
+        <div style={{display:"flex", alignItems:"center", gap:4,
+          paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
+          <span style={{fontSize:10, color:C.sub, fontWeight:600}}>Volume :</span>
+          <span style={{fontSize:12, fontWeight:800, color}}>
+            {isRange ? `${volMin} → ${volMax} mL` : `${volMin} mL`}
+          </span>
+          <span style={{fontSize:10, color:C.sub, marginLeft:4}}>
+            ({medic.doseMin} {medic.unite}/kg × {poids} kg ÷ {medic.concentration} {medic.unite}/mL)
+          </span>
+        </div>
+
+        {/* Dose alt (sujet âgé) */}
+        {medic.doseAlt && altMin !== null && (
+          <div style={{marginTop:6, paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
+            <span style={{fontSize:10, color:C.sub, fontWeight:700}}>{medic.doseAlt.label} : </span>
+            <span style={{fontSize:12, fontWeight:800, color:"#CA8A04"}}>
+              {altMin === altMax ? altMin : `${altMin} – ${altMax}`} {medic.unite}
+            </span>
+            <span style={{fontSize:10, color:C.sub, marginLeft:4}}>
+              → {Math.round((altMin/medic.concentration)*10)/10} mL
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Remarques */}
+      {medic.remarques && (
+        <div style={{fontSize:11, color:C.sub, lineHeight:1.5}}>
+          📌 {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Écran principal ──
+function CalcAdulteScreen({ onBack }) {
+  const C = useC();
+  const [poids, setPoids] = useState("");
+  const [openCats, setOpenCats] = useState({ isr:true, analgesie:true, sedation:true });
+
+  const poidsNum = parseFloat(poids) || null;
+  const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
+
+  return (
+    <div style={{maxWidth:"100%", overflowX:"hidden"}}>
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
+        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer",
+          fontSize:22, padding:"4px 8px", color:C.text, flexShrink:0}}>←</button>
+        <div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur adulte</div>
+          <div style={{fontSize:12, color:C.sub}}>ISR · Analgésie · Sédation</div>
+        </div>
+      </div>
+
+      {/* Bandeau sécurité */}
+      <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10,
+        padding:"8px 12px", marginBottom:14, fontSize:11, color:"#92400E", lineHeight:1.5}}>
+        ⚠️ Aide au calcul — vérification clinique obligatoire avant administration
+      </div>
+
+      {/* Saisie poids */}
+      <div style={{background:`linear-gradient(135deg, ${C.navy} 0%, #2E5C8A 100%)`,
+        borderRadius:16, padding:16, marginBottom:16, boxSizing:"border-box"}}>
+        <div style={{fontSize:11, fontWeight:700, color:"rgba(255,255,255,.7)",
+          marginBottom:8, textAlign:"center", letterSpacing:.5}}>POIDS DU PATIENT</div>
+        <div style={{display:"flex", alignItems:"center", gap:8}}>
+          <input
+            type="number" inputMode="numeric"
+            value={poids} onChange={e=>setPoids(e.target.value)}
+            placeholder="75"
+            style={{flex:1, minWidth:0, padding:"14px 10px", borderRadius:12,
+              border:`2px solid ${poidsNum ? "#60A5FA" : "rgba(255,255,255,.3)"}`,
+              fontSize:32, fontWeight:900, color:C.navy, background:"#fff",
+              outline:"none", WebkitAppearance:"none", MozAppearance:"textfield",
+              textAlign:"center", boxSizing:"border-box"}}
+          />
+          <div style={{flexShrink:0, background:"rgba(255,255,255,.15)",
+            borderRadius:10, padding:"10px 14px"}}>
+            <span style={{fontSize:18, fontWeight:900, color:"#fff"}}>kg</span>
+          </div>
+        </div>
+        {poidsNum && (
+          <div style={{textAlign:"center", marginTop:8, fontSize:12,
+            fontWeight:700, color:"rgba(255,255,255,.8)"}}>
+            Doses calculées pour {poidsNum} kg
+          </div>
+        )}
+      </div>
+
+      {!poidsNum ? (
+        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub}}>
+          <div style={{fontSize:36, marginBottom:8}}>⚖️</div>
+          <div style={{fontSize:13, fontWeight:600}}>Saisissez le poids pour voir les doses</div>
+        </div>
+      ) : (
+        <div>
+          {CALC_ADULTE_CATS.map(cat => {
+            const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key);
+            const open = openCats[cat.key] !== false;
+            return (
+              <div key={cat.key} style={{marginBottom:12}}>
+                {/* Header catégorie */}
+                <button onClick={()=>toggleCat(cat.key)} style={{
+                  width:"100%", display:"flex", alignItems:"center",
+                  justifyContent:"space-between", padding:"11px 14px",
+                  borderRadius:12, border:"none", background:cat.bg,
+                  cursor:"pointer", marginBottom: open ? 8 : 0,
+                }}>
+                  <div style={{display:"flex", alignItems:"center", gap:8}}>
+                    <span style={{fontSize:16}}>{cat.icon}</span>
+                    <span style={{fontSize:13, fontWeight:800, color:cat.color}}>{cat.label}</span>
+                    <span style={{fontSize:11, color:cat.color, background:"#fff",
+                      borderRadius:10, padding:"1px 7px", fontWeight:700}}>
+                      {meds.length}
+                    </span>
+                  </div>
+                  <span style={{fontSize:12, color:cat.color}}>{open ? "▼" : "▶"}</span>
+                </button>
+                {/* Médicaments */}
+                {open && meds.map(m => (
+                  <CalcAdulteCard key={m.id} medic={m} poids={poidsNum}/>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function App() {
   return (
     <DataProvider>
@@ -18419,6 +18685,7 @@ function AppInner() {
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
         {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack}/>}
+        {screen==="calcAdulte" && <CalcAdulteScreen key={"calcAdulte-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
       </div>
