@@ -441,6 +441,15 @@ function DataProvider({ children }) {
     const rq = await safeGet("admin_quizzes");
     next.quizzes = rq ? JSON.parse(rq.value) : [];
 
+    // Sondages — cache pour hors ligne
+    try { next.sondages = await supaFetch("/sondages?order=created_at.desc"); } catch(e) { next.sondages = []; }
+
+    // Fiches réflexes pédiatriques — cache pour hors ligne
+    try { next.pediaFiches = await supaFetch("/pedia_fiches?order=created_at.desc"); } catch(e) { next.pediaFiches = []; }
+
+    // Médicaments pédiatriques — cache pour hors ligne
+    try { next.pediaMedics = await supaFetch("/pedia_medicaments?order=nom.asc"); } catch(e) { next.pediaMedics = []; }
+
     next.loaded = true;
     setStore(next);
 
@@ -15772,6 +15781,7 @@ function ScoresScreen({ deepLinkId, onBack }) {
 // ────────────────────────────────────────────────────────────────────────────
 function SondageScreen({ onBack }) {
   const C = useC();
+  const { store } = useData();
   const [view, setView] = useState("list"); // list | create | detail
   const [sondages, setSondages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -15794,9 +15804,16 @@ function SondageScreen({ onBack }) {
   async function loadSondages() {
     setLoading(true);
     try {
-      const rows = await supaFetch("/sondages?order=created_at.desc");
-      setSondages(rows);
-    } catch(e) { console.warn("loadSondages", e); }
+      if (navigator.onLine) {
+        const rows = await supaFetch("/sondages?order=created_at.desc");
+        setSondages(rows);
+      } else {
+        // Hors ligne : utiliser le cache du store
+        setSondages(store.sondages || []);
+      }
+    } catch(e) {
+      setSondages(store.sondages || []);
+    }
     setLoading(false);
   }
 
@@ -16136,9 +16153,17 @@ function SondageScreen({ onBack }) {
         </div>
       </div>
 
-      <button onClick={()=>setView("create")} style={{
+      {!navigator.onLine && (
+        <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:10,
+          padding:"8px 12px", marginBottom:12, fontSize:11, color:"#92400E"}}>
+          📵 Mode hors ligne — consultation uniquement, vote et création indisponibles
+        </div>
+      )}
+      <button onClick={()=>{ if(!navigator.onLine){ return; } setView("create"); }} style={{
         width:"100%", padding:"13px", borderRadius:12, border:"none",
-        background:"#7C3AED", color:"#fff", fontSize:14, fontWeight:800, cursor:"pointer", marginBottom:18,
+        background: navigator.onLine ? "#7C3AED" : "#CBD5E1",
+        color:"#fff", fontSize:14, fontWeight:800,
+        cursor: navigator.onLine ? "pointer" : "not-allowed", marginBottom:18,
       }}>
         + Créer un sondage
       </button>
@@ -17065,12 +17090,23 @@ function PediaScreen({ onBack }) {
   async function loadData() {
     setLoading(true);
     try {
-      const [f, m] = await Promise.all([
-        supaFetch("/pedia_fiches?order=created_at.desc"),
-        supaFetch("/pedia_medicaments?order=nom.asc"),
-      ]);
-      setFiches(f); setMedicaments(m);
-    } catch(e) { console.warn("loadPedia", e); }
+      // En ligne : charger depuis Supabase et mettre à jour le store
+      if (navigator.onLine) {
+        const [f, m] = await Promise.all([
+          supaFetch("/pedia_fiches?order=created_at.desc"),
+          supaFetch("/pedia_medicaments?order=nom.asc"),
+        ]);
+        setFiches(f); setMedicaments(m);
+      } else {
+        // Hors ligne : utiliser le cache du store
+        setFiches(store.pediaFiches || []);
+        setMedicaments(store.pediaMedics || []);
+      }
+    } catch(e) {
+      // Fallback cache si erreur réseau
+      setFiches(store.pediaFiches || []);
+      setMedicaments(store.pediaMedics || []);
+    }
     setLoading(false);
   }
   useEffect(()=>{ loadData(); },[]);
@@ -18253,13 +18289,95 @@ const CALC_ADULTE_MEDICAMENTS = [
     isPerHour: true,
     color:"#6366F1",
   },
+  {
+    id:"midazolam_sed", cat:"sedation", groupe:"Sédation IV",
+    nom:"Hypnovel (Midazolam)", amp:"50 mg / 10 mL", concentration:5, unite:"mg",
+    doseMin:0.05, doseMax:0.1,
+    voie:"IVSE", remarques:"Dose en mg/kg/h. Titrer selon RASS cible. Accumulation si IR.",
+    isPerHour: true,
+    color:"#6366F1",
+  },
+  {
+    id:"nimbex", cat:"sedation", groupe:"Curarisation entretien",
+    nom:"Nimbex (Cisatracurium)", amp:"20 mg / 10 mL", concentration:2, unite:"mg",
+    doseMin:0.15, doseMax:0.15,
+    voie:"IVD bolus", remarques:"Entretien curarisation post-intubation. Bolus renouvelable.",
+    color:"#6366F1",
+  },
+
+  // ── Analgésie ─────────────────────────────────────────────────────────────
+  {
+    id:"sufentanil_iv", cat:"analgesie_iv", groupe:"Analgésie IV",
+    nom:"Sufentanil (bolus IV)", amp:"250 µg / 5 mL", concentration:50, unite:"µg",
+    doseMin:0.1, doseMax:0.3,
+    doseAbsMax:null,
+    voie:"IVD", remarques:"Bolus de 0,1 µg/kg — ne pas dépasser 0,3 µg/kg. Diluer avant injection.",
+    color:"#7C3AED",
+  },
+  {
+    id:"sufentanil_in", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    nom:"Sufentanil (intranasal)", amp:"250 µg / 5 mL", concentration:50, unite:"µg",
+    doseMin:0.5, doseMax:0.5,
+    voie:"IN", remarques:"Demi-dose répétable toutes les 15 min jusqu'à effet souhaité. Utiliser atomiseur MAD.",
+    color:"#7C3AED",
+    infoExtra:"Demi-dose : ",
+  },
+
+  // ── Infectieux ────────────────────────────────────────────────────────────
+  {
+    id:"gentamicine", cat:"infectieux", groupe:"Aminosides",
+    nom:"Gentamicine", amp:"160 mg / 2 mL", concentration:80, unite:"mg",
+    doseMin:3, doseMax:8,
+    voie:"IVL 30 min", remarques:"Dose unique journalière. Adapter selon fonction rénale. Pic/vallée si répété.",
+    color:"#16A34A",
+  },
+  {
+    id:"amikacine", cat:"infectieux", groupe:"Aminosides",
+    nom:"Amikacine", amp:"500 mg / 2 mL", concentration:250, unite:"mg",
+    doseMin:15, doseMax:15,
+    voie:"IVL 30 min", remarques:"Dose unique journalière. Adapter selon fonction rénale et indication.",
+    color:"#16A34A",
+  },
+
+  // ── Cardio ────────────────────────────────────────────────────────────────
+  {
+    id:"hnf", cat:"cardio", groupe:"Anticoagulation",
+    nom:"HNF (Héparine non fractionnée)", amp:"Variable", concentration:null, unite:"UI",
+    doseMin:500, doseMax:500,
+    voie:"IVSE / SC", isHNF:true,
+    remarques:"Curatif : 500 UI/kg/24h en 2 injections (ou 3 si volume > 0,6 mL). Préventif : 5000 UI/12h SC.",
+    color:"#DC2626",
+  },
+
+  // ── Antiépileptiques ──────────────────────────────────────────────────────
+  {
+    id:"gardenal", cat:"antiepileptique", groupe:"Antiépileptiques",
+    nom:"Gardénal (Phénobarbital)", amp:"200 mg / flacon (poudre)", concentration:100, unite:"mg",
+    doseMin:15, doseMax:15,
+    voie:"IVSE", isGardenal:true,
+    remarques:"Ne pas dépasser 100 mg/min. Reconstituer dans 2 mL EPPI = 100 mg/mL.",
+    color:"#CA8A04",
+  },
+  {
+    id:"keppra", cat:"antiepileptique", groupe:"Antiépileptiques",
+    nom:"Keppra (Lévétiracétam)", amp:"500 mg / 5 mL", concentration:100, unite:"mg",
+    doseMin:40, doseMax:60,
+    doseAbsMax:4000,
+    voie:"IVL 15 min", remarques:"Diluer dans 100 mL NaCl 0,9%. Max 4g absolus.",
+    color:"#CA8A04",
+  },
 ];
 
 // Catégories avec config affichage
 const CALC_ADULTE_CATS = [
-  { key:"isr",       label:"Induction séquence rapide", icon:"⚡", color:"#0891B2", bg:"#CFFAFE" },
-  { key:"analgesie", label:"Analgésie IV",              icon:"💊", color:"#EA580C", bg:"#FFEDD5" },
-  { key:"sedation",  label:"Sédation",                  icon:"😴", color:"#6366F1", bg:"#EEF2FF" },
+  { key:"isr",              label:"Induction séquence rapide", icon:"⚡", color:"#0891B2", bg:"#CFFAFE" },
+  { key:"analgesie",        label:"Analgésie IV",              icon:"💊", color:"#EA580C", bg:"#FFEDD5" },
+  { key:"analgesie_iv",     label:"Analgésie IV — Opioïdes",   icon:"💉", color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"analgesie_in",     label:"Analgésie intranasale",     icon:"👃", color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"sedation",         label:"Sédation & Curarisation",   icon:"😴", color:"#6366F1", bg:"#EEF2FF" },
+  { key:"infectieux",       label:"Infectieux",                icon:"🦠", color:"#16A34A", bg:"#DCFCE7" },
+  { key:"cardio",           label:"Cardio-vasculaire",         icon:"❤️", color:"#DC2626", bg:"#FEE2E2" },
+  { key:"antiepileptique",  label:"Antiépileptiques",          icon:"🧠", color:"#CA8A04", bg:"#FEF9C3" },
 ];
 
 // ── Composant carte médicament ──
@@ -18267,25 +18385,47 @@ function CalcAdulteCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
 
-  const doseMinCalc = Math.round(medic.doseMin * poids * 100) / 100;
-  const doseMaxCalc = Math.round(medic.doseMax * poids * 100) / 100;
-  const isRange     = medic.doseMin !== medic.doseMax;
+  // Calcul dose de base
+  const rawMin = medic.doseMin * poids;
+  const rawMax = medic.doseMax * poids;
+
+  // Plafonnement (Keppra max 4g)
+  const absMax = medic.doseAbsMax || null;
+  const capped = absMax && rawMax > absMax;
+  const doseMinCalc = Math.round(Math.min(rawMin, absMax || rawMin) * 100) / 100;
+  const doseMaxCalc = Math.round(Math.min(rawMax, absMax || rawMax) * 100) / 100;
+  const isRange = medic.doseMin !== medic.doseMax && doseMinCalc !== doseMaxCalc;
 
   // Volume
-  const volMin = Math.round((doseMinCalc / medic.concentration) * 10) / 10;
-  const volMax = Math.round((doseMaxCalc / medic.concentration) * 10) / 10;
+  const hasVol = medic.concentration != null;
+  const volMin = hasVol ? Math.round((doseMinCalc / medic.concentration) * 10) / 10 : null;
+  const volMax = hasVol ? Math.round((doseMaxCalc / medic.concentration) * 10) / 10 : null;
 
-  // Dose alt (ex: sujet âgé)
+  // Dose alt (sujet âgé)
   let altMin = null, altMax = null;
   if (medic.doseAlt) {
     altMin = Math.round(medic.doseAlt.doseMin * poids * 100) / 100;
     altMax = Math.round(medic.doseAlt.doseMax * poids * 100) / 100;
   }
 
+  // Gardénal — temps de perfusion minimal (dose / 100 mg/min)
+  const gardenalTemps = medic.isGardenal
+    ? Math.ceil(doseMaxCalc / 100)
+    : null;
+
+  // HNF — curatif = dose/2 pour 2 injections, dose/3 pour 3 injections
+  const hnfDose = medic.isHNF ? Math.round(medic.doseMin * poids) : null;
+  const hnfX2   = medic.isHNF ? Math.round(hnfDose / 2) : null;
+  const hnfX3   = medic.isHNF ? Math.round(hnfDose / 3) : null;
+
+  // Sufentanil IN — demi-dose
+  const demiDose = medic.infoExtra
+    ? Math.round((doseMinCalc / 2) * 100) / 100
+    : null;
+
   return (
     <div style={{background:C.white, border:`1.5px solid ${C.border}`,
-      borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px",
-      marginBottom:8}}>
+      borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px", marginBottom:8}}>
 
       {/* Titre + voie */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
@@ -18294,59 +18434,106 @@ function CalcAdulteCard({ medic, poids }) {
           borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>
       </div>
       <div style={{fontSize:10, color:C.sub, marginBottom:10, fontStyle:"italic"}}>
-        {medic.amp} · {medic.concentration} {medic.unite}/mL
+        {medic.amp}{medic.concentration ? ` · ${medic.concentration} ${medic.unite}/mL` : ""}
       </div>
 
-      {/* Résultat principal */}
-      <div style={{background:color+"10", border:`1.5px solid ${color+"33"}`,
-        borderRadius:10, padding:"10px 12px", marginBottom:6}}>
-
-        {/* Dose */}
-        <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>
-              DOSE {medic.isPerHour ? "(µg/kg/h)" : `(${medic.doseMin}${isRange?` → ${medic.doseMax}`:""} ${medic.unite}/kg)`}
+      {/* Bloc HNF spécial */}
+      {medic.isHNF ? (
+        <div style={{background:color+"10", border:`1.5px solid ${color+"33"}`, borderRadius:10, padding:"10px 12px", marginBottom:6}}>
+          <div style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:6}}>CURATIF — 500 UI/kg/24h</div>
+          <div style={{fontSize:24, fontWeight:900, color, marginBottom:6}}>
+            {hnfDose} <span style={{fontSize:13, color:C.sub}}>UI / 24h</span>
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:6}}>
+            <div style={{background:"#fff", borderRadius:8, padding:"7px 10px", textAlign:"center"}}>
+              <div style={{fontSize:10, color:C.sub, fontWeight:700}}>EN 2 INJECTIONS</div>
+              <div style={{fontSize:18, fontWeight:900, color}}>{hnfX2} UI</div>
+              <div style={{fontSize:10, color:C.sub}}>toutes les 12h</div>
             </div>
-            <div style={{fontSize:28, fontWeight:900, color, lineHeight:1}}>
-              {isRange ? `${doseMinCalc} – ${doseMaxCalc}` : doseMinCalc}
-              <span style={{fontSize:14, fontWeight:700, color:C.sub, marginLeft:4}}>
-                {medic.unite}{medic.isPerHour ? "/h" : ""}
+            <div style={{background:"#fff", borderRadius:8, padding:"7px 10px", textAlign:"center"}}>
+              <div style={{fontSize:10, color:C.sub, fontWeight:700}}>EN 3 INJECTIONS</div>
+              <div style={{fontSize:18, fontWeight:900, color}}>{hnfX3} UI</div>
+              <div style={{fontSize:10, color:C.sub}}>toutes les 8h</div>
+            </div>
+          </div>
+          <div style={{marginTop:8, fontSize:11, color:C.sub, paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
+            🩹 Préventif : 5000 UI/12h SC (fixe, indépendant du poids)
+          </div>
+        </div>
+      ) : (
+        /* Bloc dose standard */
+        <div style={{background: capped ? "#FEF2F2" : color+"10",
+          border:`1.5px solid ${capped ? "#FCA5A5" : color+"33"}`,
+          borderRadius:10, padding:"10px 12px", marginBottom:6}}>
+
+          <div style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:4}}>
+            {medic.isPerHour
+              ? `DOSE (${medic.doseMin}${isRange?` → ${medic.doseMax}`:""} ${medic.unite}/kg/h)`
+              : `DOSE (${medic.doseMin}${isRange?` → ${medic.doseMax}`:""} ${medic.unite}/kg)`}
+          </div>
+
+          {/* Dose principale */}
+          <div style={{fontSize:28, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1, marginBottom:4}}>
+            {isRange ? `${doseMinCalc} – ${doseMaxCalc}` : doseMinCalc}
+            <span style={{fontSize:14, fontWeight:700, color:C.sub, marginLeft:4}}>
+              {medic.unite}{medic.isPerHour ? "/h" : ""}
+            </span>
+          </div>
+
+          {/* Alerte plafonnement */}
+          {capped && (
+            <div style={{fontSize:11, fontWeight:800, color:"#DC2626", marginBottom:6}}>
+              ⚠️ Plafonné à {absMax} {medic.unite} (max absolu)
+            </div>
+          )}
+
+          {/* Sufentanil IN — demi-dose */}
+          {demiDose && (
+            <div style={{fontSize:12, fontWeight:700, color, marginBottom:4}}>
+              ½ dose (à répéter / 15 min) : <strong>{demiDose} µg</strong>
+              {hasVol && <span style={{fontWeight:400, color:C.sub}}> → {Math.round((demiDose/medic.concentration)*100)/100} mL</span>}
+            </div>
+          )}
+
+          {/* Gardénal — temps minimal */}
+          {gardenalTemps && (
+            <div style={{background:"#FEF3C7", borderRadius:8, padding:"6px 10px", marginBottom:4, fontSize:12, color:"#92400E", fontWeight:700}}>
+              ⏱️ Durée min de perf : {gardenalTemps} min (max 100 mg/min)
+            </div>
+          )}
+
+          {/* Volume */}
+          {hasVol && (
+            <div style={{display:"flex", alignItems:"center", gap:4,
+              paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
+              <span style={{fontSize:10, color:C.sub, fontWeight:600}}>Volume :</span>
+              <span style={{fontSize:13, fontWeight:800, color}}>
+                {isRange ? `${volMin} – ${volMax} mL` : `${volMin} mL`}
+              </span>
+              <span style={{fontSize:10, color:C.sub}}>
+                (÷ {medic.concentration} {medic.unite}/mL)
               </span>
             </div>
-          </div>
-        </div>
+          )}
 
-        {/* Volume — plus petit, discret */}
-        <div style={{display:"flex", alignItems:"center", gap:4,
-          paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
-          <span style={{fontSize:10, color:C.sub, fontWeight:600}}>Volume :</span>
-          <span style={{fontSize:12, fontWeight:800, color}}>
-            {isRange ? `${volMin} → ${volMax} mL` : `${volMin} mL`}
-          </span>
-          <span style={{fontSize:10, color:C.sub, marginLeft:4}}>
-            ({medic.doseMin} {medic.unite}/kg × {poids} kg ÷ {medic.concentration} {medic.unite}/mL)
-          </span>
+          {/* Dose alt (sujet âgé) */}
+          {medic.doseAlt && altMin !== null && (
+            <div style={{marginTop:6, paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
+              <span style={{fontSize:10, color:C.sub, fontWeight:700}}>{medic.doseAlt.label} : </span>
+              <span style={{fontSize:13, fontWeight:800, color:"#CA8A04"}}>
+                {altMin === altMax ? altMin : `${altMin} – ${altMax}`} {medic.unite}
+              </span>
+              {hasVol && <span style={{fontSize:10, color:C.sub, marginLeft:4}}>
+                → {Math.round((altMin/medic.concentration)*10)/10} mL
+              </span>}
+            </div>
+          )}
         </div>
-
-        {/* Dose alt (sujet âgé) */}
-        {medic.doseAlt && altMin !== null && (
-          <div style={{marginTop:6, paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
-            <span style={{fontSize:10, color:C.sub, fontWeight:700}}>{medic.doseAlt.label} : </span>
-            <span style={{fontSize:12, fontWeight:800, color:"#CA8A04"}}>
-              {altMin === altMax ? altMin : `${altMin} – ${altMax}`} {medic.unite}
-            </span>
-            <span style={{fontSize:10, color:C.sub, marginLeft:4}}>
-              → {Math.round((altMin/medic.concentration)*10)/10} mL
-            </span>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Remarques */}
       {medic.remarques && (
-        <div style={{fontSize:11, color:C.sub, lineHeight:1.5}}>
-          📌 {medic.remarques}
-        </div>
+        <div style={{fontSize:11, color:C.sub, lineHeight:1.5}}>📌 {medic.remarques}</div>
       )}
     </div>
   );
@@ -18356,7 +18543,7 @@ function CalcAdulteCard({ medic, poids }) {
 function CalcAdulteScreen({ onBack }) {
   const C = useC();
   const [poids, setPoids] = useState("");
-  const [openCats, setOpenCats] = useState({ isr:true, analgesie:true, sedation:true });
+  const [openCats, setOpenCats] = useState({}); // toutes repliées par défaut
 
   const poidsNum = parseFloat(poids) || null;
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
@@ -18387,8 +18574,8 @@ function CalcAdulteScreen({ onBack }) {
         <div style={{display:"flex", alignItems:"center", gap:8}}>
           <input
             type="number" inputMode="numeric"
-            value={poids} onChange={e=>setPoids(e.target.value)}
-            placeholder="75"
+            value={poids} onChange={e=>{ const v=parseFloat(e.target.value); setPoids(v && v < 50 ? "50" : e.target.value); }}
+            placeholder="75" min="50"
             style={{flex:1, minWidth:0, padding:"14px 10px", borderRadius:12,
               border:`2px solid ${poidsNum ? "#60A5FA" : "rgba(255,255,255,.3)"}`,
               fontSize:32, fontWeight:900, color:C.navy, background:"#fff",
@@ -18400,10 +18587,16 @@ function CalcAdulteScreen({ onBack }) {
             <span style={{fontSize:18, fontWeight:900, color:"#fff"}}>kg</span>
           </div>
         </div>
-        {poidsNum && (
+        {poidsNum && poidsNum >= 50 && (
           <div style={{textAlign:"center", marginTop:8, fontSize:12,
             fontWeight:700, color:"rgba(255,255,255,.8)"}}>
             Doses calculées pour {poidsNum} kg
+          </div>
+        )}
+        {poidsNum && poidsNum < 50 && (
+          <div style={{textAlign:"center", marginTop:8, fontSize:11,
+            fontWeight:700, color:"#FCD34D", background:"rgba(0,0,0,.2)", borderRadius:8, padding:"6px 10px"}}>
+            ⚠️ Minimum 50 kg — utiliser les cartes pédiatriques en dessous
           </div>
         )}
       </div>
@@ -18413,7 +18606,7 @@ function CalcAdulteScreen({ onBack }) {
           <div style={{fontSize:36, marginBottom:8}}>⚖️</div>
           <div style={{fontSize:13, fontWeight:600}}>Saisissez le poids pour voir les doses</div>
         </div>
-      ) : (
+      ) : poidsNum < 50 ? null : (
         <div>
           {CALC_ADULTE_CATS.map(cat => {
             const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key);
