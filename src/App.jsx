@@ -18574,7 +18574,9 @@ function CalcAdulteScreen({ onBack }) {
         <div style={{display:"flex", alignItems:"center", gap:8}}>
           <input
             type="number" inputMode="numeric"
-            value={poids} onChange={e=>{ const v=parseFloat(e.target.value); setPoids(v && v < 50 ? "50" : e.target.value); }}
+            value={poids}
+            onChange={e=>setPoids(e.target.value)}
+            onBlur={e=>{ const v=parseFloat(e.target.value); if(v && v < 50) setPoids("50"); }}
             placeholder="75" min="50"
             style={{flex:1, minWidth:0, padding:"14px 10px", borderRadius:12,
               border:`2px solid ${poidsNum ? "#60A5FA" : "rgba(255,255,255,.3)"}`,
