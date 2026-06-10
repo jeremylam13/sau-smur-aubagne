@@ -447,8 +447,7 @@ function DataProvider({ children }) {
     // Fiches réflexes pédiatriques — cache pour hors ligne
     try { next.pediaFiches = await supaFetch("/pedia_fiches?order=created_at.desc"); } catch(e) { next.pediaFiches = []; }
 
-    // Médicaments pédiatriques — cache pour hors ligne
-    try { next.pediaMedics = await supaFetch("/pedia_medicaments?order=nom.asc"); } catch(e) { next.pediaMedics = []; }
+    // Médicaments pédiatriques — données codées en dur dans l'app (PEDIA_MEDICAMENTS_DATA), pas besoin de cache
 
     next.loaded = true;
     setStore(next);
@@ -17073,7 +17072,8 @@ function PediaScreen({ onBack }) {
   const [scoreSel, setScoreSel] = useState(null);
   const [ficheSel, setFicheSel] = useState(null);
   const [carteSel, setCarteSel] = useState(null);
-  const [dedieSel, setDedieSel] = useState(null); // Apgar/Silverman/Carvajal (calculateurs dédiés)
+  const [dedieSel, setDedieSel] = useState(null);
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
 
   // Scores pédia avec calculateur dédié (réutilisés du module Scores)
   const PEDIA_SCORES_DEDIES = [
@@ -17082,7 +17082,6 @@ function PediaScreen({ onBack }) {
     { id:"carvajal",  title:"Carvajal (brûlé enfant)",  subtitle:"Remplissage pédiatrique – SCB", icon:"🔥", color:"#DB2777" },
   ];
   const [fiches, setFiches] = useState([]);
-  const [medicaments, setMedicaments] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[section, scoreSel, ficheSel, carteSel, dedieSel]);
@@ -17092,11 +17091,8 @@ function PediaScreen({ onBack }) {
     try {
       // En ligne : charger depuis Supabase et mettre à jour le store
       if (navigator.onLine) {
-        const [f, m] = await Promise.all([
-          supaFetch("/pedia_fiches?order=created_at.desc"),
-          supaFetch("/pedia_medicaments?order=nom.asc"),
-        ]);
-        setFiches(f); setMedicaments(m);
+        const f = await supaFetch("/pedia_fiches?order=created_at.desc");
+        setFiches(f);
       } else {
         // Hors ligne : utiliser le cache du store
         setFiches(store.pediaFiches || []);
@@ -17159,7 +17155,7 @@ function PediaScreen({ onBack }) {
   if (section === "scores" && dedieSel === "silverman") return <SilvermanCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
-  if (section === "doses")  return <PediaDoses medicaments={medicaments} loading={loading} onBack={()=>setSection("home")}/>;
+  if (section === "doses")  return <PediaDoses onBack={()=>setSection("home")}/>;
   if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
   if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
   if (section === "scores") return (
@@ -17244,6 +17240,7 @@ function PediaScreen({ onBack }) {
 // ── Section Normes physiologiques ──
 function PediaNormes({ onBack }) {
   const C = useC();
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
   return (
     <div>
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
@@ -17295,10 +17292,40 @@ function NormCell({ label, value, unit, color }) {
 }
 
 // ── Section Calculateur de doses ──
+// ────────────────────────────────────────────────────────────────────────────
+// Médicaments pédiatriques — codés en dur (hors ligne + sécurité)
+// Doses validées Urg'Ara / SFMU
+// ────────────────────────────────────────────────────────────────────────────
+const PEDIA_MEDICAMENTS_DATA = [
+  // ── Hémodynamique ──────────────────────────────────────────────────────
+  { id:"adr_ped",   nom:"Adrénaline",             indication:"Arrêt cardiaque",             voie:"IVD / IO",       dose_par_kg:0.01, unite:"mg",  dose_max:1,    concentration:"0,1 mg/mL (1 mg/10 mL)", concentration_value:0.1,  frequence:"Toutes les 3-5 min", remarques:"Diluer 1 amp 5 mg/5 mL dans 45 mL NaCl 0,9% = 0,1 mg/mL", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"act_ped",   nom:"Acide tranexamique",      indication:"Hémorragie traumatique",      voie:"IVL 10 min",     dose_par_kg:15,   unite:"mg",  dose_max:2000, concentration:"10 mg/mL (500 mg/5 mL dilué)", concentration_value:10, frequence:"Dose unique", remarques:"Diluer dans poche 50 ou 100 mL NaCl 0,9% selon poids", categorie:"hemodynamique", color:"#B91C1C" },
+
+  // ── Analgésie ──────────────────────────────────────────────────────────
+  { id:"mor_ped",   nom:"Morphine",                indication:"Douleur modérée à sévère",    voie:"IVD titration",  dose_par_kg:0.1,  unite:"mg",  dose_max:10,   concentration:"1 mg/mL (10 mg/10 mL)", concentration_value:1, frequence:"Puis 0,05 mg/kg toutes les 5 min si besoin", remarques:"Diluer 1 amp 10 mg/1 mL dans 9 mL NaCl 0,9% = 1 mg/mL. Max = dose adulte.", categorie:"analgesie", color:"#7C3AED" },
+  { id:"ketan_a",   nom:"Kétamine analgésie",       indication:"Analgésie — geste douloureux", voie:"IVDL",          dose_par_kg:0.2,  unite:"mg",  dose_max:50,   concentration:"1 mg/mL (20 mg/20 mL)", concentration_value:1, frequence:"Dose unique avant geste", remarques:"Prélever 0,4 mL de l'amp 250 mg/5 mL dans seringue 1 mL, compléter à 20 mL", categorie:"analgesie", color:"#7C3AED" },
+  // ── ISR ────────────────────────────────────────────────────────────────
+  { id:"ketan_i",   nom:"Kétamine ISR",             indication:"Induction séquence rapide",  voie:"IVD",            dose_par_kg:3,    unite:"mg",  dose_max:200,  concentration:"10 mg/mL (200 mg/20 mL)", concentration_value:10, frequence:"Dose unique — induction", remarques:"Diluer dans 20 mL. À partir de 24 mois : étomidate préférable si choc absent.", categorie:"isr", color:"#0891B2" },
+  { id:"eto_ped",   nom:"Étomidate ISR",             indication:"Induction (> 24 mois)",      voie:"IVD",            dose_par_kg:0.3,  unite:"mg",  dose_max:20,   concentration:"2 mg/mL (20 mg/10 mL)", concentration_value:2, frequence:"Dose unique — induction", remarques:"Disponible à partir de 24 mois. Non recommandé < 2 ans.", categorie:"isr", color:"#0891B2" },
+  { id:"sux_ped",   nom:"Suxaméthonium",            indication:"Curarisation ISR (< 8 ans)", voie:"IVD",            dose_par_kg:2,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (100 mg/10 mL)", concentration_value:10, frequence:"Dose unique", remarques:"À partir de 8 ans : réduire à 1 mg/kg. Diluer amp 100 mg/2 mL dans 8 mL NaCl.", categorie:"isr", color:"#0891B2" },
+  { id:"roc_ped",   nom:"Rocuronium",               indication:"Curarisation ISR",           voie:"IVD",            dose_par_kg:1,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (50 mg/5 mL)", concentration_value:10, frequence:"Dose unique", remarques:"Antidote : sugammadex 16 mg/kg. Flacon pur 50 mg/5 mL.", categorie:"isr", color:"#0891B2" },
+  // ── Sédation ───────────────────────────────────────────────────────────
+  { id:"ketan_s",   nom:"Kétamine sédation",         indication:"Sédation procédurale",       voie:"IVDL",           dose_par_kg:0.5,  unite:"mg",  dose_max:100,  concentration:"1 mg/mL (20 mg/20 mL)", concentration_value:1, frequence:"Dose unique", remarques:"Titrer selon effet. Entretien PSE possible : 2-4 mg/kg/h.", categorie:"sedation", color:"#6366F1" },
+  { id:"mid_ped",   nom:"Midazolam sédation",        indication:"Sédation — entretien",       voie:"PSE",            dose_par_kg:0.1,  unite:"mg/kg/h", dose_max:null, concentration:"1 mg/mL (50 mg/50 mL)", concentration_value:1, frequence:"Débuter 0,1 mg/kg/h — max 0,3 mg/kg/h", remarques:"Diluer 50 mg/10 mL dans 40 mL NaCl 0,9% = 1 mg/mL", categorie:"sedation", color:"#6366F1" },
+  { id:"suf_ped",   nom:"Sufentanil bolus",          indication:"Analgésie — sédation",       voie:"BOLUS",          dose_par_kg:0.2,  unite:"µg",  dose_max:10,   concentration:"1 µg/mL (50 µg/50 mL)", concentration_value:1, frequence:"Bolus renouvelable", remarques:"Diluer 50 µg/10 mL dans 40 mL NaCl 0,9% = 1 µg/mL", categorie:"sedation", color:"#6366F1" },
+  { id:"cis_ped",   nom:"Cisatracurium",             indication:"Curarisation entretien",     voie:"BOLUS/Entretien", dose_par_kg:0.15, unite:"mg", dose_max:20,   concentration:"0,5 mg/mL (10 mg/20 mL)", concentration_value:0.5, frequence:"Entretien : 0,05 mg/kg toutes les 20 min", remarques:"Diluer amp 10 mg/5 mL dans 15 mL NaCl 0,9% = 0,5 mg/mL", categorie:"sedation", color:"#6366F1" },
+  // ── Osmothérapie ───────────────────────────────────────────────────────
+  { id:"ssh_ped",   nom:"SSH 3%",                   indication:"HTIC — hyponatrémie sévère", voie:"IVDL 5 min",     dose_par_kg:3,    unite:"mL",  dose_max:150,  concentration:"Solution à 3%", concentration_value:null, frequence:"Dose unique, renouvelable", remarques:"Reconstituer : 100 mL NaCl 0,9% + 10 mL NaCl 20% = SSH 3%.", categorie:"osmotherapie", color:"#CA8A04" },
+  { id:"man_ped",   nom:"Mannitol 20%",              indication:"HTIC",                       voie:"IVDL 10 min",    dose_par_kg:3,    unite:"mL",  dose_max:150,  concentration:"Solution à 20%", concentration_value:null, frequence:"Dose unique", remarques:"Poche 250 mL : retirer le volume non utilisé selon poids. Voir cartes.", categorie:"osmotherapie", color:"#CA8A04" },
+  // ── Antibiotique ───────────────────────────────────────────────────────
+  { id:"amx_ped",   nom:"Amoxicilline-Ac. clavulanique", indication:"Infection — sepsis",    voie:"IVL 30 min",     dose_par_kg:50,   unite:"mg",  dose_max:3000, concentration:"Variable selon flacon (50 mg/mL)", concentration_value:50, frequence:"Toutes les 8h", remarques:"Reconstituer chaque flacon dans 10 mL EPPI. Voir cartes pour volume.", categorie:"antibiotique", color:"#EA580C" },
+];
+
 // Config affichage catégories (même ordre que cartes Urg'Ara)
 const PEDIA_DOSE_CATS = [
   { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
   { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"analgesie_in",  label:"Analgésie intranasale",      icon:"👃",  color:"#7C3AED", bg:"#F3E8FF" },
   { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
   { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
   { key:"osmotherapie",  label:"Osmothérapie",               icon:"💧",  color:"#CA8A04", bg:"#FEF9C3" },
@@ -17310,6 +17337,164 @@ function DoseRow({ label, value, C, color, bold }) {
     <div style={{display:"flex", gap:8, fontSize:12, lineHeight:1.4}}>
       <span style={{color:C.sub, fontWeight:600, minWidth:50, flexShrink:0}}>{label}</span>
       <span style={{color: color || C.text, fontWeight: bold ? 800 : 500}}>{value}</span>
+    </div>
+  );
+}
+
+// ── Médicaments intranasaux pédiatriques ──
+const PEDIA_MEDS_IN = [
+  {
+    id:"suf_in_ped", nom:"Sufentanil (intranasal)",
+    unite:"µg", doseMin:0.5, doseMax:0.5,
+    doseAdditionnelle:0.5,
+    // ≤ 10 kg : ampoule 10 µg/2 mL = 5 µg/mL ; > 10 kg : 250 µg/5 mL = 50 µg/mL
+    concPetit:5, concGrand:50,
+    ampPetit:"10 µg / 2 mL (≤ 10 kg)", ampGrand:"250 µg / 5 mL (> 10 kg)",
+    color:"#7C3AED",
+    infoExtra:true,
+    remarques:"Utiliser pur. Dose additionnelle : 0,5 µg/kg. Atomiseur MAD. +0,1 mL espace mort inclus.",
+  },
+  {
+    id:"midaz_in_sed_ped", nom:"Midazolam IN — Anxiolyse",
+    unite:"mg", doseMin:0.4, doseMax:0.4,
+    concentration:5, amp:"5 mg/mL",
+    color:"#7C3AED",
+    remarques:"Anxiolyse préprocédurale. Atomiseur MAD. +0,1 mL espace mort inclus.",
+  },
+  {
+    id:"midaz_in_epi_ped", nom:"Midazolam IN — État de mal épileptique",
+    unite:"mg", doseMin:0.3, doseMax:0.3,
+    doseAbsMax:10,
+    concentration:5, amp:"5 mg/mL",
+    color:"#7C3AED",
+    remarques:"Max 10 mg. Atomiseur MAD. +0,1 mL espace mort inclus.",
+  },
+  {
+    id:"keta_in_ped", nom:"Kétamine (intranasale)",
+    unite:"mg", doseMin:1, doseMax:1.5,
+    doseAdditionnelle:1,
+    concentration:50, amp:"250 mg / 5 mL",
+    infoExtra:true,
+    color:"#7C3AED",
+    remarques:"Utiliser pur (50 mg/mL). 2e dose (après 5-10 min) : 1 mg/kg. Atomiseur MAD. +0,1 mL espace mort inclus.",
+  },
+];
+
+// Composant carte médicament intranasal pédiatrique
+function PediaDoseCardIN({ medic, poids }) {
+  const C = useC();
+  const color = medic.color || "#7C3AED";
+  const ESPACE_MORT = 0.1;
+
+  // Concentration selon poids (Sufentanil seulement)
+  const conc = medic.concPetit
+    ? (poids <= 10 ? medic.concPetit : medic.concGrand)
+    : medic.concentration;
+  const amp = medic.ampPetit
+    ? (poids <= 10 ? medic.ampPetit : medic.ampGrand)
+    : medic.amp;
+
+  // Plafonnement (ex: Midazolam épi max 10 mg)
+  const absMax = medic.doseAbsMax || null;
+  const doseRawMin = Math.round(medic.doseMin * poids * 100) / 100;
+  const doseRawMax = medic.doseMax ? Math.round(medic.doseMax * poids * 100) / 100 : doseRawMin;
+  const capped  = absMax && doseRawMin > absMax;
+  const dose    = capped ? absMax : doseRawMin;
+  const doseMax = capped ? absMax : doseRawMax;
+  const isRange = medic.doseMax && medic.doseMax !== medic.doseMin && !capped;
+
+  const volRaw    = Math.round((dose / conc) * 100) / 100;
+  const volMaxRaw = Math.round((doseMax / conc) * 100) / 100;
+  const vol       = Math.round((volRaw + ESPACE_MORT) * 100) / 100;
+  const volMax2   = Math.round((volMaxRaw + ESPACE_MORT) * 100) / 100;
+
+  // Dose additionnelle ou demi-dose
+  const addDose  = medic.doseAdditionnelle
+    ? Math.round(medic.doseAdditionnelle * poids * 100) / 100
+    : Math.round(dose / 2 * 100) / 100;
+  const demiDose = addDose;
+  const demiVol  = Math.round((Math.round(addDose / conc * 100) / 100 + ESPACE_MORT) * 100) / 100;
+
+  // Alerte concentration différente ≤ 10 kg
+  const showConcAlert = medic.concPetit && poids <= 10;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`,
+      borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px", marginBottom:8}}>
+
+      {/* Titre + voie */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        <span style={{fontSize:10, fontWeight:800, color, background:color+"18",
+          borderRadius:6, padding:"2px 7px", flexShrink:0}}>IN</span>
+      </div>
+      <div style={{fontSize:10, color:C.sub, marginBottom:8, fontStyle:"italic"}}>{amp}</div>
+
+      {/* Alerte changement de concentration ≤ 10 kg */}
+      {showConcAlert && (
+        <div style={{background:"#FEF3C7", border:"1px solid #FCD34D", borderRadius:8,
+          padding:"6px 10px", marginBottom:8, fontSize:11, color:"#92400E", fontWeight:700}}>
+          ⚠️ Poids ≤ 10 kg — utiliser ampoule {medic.ampPetit}
+        </div>
+      )}
+
+      {/* Résultat */}
+      <div style={{background:color+"10", border:`1.5px solid ${color+"33"}`,
+        borderRadius:10, padding:"10px 12px", marginBottom:6}}>
+
+        {/* Alerte plafond */}
+        {capped && (
+          <div style={{background:"#FEF2F2", border:"1px solid #FCA5A5", borderRadius:8,
+            padding:"5px 10px", marginBottom:6, fontSize:11, fontWeight:800, color:"#DC2626"}}>
+            ⚠️ Plafonné à {absMax} {medic.unite} (max absolu)
+          </div>
+        )}
+        {/* Dose + volume */}
+        <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:6, flexWrap:"wrap"}}>
+          <div style={{background:"#fff", borderRadius:8, padding:"6px 10px", minWidth:70, textAlign:"center"}}>
+            <div style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:1}}>DOSE</div>
+            <div style={{fontSize:isRange?18:22, fontWeight:900, color: capped?"#DC2626":color, lineHeight:1}}>
+              {isRange ? `${dose}–${doseMax}` : dose}
+            </div>
+            <div style={{fontSize:10, color:C.sub}}>{medic.unite}</div>
+          </div>
+          <span style={{fontSize:16, color:C.sub}}>→</span>
+          <div style={{background:"#fff", borderRadius:8, padding:"6px 10px", minWidth:70, textAlign:"center"}}>
+            <div style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:1}}>À PRÉLEVER</div>
+            <div style={{fontSize:isRange?18:22, fontWeight:900, color: capped?"#DC2626":color, lineHeight:1}}>
+              {isRange ? `${vol}–${volMax2}` : vol}
+            </div>
+            <div style={{fontSize:10, color:C.sub}}>mL</div>
+          </div>
+          <div style={{flex:1, minWidth:80}}>
+            <div style={{fontSize:10, color:C.sub, lineHeight:1.5}}>
+              {medic.doseMin}{medic.doseMax&&medic.doseMax!==medic.doseMin?`-${medic.doseMax}`:""} {medic.unite}/kg × {poids} kg<br/>
+              ÷ {conc} {medic.unite}/mL + 0,1 mL espace mort
+            </div>
+          </div>
+        </div>
+
+        {/* Demi-dose si applicable */}
+        {medic.infoExtra && (
+          <div style={{paddingTop:6, borderTop:`1px solid ${color+"22"}`,
+            display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
+            <div style={{background:"#fff", borderRadius:8, padding:"4px 8px", textAlign:"center"}}>
+              <div style={{fontSize:9, fontWeight:700, color:C.sub}}>½ DOSE</div>
+              <div style={{fontSize:16, fontWeight:900, color}}>{demiDose} {medic.unite}</div>
+            </div>
+            <span style={{fontSize:14, color:C.sub}}>→</span>
+            <div style={{background:"#fff", borderRadius:8, padding:"4px 8px", textAlign:"center"}}>
+              <div style={{fontSize:9, fontWeight:700, color:C.sub}}>½ À PRÉLEVER</div>
+              <div style={{fontSize:16, fontWeight:900, color}}>{demiVol} mL</div>
+            </div>
+            <div style={{fontSize:10, color:C.sub}}>répétable selon effet</div>
+          </div>
+        )}
+      </div>
+
+      {medic.remarques && (
+        <div style={{fontSize:11, color:C.sub, lineHeight:1.5}}>📌 {medic.remarques}</div>
+      )}
     </div>
   );
 }
@@ -17384,13 +17569,19 @@ function PediaDoseCard({ medic, poids }) {
   );
 }
 
-function PediaDoses({ medicaments, loading, onBack }) {
+function PediaDoses({ onBack }) {
   const C = useC();
   const [mode, setMode] = useState("poids");
   const [poids, setPoids] = useState("");
   const [age, setAge] = useState("");
   const [search, setSearch] = useState("");
-  const [openCats, setOpenCats] = useState({}); // catégories dépliées
+  const [openCats, setOpenCats] = useState({}); // toutes repliées par défaut
+
+  // Données codées en dur — hors ligne garanti
+  const medicaments = PEDIA_MEDICAMENTS_DATA;
+  const loading = false;
+
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]);
 
   const poidsEff = mode === "poids"
     ? (parseFloat(poids) || null)
@@ -17492,23 +17683,44 @@ function PediaDoses({ medicaments, loading, onBack }) {
           </div>
         ) : (
           <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {/* Médicaments intranasaux — section fixe */}
+            <div>
+              <button onClick={()=>setOpenCats(p=>({...p, analgesie_in:!p.analgesie_in}))} style={{
+                width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+                padding:"10px 14px", borderRadius:12, border:"none",
+                background:"#F3E8FF", cursor:"pointer",
+                marginBottom: openCats.analgesie_in===true ? 8 : 0,
+              }}>
+                <div style={{display:"flex", alignItems:"center", gap:8}}>
+                  <span style={{fontSize:16}}>👃</span>
+                  <span style={{fontSize:13, fontWeight:800, color:"#7C3AED"}}>Analgésie intranasale</span>
+                  <span style={{fontSize:11, color:"#7C3AED", background:"#fff", borderRadius:10, padding:"1px 7px", fontWeight:700}}>{PEDIA_MEDS_IN.length}</span>
+                </div>
+                <span style={{fontSize:12, color:"#7C3AED"}}>{openCats.analgesie_in===true ? "▼" : "▶"}</span>
+              </button>
+              {openCats.analgesie_in === true && (
+                <div style={{display:"flex", flexDirection:"column", gap:8}}>
+                  {PEDIA_MEDS_IN.map(m => <PediaDoseCardIN key={m.id} medic={m} poids={poidsEff}/>)}
+                </div>
+              )}
+            </div>
             {grouped.map(cat => (
               <div key={cat.key}>
                 {/* Header catégorie — cliquable pour déplier/plier */}
                 <button onClick={()=>toggleCat(cat.key)} style={{
                   width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
                   padding:"10px 14px", borderRadius:12, border:"none",
-                  background:cat.bg, cursor:"pointer", marginBottom: openCats[cat.key]===false ? 0 : 8,
+                  background:cat.bg, cursor:"pointer", marginBottom: openCats[cat.key]===true ? 8 : 0,
                 }}>
                   <div style={{display:"flex", alignItems:"center", gap:8}}>
                     <span style={{fontSize:16}}>{cat.icon}</span>
                     <span style={{fontSize:13, fontWeight:800, color:cat.color}}>{cat.label}</span>
                     <span style={{fontSize:11, color:cat.color, background:"#fff", borderRadius:10, padding:"1px 7px", fontWeight:700}}>{cat.items.length}</span>
                   </div>
-                  <span style={{fontSize:14, color:cat.color}}>{openCats[cat.key]===false ? "▶" : "▼"}</span>
+                  <span style={{fontSize:14, color:cat.color}}>{openCats[cat.key]===true ? "▼" : "▶"}</span>
                 </button>
                 {/* Médicaments de la catégorie */}
-                {openCats[cat.key] !== false && (
+                {openCats[cat.key] === true && (
                   <div style={{display:"flex", flexDirection:"column", gap:8}}>
                     {cat.items.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
                   </div>
@@ -17631,6 +17843,7 @@ function PediaFiches({ fiches, loading, selected, setSelected, onBack }) {
 function BroseloweScreen({ onBack, onSelectCarte }) {
   const C = useC();
   const [taille, setTaille] = useState("");
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
 
   const tailleNum = parseFloat(taille);
   const bande = !isNaN(tailleNum) && tailleNum > 0
@@ -17774,6 +17987,7 @@ function BroseloweScreen({ onBack, onSelectCarte }) {
 function PediaCarteDetail({ carte, onBack }) {
   const C = useC();
   const [tab, setTab] = useState("medicaments"); // medicaments | normes | materiel
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
 
   return (
     <div>
@@ -18317,8 +18531,35 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"sufentanil_in", cat:"analgesie_in", groupe:"Analgésie intranasale",
     nom:"Sufentanil (intranasal)", amp:"250 µg / 5 mL", concentration:50, unite:"µg",
-    doseMin:0.5, doseMax:0.5,
-    voie:"IN", remarques:"Demi-dose répétable toutes les 15 min jusqu'à effet souhaité. Utiliser atomiseur MAD.",
+    doseMin:0.3, doseMax:0.3,
+    voie:"IN", isIN:true,
+    remarques:"Utiliser pur. Dose additionnelle : 0,15 µg/kg. Atomiseur MAD. +0,1 mL espace mort inclus.",
+    color:"#7C3AED",
+    infoExtra:"Dose additionnelle (0,15 µg/kg) : ",
+    doseAdditionnelle:0.15,
+  },
+  {
+    id:"midazolam_in_sed", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    nom:"Midazolam IN — Sédation", amp:"5 mg/mL", concentration:5, unite:"mg",
+    doseMin:0.1, doseMax:0.1,
+    voie:"IN", isIN:true,
+    remarques:"Sédation procédurale. Atomiseur MAD. +0,1 mL espace mort inclus.",
+    color:"#7C3AED",
+  },
+  {
+    id:"midazolam_in_epi", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    nom:"Midazolam IN — Épilepsie", amp:"5 mg/mL", concentration:5, unite:"mg",
+    doseMin:0.2, doseMax:0.2,
+    voie:"IN", isIN:true,
+    remarques:"État de mal épileptique. Atomiseur MAD. +0,1 mL espace mort inclus.",
+    color:"#7C3AED",
+  },
+  {
+    id:"ketamine_in", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    nom:"Kétamine (intranasale)", amp:"250 mg / 5 mL", concentration:50, unite:"mg",
+    doseMin:1, doseMax:1,
+    voie:"IN", isIN:true,
+    remarques:"Utiliser pur (50 mg/mL). Demi-dose répétable pour doses additionnelles. Atomiseur MAD. +0,1 mL espace mort inclus.",
     color:"#7C3AED",
     infoExtra:"Demi-dose : ",
   },
@@ -18341,12 +18582,29 @@ const CALC_ADULTE_MEDICAMENTS = [
 
   // ── Cardio ────────────────────────────────────────────────────────────────
   {
+    id:"tildiem", cat:"cardio", groupe:"Cardio-vasculaire",
+    nom:"Tildiem (Diltiazem)", amp:"25 mg poudre (reconstituer dans 5 mL = 5 mg/mL)", concentration:5, unite:"mg",
+    doseMin:0.3, doseMax:0.3,
+    voie:"IVD sur 2 min", remarques:"Reconstituer la poudre dans 5 mL d'eau PPI. Ralentisseur nodal. CI : WPW, bloc AV, IC sévère.",
+    color:"#DC2626",
+  },
+  {
     id:"hnf", cat:"cardio", groupe:"Anticoagulation",
     nom:"HNF (Héparine non fractionnée)", amp:"Variable", concentration:null, unite:"UI",
     doseMin:500, doseMax:500,
     voie:"IVSE / SC", isHNF:true,
     remarques:"Curatif : 500 UI/kg/24h en 2 injections (ou 3 si volume > 0,6 mL). Préventif : 5000 UI/12h SC.",
     color:"#DC2626",
+  },
+
+  // ── Osmothérapie ──────────────────────────────────────────────────────────
+  {
+    id:"mannitol_adulte", cat:"osmotherapie", groupe:"Osmothérapie",
+    nom:"Mannitol 20%", amp:"Flacon 500 mL (20% = 20 g/100 mL)", concentration:0.2, unite:"g",
+    doseMin:0.5, doseMax:1,
+    voie:"IVL 15-20 min",
+    remarques:"Volume calculé = mL à perfuser directement depuis le flacon. Renouveler si symptomatologie persistante.",
+    color:"#0891B2",
   },
 
   // ── Antiépileptiques ──────────────────────────────────────────────────────
@@ -18377,6 +18635,7 @@ const CALC_ADULTE_CATS = [
   { key:"sedation",         label:"Sédation & Curarisation",   icon:"😴", color:"#6366F1", bg:"#EEF2FF" },
   { key:"infectieux",       label:"Infectieux",                icon:"🦠", color:"#16A34A", bg:"#DCFCE7" },
   { key:"cardio",           label:"Cardio-vasculaire",         icon:"❤️", color:"#DC2626", bg:"#FEE2E2" },
+  { key:"osmotherapie",     label:"Osmothérapie",              icon:"💧", color:"#0891B2", bg:"#CFFAFE" },
   { key:"antiepileptique",  label:"Antiépileptiques",          icon:"🧠", color:"#CA8A04", bg:"#FEF9C3" },
 ];
 
@@ -18396,10 +18655,14 @@ function CalcAdulteCard({ medic, poids }) {
   const doseMaxCalc = Math.round(Math.min(rawMax, absMax || rawMax) * 100) / 100;
   const isRange = medic.doseMin !== medic.doseMax && doseMinCalc !== doseMaxCalc;
 
-  // Volume
+  // Volume + espace mort MAD (+0,1 mL pour voie IN)
+  const ESPACE_MORT = 0.1;
   const hasVol = medic.concentration != null;
-  const volMin = hasVol ? Math.round((doseMinCalc / medic.concentration) * 10) / 10 : null;
-  const volMax = hasVol ? Math.round((doseMaxCalc / medic.concentration) * 10) / 10 : null;
+  const volMinRaw = hasVol ? Math.round((doseMinCalc / medic.concentration) * 100) / 100 : null;
+  const volMaxRaw = hasVol ? Math.round((doseMaxCalc / medic.concentration) * 100) / 100 : null;
+  // Pour la voie IN : ajouter l'espace mort au volume à prélever
+  const volMin = hasVol ? (medic.isIN ? Math.round((volMinRaw + ESPACE_MORT) * 100) / 100 : Math.round(volMinRaw * 10) / 10) : null;
+  const volMax = hasVol ? (medic.isIN ? Math.round((volMaxRaw + ESPACE_MORT) * 100) / 100 : Math.round(volMaxRaw * 10) / 10) : null;
 
   // Dose alt (sujet âgé)
   let altMin = null, altMax = null;
@@ -18418,9 +18681,11 @@ function CalcAdulteCard({ medic, poids }) {
   const hnfX2   = medic.isHNF ? Math.round(hnfDose / 2) : null;
   const hnfX3   = medic.isHNF ? Math.round(hnfDose / 3) : null;
 
-  // Sufentanil IN — demi-dose
+  // Sufentanil IN / Kétamine IN — dose additionnelle ou demi-dose
   const demiDose = medic.infoExtra
-    ? Math.round((doseMinCalc / 2) * 100) / 100
+    ? (medic.doseAdditionnelle
+        ? Math.round(medic.doseAdditionnelle * poids * 100) / 100
+        : Math.round((doseMinCalc / 2) * 100) / 100)
     : null;
 
   return (
@@ -18504,14 +18769,18 @@ function CalcAdulteCard({ medic, poids }) {
 
           {/* Volume */}
           {hasVol && (
-            <div style={{display:"flex", alignItems:"center", gap:4,
+            <div style={{display:"flex", alignItems:"center", gap:4, flexWrap:"wrap",
               paddingTop:6, borderTop:`1px solid ${color+"22"}`}}>
-              <span style={{fontSize:10, color:C.sub, fontWeight:600}}>Volume :</span>
+              <span style={{fontSize:10, color:C.sub, fontWeight:600}}>
+                {medic.isIN ? "À prélever (+ espace mort) :" : "Volume :"}
+              </span>
               <span style={{fontSize:13, fontWeight:800, color}}>
                 {isRange ? `${volMin} – ${volMax} mL` : `${volMin} mL`}
               </span>
               <span style={{fontSize:10, color:C.sub}}>
-                (÷ {medic.concentration} {medic.unite}/mL)
+                {medic.isIN
+                  ? `(${isRange ? `${volMinRaw}-${volMaxRaw}` : volMinRaw} mL + 0,1 mL espace mort)`
+                  : `(÷ ${medic.concentration} ${medic.unite}/mL)`}
               </span>
             </div>
           )}
@@ -18543,7 +18812,8 @@ function CalcAdulteCard({ medic, poids }) {
 function CalcAdulteScreen({ onBack }) {
   const C = useC();
   const [poids, setPoids] = useState("");
-  const [openCats, setOpenCats] = useState({}); // toutes repliées par défaut
+  const [openCats, setOpenCats] = useState({});
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
 
   const poidsNum = parseFloat(poids) || null;
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
@@ -18612,7 +18882,7 @@ function CalcAdulteScreen({ onBack }) {
         <div>
           {CALC_ADULTE_CATS.map(cat => {
             const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key);
-            const open = openCats[cat.key] !== false;
+            const open = openCats[cat.key] === true;
             return (
               <div key={cat.key} style={{marginBottom:12}}>
                 {/* Header catégorie */}
