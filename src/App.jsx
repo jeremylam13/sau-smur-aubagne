@@ -5474,7 +5474,7 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
       {specialites.length > 0 && (
         <div style={{display:"flex", gap:6, marginBottom:16, overflowX:"auto", paddingBottom:4, scrollbarWidth:"none"}}>
           <button onClick={() => setSelectedSpec("all")} style={{
-            flexShrink:0, border:"none", borderRadius:18, padding:"6px 12px", cursor:"pointer",
+            flexShrink:0, borderRadius:18, padding:"6px 12px", cursor:"pointer",
             background: selectedSpec === "all" ? "#0EA5E9" : C.white,
             color: selectedSpec === "all" ? "#fff" : C.sub,
             fontWeight: 700, fontSize: 11, whiteSpace:"nowrap",
@@ -5482,7 +5482,7 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
           }}>📋 Toutes</button>
           {specialites.map(s => (
             <button key={s} onClick={() => setSelectedSpec(s)} style={{
-              flexShrink:0, border:"none", borderRadius:18, padding:"6px 12px", cursor:"pointer",
+              flexShrink:0, borderRadius:18, padding:"6px 12px", cursor:"pointer",
               background: selectedSpec === s ? "#0EA5E9" : C.white,
               color: selectedSpec === s ? "#fff" : C.sub,
               fontWeight: 700, fontSize: 11, whiteSpace:"nowrap",
@@ -6254,7 +6254,6 @@ function ApgarCalculator({ onBack }) {
         style={{
           flex: 1,
           padding: "10px 8px",
-          border: "none",
           background: active ? COLOR : C.white,
           color: active ? "#fff" : C.text,
           borderRadius: 10,
@@ -17096,12 +17095,10 @@ function PediaScreen({ onBack }) {
       } else {
         // Hors ligne : utiliser le cache du store
         setFiches(store.pediaFiches || []);
-        setMedicaments(store.pediaMedics || []);
       }
     } catch(e) {
       // Fallback cache si erreur réseau
       setFiches(store.pediaFiches || []);
-      setMedicaments(store.pediaMedics || []);
     }
     setLoading(false);
   }
@@ -17325,7 +17322,6 @@ const PEDIA_MEDICAMENTS_DATA = [
 const PEDIA_DOSE_CATS = [
   { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
   { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
-  { key:"analgesie_in",  label:"Analgésie intranasale",      icon:"👃",  color:"#7C3AED", bg:"#F3E8FF" },
   { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
   { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
   { key:"osmotherapie",  label:"Osmothérapie",               icon:"💧",  color:"#CA8A04", bg:"#FEF9C3" },
