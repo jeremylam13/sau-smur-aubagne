@@ -1504,94 +1504,79 @@ function HomeScreen({onNav}) {
         </div>
       </div>
 
-      {/* ★ Quiz du Jour ★ */}
-      {quizOfTheDay && (
-        <button
-          onClick={() => onNav("quiz", {id: quizOfTheDay.id})}
-          style={{
-            width: "100%",
-            background: `linear-gradient(135deg, ${quizOfTheDay.color || "#6366F1"} 0%, ${quizOfTheDay.color === "#6366F1" || !quizOfTheDay.color ? "#4338CA" : "#1F2937"} 100%)`,
-            border: "none",
-            borderRadius: 18,
-            padding: "18px 18px",
-            marginBottom: 18,
-            cursor: "pointer",
-            textAlign: "left",
-            color: "#fff",
-            position: "relative",
-            overflow: "hidden",
-            boxShadow: `0 6px 20px ${quizOfTheDay.color || "#6366F1"}44`,
-            touchAction: "manipulation",
-          }}
-        >
-          {/* Décor : grand emoji semi-transparent en fond */}
-          <div style={{
-            position: "absolute",
-            right: -10, bottom: -22,
-            fontSize: 110,
-            opacity: 0.13,
-            transform: "rotate(-12deg)",
-            pointerEvents: "none",
-            lineHeight: 1,
-          }}>{quizOfTheDay.icon || "🧠"}</div>
+      {/* ★ Paire Formation : Quiz du Jour + Entraînement ECG (50/50) ★ */}
+      {(() => {
+        const ecgPool = [...ECGS, ...(store.ecgs||[])].filter(e => e && (e.imageData || e.imageUrl));
+        const hasEcg = ecgPool.length >= 3;
+        if (!quizOfTheDay && !hasEcg) return null;
 
-          {/* Badge "Quiz du jour" */}
-          <div style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            background: "rgba(255,255,255,.18)",
-            backdropFilter: "blur(8px)",
-            padding: "4px 10px",
-            borderRadius: 14,
-            fontSize: 10,
-            fontWeight: 900,
-            letterSpacing: 0.6,
-            marginBottom: 10,
-          }}>
-            <span>✨</span> QUIZ DU JOUR
-            {dailyDone && (
-              <span style={{
-                marginLeft: 6,
-                background: "rgba(34,197,94,.85)",
-                padding: "1px 7px",
-                borderRadius: 10,
-                fontSize: 9,
-                letterSpacing: 0.3,
-              }}>✓ FAIT</span>
+        const cardBase = {
+          flex: 1, minWidth: 0, border: "none", borderRadius: 18,
+          padding: "14px 12px", cursor: "pointer", textAlign: "left",
+          color: "#fff", position: "relative", overflow: "hidden",
+          display: "flex", flexDirection: "column", touchAction: "manipulation",
+          minHeight: 150,
+        };
+
+        return (
+          <div style={{display:"flex", gap:12, marginBottom:18, alignItems:"stretch"}}>
+
+            {/* ── Quiz du Jour ── */}
+            {quizOfTheDay && (
+              <button onClick={() => onNav("quiz", {id: quizOfTheDay.id})}
+                style={{
+                  ...cardBase,
+                  background: `linear-gradient(150deg, ${quizOfTheDay.color || "#6366F1"} 0%, ${quizOfTheDay.color === "#6366F1" || !quizOfTheDay.color ? "#4338CA" : "#1F2937"} 100%)`,
+                  boxShadow: `0 6px 18px ${quizOfTheDay.color || "#6366F1"}40`,
+                }}>
+                {/* Décor emoji en fond */}
+                <div style={{position:"absolute", right:-14, bottom:-20, fontSize:90, opacity:.13, transform:"rotate(-12deg)", pointerEvents:"none", lineHeight:1}}>{quizOfTheDay.icon || "🧠"}</div>
+                {/* Badge */}
+                <div style={{display:"inline-flex", alignItems:"center", gap:5, background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:12, fontSize:9, fontWeight:900, letterSpacing:.5, alignSelf:"flex-start", marginBottom:10}}>
+                  <span>✨</span> QUIZ DU JOUR
+                  {dailyDone && <span style={{marginLeft:4, background:"rgba(34,197,94,.85)", padding:"1px 6px", borderRadius:8, fontSize:8}}>✓</span>}
+                </div>
+                <div style={{fontSize:30, lineHeight:1, marginBottom:8, position:"relative", zIndex:1}}>{quizOfTheDay.icon || "🧠"}</div>
+                <div style={{fontSize:13, fontWeight:900, lineHeight:1.25, marginBottom:5, position:"relative", zIndex:1, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{quizOfTheDay.title}</div>
+                <div style={{fontSize:10, opacity:.88, position:"relative", zIndex:1, marginBottom:10}}>
+                  📝 {countQuestions(quizOfTheDay)} Q · ⏱ ~{quizOfTheDay.estimatedMin || 5} min
+                  {dailyDone && <> · {dailyScores[quizOfTheDay.id].score}/{dailyScores[quizOfTheDay.id].total}</>}
+                </div>
+                <div style={{marginTop:"auto", background:"rgba(255,255,255,.22)", borderRadius:10, padding:"7px 0", fontSize:11, fontWeight:900, textAlign:"center", position:"relative", zIndex:1}}>
+                  {dailyDone ? "↻ Rejouer" : "▶ Démarrer"}
+                </div>
+              </button>
+            )}
+
+            {/* ── Entraînement ECG ── */}
+            {hasEcg && (
+              <button onClick={() => onNav("ecg", {id: "__training__"})}
+                style={{
+                  ...cardBase,
+                  background: "linear-gradient(150deg, #E05260 0%, #C0392B 100%)",
+                  boxShadow: "0 6px 18px rgba(224,82,96,.4)",
+                }}>
+                {/* Décor tracé ECG en fond */}
+                <svg viewBox="0 0 200 60" style={{position:"absolute", right:-6, bottom:6, width:120, opacity:.16, pointerEvents:"none"}}>
+                  <polyline points="0,30 30,30 38,30 46,8 54,52 62,30 95,30 103,30 111,18 119,42 127,30 160,30 168,30 176,12 184,48 192,30 200,30" fill="none" stroke="#fff" strokeWidth="3"/>
+                </svg>
+                {/* Badge */}
+                <div style={{display:"inline-flex", alignItems:"center", gap:5, background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:12, fontSize:9, fontWeight:900, letterSpacing:.5, alignSelf:"flex-start", marginBottom:10}}>
+                  <span>🎯</span> ENTRAÎNEMENT
+                </div>
+                <div style={{fontSize:30, lineHeight:1, marginBottom:8, position:"relative", zIndex:1}}>❤️</div>
+                <div style={{fontSize:13, fontWeight:900, lineHeight:1.25, marginBottom:5, position:"relative", zIndex:1}}>Lecture d'ECG</div>
+                <div style={{fontSize:10, opacity:.9, position:"relative", zIndex:1, marginBottom:10, lineHeight:1.35}}>
+                  📈 Série de {Math.min(10, ecgPool.length)} tracés · analyse puis révèle
+                </div>
+                <div style={{marginTop:"auto", background:"rgba(255,255,255,.22)", borderRadius:10, padding:"7px 0", fontSize:11, fontWeight:900, textAlign:"center", position:"relative", zIndex:1}}>
+                  ▶ S'entraîner
+                </div>
+              </button>
             )}
           </div>
-
-          {/* Contenu */}
-          <div style={{display: "flex", alignItems: "center", gap: 14, position: "relative", zIndex: 1}}>
-            <div style={{fontSize: 38, lineHeight: 1, flexShrink: 0}}>{quizOfTheDay.icon || "🧠"}</div>
-            <div style={{flex: 1, minWidth: 0}}>
-              <div style={{fontSize: 15, fontWeight: 900, lineHeight: 1.25, marginBottom: 3}}>{quizOfTheDay.title}</div>
-              <div style={{display: "flex", alignItems: "center", gap: 8, fontSize: 11, opacity: 0.88}}>
-                <span>📝 {countQuestions(quizOfTheDay)} question{countQuestions(quizOfTheDay) > 1 ? "s" : ""}</span>
-                <span>•</span>
-                <span>⏱ ~{quizOfTheDay.estimatedMin || 5} min</span>
-                {dailyDone && (
-                  <>
-                    <span>•</span>
-                    <span style={{fontWeight: 800}}>{dailyScores[quizOfTheDay.id].score}/{dailyScores[quizOfTheDay.id].total}</span>
-                  </>
-                )}
-              </div>
-            </div>
-            <div style={{
-              background: "rgba(255,255,255,.22)",
-              borderRadius: 12,
-              padding: "8px 14px",
-              fontSize: 12,
-              fontWeight: 900,
-              letterSpacing: 0.3,
-              flexShrink: 0,
-              backdropFilter: "blur(6px)",
-            }}>{dailyDone ? "↻ Rejouer" : "▶ Démarrer"}</div>
-          </div>
-        </button>
-      )}
+        );
+      })()}
 
       {/* Barre de recherche globale */}
       <div ref={searchRef} style={{position:"relative", marginBottom:24}}>
@@ -2596,7 +2581,14 @@ function ECGScreen({ deepLinkId, onBack }) {
 
   useEffect(()=>{ if(selected){ markVu(selected.id); } },[selected]);
 
-  useEffect(()=>{ if(deepLinkId && ecgs.length){ const it=ecgs.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.ecgs]);
+  useEffect(()=>{
+    if(deepLinkId === "__training__"){
+      const serie = tirerSerieEcg(ecgs, 10);
+      if(serie.length) setTrainingSerie(serie);
+      return;
+    }
+    if(deepLinkId && ecgs.length){ const it=ecgs.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); }
+  },[deepLinkId, store.ecgs]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
 
   const reveal = (id) => setRevealedIds(prev => ({...prev, [id]:true}));
@@ -2733,18 +2725,29 @@ function ECGScreen({ deepLinkId, onBack }) {
         }} style={{
           width:"100%", textAlign:"left", cursor:"pointer", border:"none",
           background:"linear-gradient(135deg, #E05260 0%, #C0392B 100%)",
-          borderRadius:16, padding:"16px 18px", marginBottom:18, color:"#fff",
-          boxShadow:"0 4px 16px rgba(224,82,96,.3)", display:"flex", alignItems:"center", gap:14,
-          WebkitTapHighlightColor:"transparent",
+          borderRadius:18, padding:"18px 20px", marginBottom:18, color:"#fff",
+          boxShadow:"0 6px 20px rgba(224,82,96,.35)", position:"relative", overflow:"hidden",
+          WebkitTapHighlightColor:"transparent", touchAction:"manipulation",
         }}>
-          <div style={{fontSize:30, flexShrink:0}}>🎯</div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:15, fontWeight:900, marginBottom:2}}>Entraînement lecture ECG</div>
-            <div style={{fontSize:12, opacity:.92, lineHeight:1.4}}>
-              Série de {Math.min(10, ecgs.filter(e=>e.imageData||e.imageUrl).length)} tracés au hasard — analyse puis révèle l'interprétation.
+          {/* Tracé ECG décoratif en fond */}
+          <svg viewBox="0 0 300 60" style={{position:"absolute", right:-10, bottom:-4, width:200, opacity:.15, pointerEvents:"none"}}>
+            <polyline points="0,30 40,30 50,30 60,6 70,54 80,30 120,30 130,30 140,16 150,44 160,30 200,30 210,30 220,10 230,50 240,30 280,30 290,30 300,30" fill="none" stroke="#fff" strokeWidth="3"/>
+          </svg>
+          <div style={{position:"relative", zIndex:1}}>
+            <div style={{display:"inline-flex", alignItems:"center", gap:6, background:"rgba(255,255,255,.2)", padding:"4px 11px", borderRadius:14, fontSize:10, fontWeight:900, letterSpacing:.6, marginBottom:12}}>
+              <span>🎯</span> ENTRAÎNEMENT
+            </div>
+            <div style={{display:"flex", alignItems:"center", gap:14}}>
+              <div style={{fontSize:34, flexShrink:0, lineHeight:1}}>❤️</div>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:16, fontWeight:900, marginBottom:3}}>Lecture d'ECG</div>
+                <div style={{fontSize:12, opacity:.92, lineHeight:1.4}}>
+                  Série de {Math.min(10, ecgs.filter(e=>e.imageData||e.imageUrl).length)} tracés au hasard — analyse puis révèle l'interprétation.
+                </div>
+              </div>
+              <div style={{background:"rgba(255,255,255,.22)", borderRadius:12, padding:"10px 16px", fontSize:13, fontWeight:900, flexShrink:0}}>▶</div>
             </div>
           </div>
-          <div style={{fontSize:22, flexShrink:0, opacity:.9}}>▶</div>
         </button>
       )}
 
