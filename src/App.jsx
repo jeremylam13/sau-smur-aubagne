@@ -910,6 +910,83 @@ function useFavoris() {
   return { favoris, toggleFavori, isFavori };
 }
 
+// ── Hook "Vu" : marque les fiches déjà consultées, persistant par mobile ──────
+// Stockage 100% local (localStorage) → chaque appareil garde sa propre liste.
+if(!window._vus) window._vus = {}; // { ecg: {cache, listeners}, imagerie: {...} }
+
+function useVus(moduleKey) {
+  if(!window._vus[moduleKey]) window._vus[moduleKey] = { cache: null, listeners: new Set() };
+  const slot = window._vus[moduleKey];
+  const [vus, setVus] = useState(slot.cache || []);
+
+  useEffect(()=>{
+    if(slot.cache === null) {
+      try {
+        const raw = localStorage.getItem("sau_vus_" + moduleKey);
+        slot.cache = raw ? JSON.parse(raw) : [];
+      } catch(e) { slot.cache = []; }
+    }
+    setVus([...slot.cache]);
+    const handler = (list) => setVus(list);
+    slot.listeners.add(handler);
+    return () => slot.listeners.delete(handler);
+  },[moduleKey]);
+
+  function markVu(id) {
+    if(id == null) return;
+    if(slot.cache === null) slot.cache = [];
+    const key = String(id);
+    if(slot.cache.includes(key)) return; // déjà vu
+    slot.cache = [...slot.cache, key];
+    const snap = [...slot.cache];
+    slot.listeners.forEach(fn => fn(snap));
+    try { localStorage.setItem("sau_vus_" + moduleKey, JSON.stringify(slot.cache)); } catch(e){}
+  }
+
+  function isVu(id) {
+    const cache = window._vus[moduleKey]?.cache || [];
+    return cache.includes(String(id));
+  }
+
+  return { vus, markVu, isVu };
+}
+
+// ── Tirage d'une série d'entraînement ECG avec rotation complète ──────────────
+// Mémorise localement (par mobile) les ECG déjà tirés, pour ne pas refaire
+// toujours les mêmes : on pioche d'abord parmi les non-encore-vus en
+// entraînement ; quand le stock est épuisé, on repart sur un nouveau cycle.
+const ECG_TRAIN_KEY = "sau_ecg_training_seen";
+
+function tirerSerieEcg(allEcgs, taille = 10) {
+  const valides = (allEcgs || []).filter(e => e && e.id != null && (e.imageData || e.imageUrl));
+  if (!valides.length) return [];
+
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(ECG_TRAIN_KEY) || "[]"); } catch(e) { seen = []; }
+  const seenSet = new Set(seen.map(String));
+
+  let jamaisVus = valides.filter(e => !seenSet.has(String(e.id)));
+  // Si tout le stock a déjà été vu (ou presque), on réinitialise le cycle
+  if (jamaisVus.length < Math.min(taille, valides.length)) {
+    seen = [];
+    jamaisVus = [...valides];
+  }
+
+  // Mélange aléatoire (Fisher-Yates) puis on prend les N premiers
+  const melange = [...jamaisVus];
+  for (let i = melange.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [melange[i], melange[j]] = [melange[j], melange[i]];
+  }
+  const serie = melange.slice(0, Math.min(taille, melange.length));
+
+  // Marque ces ECG comme vus en entraînement
+  const nouveauSeen = [...new Set([...seen.map(String), ...serie.map(e => String(e.id))])];
+  try { localStorage.setItem(ECG_TRAIN_KEY, JSON.stringify(nouveauSeen)); } catch(e){}
+
+  return serie;
+}
+
 // ── StarBtn ───────────────────────────────────────────────────────────────────
 function StarBtn({ filled, onToggle, color }) {
   const C = useC();
@@ -2366,19 +2443,158 @@ function RetexScreen({ deepLinkId, onBack }) {
     </div>
   );
 }
+// - EcgTraining : session d'entraînement à la lecture d'ECG -
+function EcgTraining({ serie, onQuit }) {
+  const C = useC();
+  const [idx, setIdx] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const [finished, setFinished] = useState(false);
+
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[idx, finished]);
+
+  const total = serie.length;
+  const e = serie[idx];
+
+  const SvgEcg = ({color}) => (
+    <svg viewBox="0 0 300 80" style={{width:"100%", height:80}}>
+      <polyline points="0,40 30,40 40,40 50,10 60,70 70,40 100,40 110,40 120,25 130,55 140,40 170,40 180,40 190,15 200,65 210,40 240,40 250,40 260,28 270,52 280,40 300,40"
+        fill="none" stroke={color||"#E05260"} strokeWidth="2"/>
+    </svg>
+  );
+
+  if (finished) {
+    return (
+      <div>
+        <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+          <BackBtn onClick={onQuit}/>
+        </div>
+        <div style={{textAlign:"center", padding:"30px 20px", background:"linear-gradient(135deg, #E05260 0%, #C0392B 100%)", borderRadius:18, color:"#fff", marginBottom:18}}>
+          <div style={{fontSize:46, marginBottom:8}}>🎉</div>
+          <div style={{fontSize:20, fontWeight:900, marginBottom:6}}>Série terminée !</div>
+          <div style={{fontSize:14, opacity:.9}}>Tu as parcouru {total} ECG d'entraînement.</div>
+        </div>
+        <button onClick={onQuit} style={{width:"100%", padding:14, borderRadius:12, border:"none",
+          background:"#E05260", color:"#fff", fontSize:14, fontWeight:800, cursor:"pointer"}}>
+          Revenir au module ECG
+        </button>
+      </div>
+    );
+  }
+
+  if (!e) return null;
+
+  return (
+    <div>
+      {/* En-tête session + progression */}
+      <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:12}}>
+        <BackBtn onClick={onQuit}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11, fontWeight:800, color:"#E05260", letterSpacing:.5}}>🎯 ENTRAÎNEMENT ECG</div>
+          <div style={{fontSize:13, fontWeight:700, color:C.text}}>ECG {idx+1} / {total}</div>
+        </div>
+      </div>
+
+      {/* Barre de progression */}
+      <div style={{height:8, background:C.border, borderRadius:20, overflow:"hidden", marginBottom:18}}>
+        <div style={{height:"100%", width:`${Math.round(((idx)/total)*100)}%`, background:"#E05260", borderRadius:20, transition:"width .3s"}}/>
+      </div>
+
+      {/* Contexte clinique */}
+      {e.context && (
+        <div style={{background:"#EFF6FF", border:`2px solid #3B82F6`, borderRadius:12, padding:14, marginBottom:16}}>
+          <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
+            <span style={{fontSize:14}}>🩺</span>
+            <span style={{fontSize:11, fontWeight:800, color:"#1D4ED8", letterSpacing:.5}}>CONTEXTE CLINIQUE</span>
+          </div>
+          <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500}}>{e.context}</div>
+        </div>
+      )}
+
+      {/* Tracé */}
+      <div style={{background:"#0A1628", borderRadius:14, padding:(e.imageData||e.imageUrl)?4:16, marginBottom:16}}>
+        {(e.imageData||e.imageUrl) ? (
+          <ClickableImage src={e.imageData||e.imageUrl} alt="ECG" style={{borderRadius:10}}/>
+        ) : (
+          <SvgEcg color={e.color}/>
+        )}
+      </div>
+
+      {e.hasSecondEcg && (e.imageData2||e.imageUrl2) && (
+        <div style={{background:"#0A1628", borderRadius:14, padding:4, marginBottom:16}}>
+          <div style={{color:"rgba(255,255,255,.7)", fontSize:11, fontWeight:700, marginBottom:8, padding:"8px 8px 0"}}>{e.secondTitle}</div>
+          <ClickableImage src={e.imageData2||e.imageUrl2} alt="ECG 2" style={{borderRadius:10}}/>
+        </div>
+      )}
+
+      {/* Question */}
+      {e.question && (
+        <div style={{background:C.amberLight, border:`2px solid ${C.amber}`, borderRadius:12, padding:14, marginBottom:16}}>
+          <div style={{fontSize:11, fontWeight:800, color:C.amber, marginBottom:4}}>QUESTION</div>
+          <div style={{fontSize:14, fontWeight:700, color:C.text}}>{e.question}</div>
+        </div>
+      )}
+
+      {/* Révélation */}
+      {!revealed ? (
+        <Btn onClick={()=>setRevealed(true)} color={e.color||"#E05260"} style={{width:"100%", padding:14}}>
+          Révéler l'interprétation
+        </Btn>
+      ) : (
+        <div>
+          <div style={{fontSize:11, fontWeight:800, color:C.sub, letterSpacing:.5, marginBottom:8}}>{e.title}</div>
+          {e.interpretation && (
+            <Card style={{border:`2px solid ${e.color||"#E05260"}`, marginBottom:10}}>
+              <div style={{fontSize:11, fontWeight:800, color:e.color||"#E05260", marginBottom:4}}>INTERPRÉTATION</div>
+              <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{e.interpretation}</div>
+            </Card>
+          )}
+          {e.diagnosis && (
+            <Card style={{border:`2px solid ${C.green}`, marginBottom:10}}>
+              <div style={{fontSize:11, fontWeight:800, color:C.green, marginBottom:4}}>DIAGNOSTIC</div>
+              <div style={{fontSize:14, fontWeight:700, color:C.text}}>{e.diagnosis}</div>
+            </Card>
+          )}
+          {e.points && e.points.length > 0 && (
+            <Card style={{marginBottom:10}}>
+              <div style={{fontSize:11, fontWeight:800, color:C.navy, marginBottom:6}}>POINTS CLÉS</div>
+              {e.points.map((p,i)=>(
+                <div key={i} style={{display:"flex", gap:8, marginBottom:4}}>
+                  <span style={{color:e.color||"#E05260", fontWeight:900}}>•</span>
+                  <span style={{fontSize:13, color:C.text, lineHeight:1.5}}>{p}</span>
+                </div>
+              ))}
+            </Card>
+          )}
+          <button onClick={()=>{
+            if (idx + 1 >= total) { setFinished(true); }
+            else { setIdx(idx+1); setRevealed(false); }
+          }} style={{width:"100%", padding:14, borderRadius:12, border:"none",
+            background:"#E05260", color:"#fff", fontSize:14, fontWeight:800, cursor:"pointer", marginTop:4}}>
+            {idx + 1 >= total ? "Terminer la série ✓" : "ECG suivant →"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // - ECGScreen -
 function ECGScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [revealedIds, setRevealedIds] = useState({});
   const [selected, setSelected] = useState(null);
+  const [trainingSerie, setTrainingSerie] = useState(null);
   const { toggleFavori, isFavori } = useFavoris();
+  const { markVu, isVu } = useVus("ecg");
 
   const ecgs = [...ECGS, ...store.ecgs].sort((a,b)=>{
     const ta = a.created_at ? new Date(a.created_at) : new Date(0);
     const tb = b.created_at ? new Date(b.created_at) : new Date(0);
     return tb - ta;
   });
+
+  useEffect(()=>{ if(selected){ markVu(selected.id); } },[selected]);
 
   useEffect(()=>{ if(deepLinkId && ecgs.length){ const it=ecgs.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.ecgs]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
@@ -2395,6 +2611,11 @@ function ECGScreen({ deepLinkId, onBack }) {
   useEffect(()=>{
     if(selected) { const el = document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; }
   },[selected]);
+
+  // Mode entraînement actif
+  if(trainingSerie) {
+    return <EcgTraining serie={trainingSerie} onQuit={()=>setTrainingSerie(null)}/>;
+  }
 
   if(selected) {
     const e = ecgs.find(x=>x.id===selected.id) || selected;
@@ -2503,6 +2724,30 @@ function ECGScreen({ deepLinkId, onBack }) {
         </button>
       )}
       <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"❤️"} ECG</h2>
+
+      {/* Encart entraînement à la lecture d'ECG */}
+      {ecgs.filter(e => e.imageData || e.imageUrl).length >= 3 && (
+        <button onClick={()=>{
+          const serie = tirerSerieEcg(ecgs, 10);
+          if (serie.length) setTrainingSerie(serie);
+        }} style={{
+          width:"100%", textAlign:"left", cursor:"pointer", border:"none",
+          background:"linear-gradient(135deg, #E05260 0%, #C0392B 100%)",
+          borderRadius:16, padding:"16px 18px", marginBottom:18, color:"#fff",
+          boxShadow:"0 4px 16px rgba(224,82,96,.3)", display:"flex", alignItems:"center", gap:14,
+          WebkitTapHighlightColor:"transparent",
+        }}>
+          <div style={{fontSize:30, flexShrink:0}}>🎯</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15, fontWeight:900, marginBottom:2}}>Entraînement lecture ECG</div>
+            <div style={{fontSize:12, opacity:.92, lineHeight:1.4}}>
+              Série de {Math.min(10, ecgs.filter(e=>e.imageData||e.imageUrl).length)} tracés au hasard — analyse puis révèle l'interprétation.
+            </div>
+          </div>
+          <div style={{fontSize:22, flexShrink:0, opacity:.9}}>▶</div>
+        </button>
+      )}
+
       <div style={{display:"flex", flexDirection:"column", gap:12}}>
         {ecgs.map(e => (
           <Card key={e.id} onClick={()=>setSelected(e)}>
@@ -2515,7 +2760,11 @@ function ECGScreen({ deepLinkId, onBack }) {
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{e.title}</div>
-                <Tag label={revealedIds[e.id] || e.revealed ? "Vu" : "A analyser"} color={revealedIds[e.id] || e.revealed ? C.green : e.color}/>
+                {isVu(e.id)
+                  ? <span style={{display:"inline-flex", alignItems:"center", gap:4, fontSize:11, fontWeight:700, color:"#16A34A", background:"#DCFCE7", borderRadius:20, padding:"2px 9px"}}>
+                      <span style={{width:8, height:8, borderRadius:"50%", background:"#16A34A", display:"inline-block"}}/> Vu
+                    </span>
+                  : <Tag label="À analyser" color={e.color}/>}
               </div>
               <div style={{color:C.sub, fontSize:18}}>&#8250;</div>
             </div>
@@ -2533,6 +2782,7 @@ function IconoScreen({ deepLinkId, onBack }) {
   const [revealed, setRevealed] = useState({});
   const [selected, setSelected] = useState(null);
   const { toggleFavori, isFavori } = useFavoris();
+  const { markVu, isVu } = useVus("imagerie");
 
   const allCases = [...ICONO, ...store.imagerie].sort((a,b)=>{
     const ta = a.created_at ? new Date(a.created_at) : new Date(0);
@@ -2542,6 +2792,7 @@ function IconoScreen({ deepLinkId, onBack }) {
 
   useEffect(()=>{ if(deepLinkId && allCases.length){ const it=allCases.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.imagerie]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
+  useEffect(()=>{ if(selected){ markVu(selected.id); } },[selected]);
 
   if(selected) {
     const c = allCases.find(x=>x.id===selected.id);
@@ -2641,7 +2892,14 @@ function IconoScreen({ deepLinkId, onBack }) {
               </div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{c.title}</div>
-                <Tag label={c.type} color={c.color}/>
+                <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
+                  <Tag label={c.type} color={c.color}/>
+                  {isVu(c.id) && (
+                    <span style={{display:"inline-flex", alignItems:"center", gap:4, fontSize:11, fontWeight:700, color:"#16A34A", background:"#DCFCE7", borderRadius:20, padding:"2px 9px"}}>
+                      <span style={{width:8, height:8, borderRadius:"50%", background:"#16A34A", display:"inline-block"}}/> Vu
+                    </span>
+                  )}
+                </div>
               </div>
               <div style={{color:C.sub, fontSize:18}}>&#8250;</div>
             </div>
@@ -3542,7 +3800,7 @@ function DiversScreen({ deepLinkId, onBack }) {
 }
 
 // - AnnuaireScreen -
-function AnnuaireScreen({ onBack }) {
+function AnnuaireScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [search, setSearch]     = useState("");
@@ -3552,6 +3810,8 @@ function AnnuaireScreen({ onBack }) {
   const contacts = store.contacts;
 
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
+
+  useEffect(()=>{ if(deepLinkId && contacts.length){ const it=contacts.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.contacts]);
 
   const cats = ["Tous", ...Array.from(new Set(contacts.map(p=>p.categorie||"Autre").filter(Boolean)))];
 
@@ -15903,6 +16163,19 @@ function ScoresScreen({ deepLinkId, onBack }) {
 // ────────────────────────────────────────────────────────────────────────────
 // SondageScreen : module sondages avec vote temps réel
 // ────────────────────────────────────────────────────────────────────────────
+const SONDAGE_AUDIENCES = [
+  { key:"tous",        label:"Tout le monde", emoji:"👥" },
+  { key:"medecin",     label:"Médecins",      emoji:"🩺" },
+  { key:"infirmier",   label:"Infirmiers",    emoji:"💉" },
+  { key:"aide_soignant", label:"Aides-soignants", emoji:"🧑‍⚕️" },
+  { key:"brancardier", label:"Brancardiers",  emoji:"🚪" },
+  { key:"ambulancier", label:"Ambulanciers",  emoji:"🚑" },
+];
+function audienceLabels(arr) {
+  if (!Array.isArray(arr) || !arr.length || arr.includes("tous")) return "Tout le monde";
+  return SONDAGE_AUDIENCES.filter(a => arr.includes(a.key)).map(a => a.label).join(", ");
+}
+
 function SondageScreen({ onBack }) {
   const C = useC();
   const { store } = useData();
@@ -15957,6 +16230,9 @@ function SondageScreen({ onBack }) {
     const [description, setDescription] = useState(editing?.description || "");
     const [options, setOptions] = useState(editing?.options?.length ? [...editing.options] : ["", ""]);
     const [multiple, setMultiple] = useState(editing?.multiple || false);
+    const [audience, setAudience] = useState(
+      Array.isArray(editing?.audience) && editing.audience.length ? [...editing.audience] : ["tous"]
+    );
     const [author, setAuthor] = useState(editing?.author || "");
     const [closesAt, setClosesAt] = useState(toLocalInput(editing?.closes_at));
     const [saving, setSaving] = useState(false);
@@ -15976,6 +16252,7 @@ function SondageScreen({ onBack }) {
         description: description.trim() || null,
         options: validOptions,
         multiple,
+        audience: audience.length ? audience : ["tous"],
         author: author.trim() || null,
         closes_at: closesAt ? new Date(closesAt).toISOString() : null,
       };
@@ -16020,6 +16297,32 @@ function SondageScreen({ onBack }) {
           style={{background:C.blueLight, border:"none", borderRadius:8, padding:"8px 14px", cursor:"pointer", color:C.navy, fontSize:13, fontWeight:700, marginBottom:16}}>
           + Ajouter une option
         </button>
+
+        {/* À qui s'adresse le sondage */}
+        <label style={lbl}>À qui s'adresse ce sondage ?</label>
+        <div style={{display:"flex", flexWrap:"wrap", gap:8, marginBottom:16}}>
+          {SONDAGE_AUDIENCES.map(a => {
+            const on = audience.includes(a.key);
+            return (
+              <button key={a.key} onClick={()=>{
+                setAudience(prev => {
+                  if (a.key === "tous") return ["tous"];
+                  let next = prev.filter(k => k !== "tous");
+                  if (next.includes(a.key)) next = next.filter(k => k !== a.key);
+                  else next = [...next, a.key];
+                  return next.length ? next : ["tous"];
+                });
+              }} style={{
+                display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:20,
+                border:`1.5px solid ${on ? "#7C3AED" : C.border}`, background: on ? "#7C3AED" : C.white,
+                color: on ? "#fff" : C.text, fontSize:13, fontWeight:700, cursor:"pointer",
+              }}>
+                <span>{a.emoji}</span>{a.label}
+                {on && <span style={{fontSize:13, fontWeight:900}}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
 
         {/* Choix multiple */}
         <div onClick={()=>setMultiple(v=>!v)} style={{display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:multiple?"#F3E8FF":C.white, border:`1.5px solid ${multiple?"#7C3AED":C.border}`, borderRadius:10, marginBottom:12, cursor:"pointer"}}>
@@ -16131,6 +16434,9 @@ function SondageScreen({ onBack }) {
           <div style={{fontSize:11, opacity:.75, marginTop:10}}>
             {sondage.author ? `Par ${sondage.author}` : "Anonyme"}
             {sondage.closes_at && ` · Clôture : ${new Date(sondage.closes_at).toLocaleDateString("fr-FR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}`}
+          </div>
+          <div style={{fontSize:11, opacity:.9, marginTop:6, display:"flex", alignItems:"center", gap:6}}>
+            🎯 <span style={{fontWeight:700}}>S'adresse à :</span> {audienceLabels(sondage.audience)}
           </div>
         </div>
 
@@ -16322,6 +16628,12 @@ function SondageScreen({ onBack }) {
                   {s.multiple && " · choix multiple"}
                   {s.author && ` · ${s.author}`}
                 </div>
+                {!(Array.isArray(s.audience) && (s.audience.includes("tous") || !s.audience.length) || !s.audience) && (
+                  <div style={{marginTop:6, display:"inline-block", fontSize:10, fontWeight:700, color:"#7C3AED",
+                    background:"#F3E8FF", borderRadius:6, padding:"3px 8px"}}>
+                    🎯 {audienceLabels(s.audience)}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -17469,13 +17781,13 @@ const PEDIA_MEDS_IN = [
   {
     id:"suf_in_ped", nom:"Sufentanil (intranasal)",
     unite:"µg", doseMin:0.5, doseMax:0.5,
-    doseAdditionnelle:0.5,
+    doseAdditionnelle:0.25,
     // ≤ 10 kg : ampoule 10 µg/2 mL = 5 µg/mL ; > 10 kg : 250 µg/5 mL = 50 µg/mL
     concPetit:5, concGrand:50,
     ampPetit:"10 µg / 2 mL (≤ 10 kg)", ampGrand:"250 µg / 5 mL (> 10 kg)",
     color:"#7C3AED",
     infoExtra:true,
-    remarques:"Utiliser pur. Dose additionnelle : 0,5 µg/kg. Atomiseur MAD. +0,1 mL espace mort inclus.",
+    remarques:"Utiliser pur. Dose additionnelle : demi-dose, soit 0,25 µg/kg. Atomiseur MAD. +0,1 mL espace mort inclus.",
   },
   {
     id:"midaz_in_sed_ped", nom:"Midazolam IN — Anxiolyse",
@@ -17913,6 +18225,8 @@ function PediaDoses({ onBack }) {
 
 function PediaFiches({ fiches, loading, selected, setSelected, onBack }) {
   const C = useC();
+
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
 
   if (selected) {
     const f = selected;
@@ -19759,10 +20073,10 @@ function EchoApprentissage({ protocole }) {
             <div style={{background:protocole.color, color:"#fff", borderRadius:"50%", width:24, height:24, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800, flexShrink:0}}>{i+1}</div>
             <div style={{fontSize:14, fontWeight:800, color:C.navy}}>{c.zone}</div>
           </div>
-          <div style={{display:"flex", gap:8, alignItems:"flex-start", flexWrap:"wrap"}}>
+          <div style={{display:"flex", gap:8, alignItems:"stretch", flexWrap:"nowrap"}}>
             {/* Schéma jambe (TVP) */}
             {c.jambeSchema && (
-              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
+              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
                 <JambeSchema vue={c.jambeSchema.vue} cy={c.jambeSchema.cy} label={c.jambeSchema.label}/>
                 <div style={{fontSize:9, fontWeight:700, marginTop:2, color: c.jambeSchema.vue==="posterieure" ? "#BE185D" : "#1D4ED8"}}>
                   {c.jambeSchema.vue==="posterieure" ? "Vue postérieure" : "Vue antérieure"}
@@ -19771,27 +20085,27 @@ function EchoApprentissage({ protocole }) {
             )}
             {/* Schéma sonde sur buste */}
             {c.sonde && (
-              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
+              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
                 <BusteSonde sonde={c.sonde}/>
                 <div style={{fontSize:9, color:C.sub, fontWeight:600, marginTop:2}}>{c.sonde.type==="lineaire" ? "Linéaire" : c.sonde.type==="cardiaque" ? "Cardiaque" : "Convexe"}</div>
               </div>
             )}
             {/* Priorité : vidéo > image réelle > schéma */}
             {imagesCoupe[i]?.video_url ? (
-              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
+              <div style={{flex:1, minWidth:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
                 <video src={resoudreUrlEcho(imagesCoupe[i].video_url)} autoPlay loop muted playsInline
                   onClick={()=>setImgZoom({ video_url: imagesCoupe[i].video_url, legende: imagesCoupe[i].legende })}
-                  style={{width:130, maxHeight:150, objectFit:"contain", borderRadius:8, cursor:"zoom-in", border:`1px solid ${C.border}`, background:"#000"}}/>
-                <div style={{fontSize:9, color:C.sub, fontWeight:600, marginTop:2}}>{imagesCoupe[i].legende || "Vidéo écho"}</div>
+                  style={{width:"100%", maxHeight:340, objectFit:"contain", borderRadius:8, cursor:"zoom-in", border:`1px solid ${C.border}`, background:"#000"}}/>
+                <div style={{fontSize:9, color:C.sub, fontWeight:600, marginTop:2}}>{imagesCoupe[i].legende || "Vidéo écho — appuyer pour agrandir"}</div>
               </div>
             ) : imagesCoupe[i]?.url ? (
-              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
+              <div style={{flex:1, minWidth:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
                 <img src={resoudreUrlEcho(imagesCoupe[i].url)} alt={c.zone} onClick={()=>setImgZoom(imagesCoupe[i])}
-                  style={{width:130, maxHeight:150, objectFit:"contain", borderRadius:8, cursor:"zoom-in", border:`1px solid ${C.border}`}}/>
+                  style={{width:"100%", maxHeight:340, objectFit:"contain", borderRadius:8, cursor:"zoom-in", border:`1px solid ${C.border}`}}/>
                 <div style={{fontSize:9, color:C.sub, fontWeight:600, marginTop:2}}>{imagesCoupe[i].legende || "Image écho"}</div>
               </div>
             ) : c.coeur ? (
-              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center"}}>
+              <div style={{flexShrink:0, background:C.bg, borderRadius:10, padding:"4px 6px", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center"}}>
                 <CoeurVue vue={c.coeur}/>
                 <div style={{fontSize:9, color:C.sub, fontWeight:600, marginTop:2}}>Vue à l'écran</div>
               </div>
@@ -22100,7 +22414,7 @@ function AppInner() {
 
   useEffect(()=>{
     if(contentRef.current) contentRef.current.scrollTop = 0;
-  },[screen]);
+  },[screen, navVersion]);
 
   useEffect(()=>{
     document.body.style.background = theme.bg;
@@ -22212,7 +22526,7 @@ function AppInner() {
         {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack}/>}
         {screen==="calcAdulte" && <CalcAdulteScreen key={"calcAdulte-"+navVersion} onBack={goBack}/>}
         {screen==="echo"       && <EchoScreen key={"echo-"+navVersion} onBack={goBack}/>}
-        {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} onBack={goBack}/>}
+        {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
       </div>
 
