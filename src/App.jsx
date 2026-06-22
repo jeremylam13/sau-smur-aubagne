@@ -1511,11 +1511,10 @@ function HomeScreen({onNav}) {
         if (!quizOfTheDay && !hasEcg) return null;
 
         const cardBase = {
-          flex: 1, minWidth: 0, border: "none", borderRadius: 18,
-          padding: "14px 12px", cursor: "pointer", textAlign: "left",
+          flex: 1, minWidth: 0, border: "none", borderRadius: 16,
+          padding: "12px 12px", cursor: "pointer", textAlign: "left",
           color: "#fff", position: "relative", overflow: "hidden",
           display: "flex", flexDirection: "column", touchAction: "manipulation",
-          minHeight: 150,
         };
 
         return (
@@ -1530,14 +1529,17 @@ function HomeScreen({onNav}) {
                   boxShadow: `0 6px 18px ${quizOfTheDay.color || "#6366F1"}40`,
                 }}>
                 {/* Décor emoji en fond */}
-                <div style={{position:"absolute", right:-14, bottom:-20, fontSize:90, opacity:.13, transform:"rotate(-12deg)", pointerEvents:"none", lineHeight:1}}>{quizOfTheDay.icon || "🧠"}</div>
+                <div style={{position:"absolute", right:-14, bottom:-20, fontSize:80, opacity:.13, transform:"rotate(-12deg)", pointerEvents:"none", lineHeight:1}}>{quizOfTheDay.icon || "🧠"}</div>
                 {/* Badge */}
-                <div style={{display:"inline-flex", alignItems:"center", gap:5, background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:12, fontSize:9, fontWeight:900, letterSpacing:.5, alignSelf:"flex-start", marginBottom:10}}>
+                <div style={{display:"inline-flex", alignItems:"center", gap:5, background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:12, fontSize:9, fontWeight:900, letterSpacing:.5, alignSelf:"flex-start", marginBottom:8}}>
                   <span>✨</span> QUIZ DU JOUR
                   {dailyDone && <span style={{marginLeft:4, background:"rgba(34,197,94,.85)", padding:"1px 6px", borderRadius:8, fontSize:8}}>✓</span>}
                 </div>
-                <div style={{fontSize:30, lineHeight:1, marginBottom:8, position:"relative", zIndex:1}}>{quizOfTheDay.icon || "🧠"}</div>
-                <div style={{fontSize:13, fontWeight:900, lineHeight:1.25, marginBottom:5, position:"relative", zIndex:1, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{quizOfTheDay.title}</div>
+                {/* Icône + titre sur la même ligne */}
+                <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:6, position:"relative", zIndex:1}}>
+                  <span style={{fontSize:24, lineHeight:1, flexShrink:0}}>{quizOfTheDay.icon || "🧠"}</span>
+                  <span style={{fontSize:13, fontWeight:900, lineHeight:1.2, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{quizOfTheDay.title}</span>
+                </div>
                 <div style={{fontSize:10, opacity:.88, position:"relative", zIndex:1, marginBottom:10}}>
                   📝 {countQuestions(quizOfTheDay)} Q · ⏱ ~{quizOfTheDay.estimatedMin || 5} min
                   {dailyDone && <> · {dailyScores[quizOfTheDay.id].score}/{dailyScores[quizOfTheDay.id].total}</>}
@@ -1561,11 +1563,14 @@ function HomeScreen({onNav}) {
                   <polyline points="0,30 30,30 38,30 46,8 54,52 62,30 95,30 103,30 111,18 119,42 127,30 160,30 168,30 176,12 184,48 192,30 200,30" fill="none" stroke="#fff" strokeWidth="3"/>
                 </svg>
                 {/* Badge */}
-                <div style={{display:"inline-flex", alignItems:"center", gap:5, background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:12, fontSize:9, fontWeight:900, letterSpacing:.5, alignSelf:"flex-start", marginBottom:10}}>
+                <div style={{display:"inline-flex", alignItems:"center", gap:5, background:"rgba(255,255,255,.18)", padding:"3px 9px", borderRadius:12, fontSize:9, fontWeight:900, letterSpacing:.5, alignSelf:"flex-start", marginBottom:8}}>
                   <span>🎯</span> ENTRAÎNEMENT
                 </div>
-                <div style={{fontSize:30, lineHeight:1, marginBottom:8, position:"relative", zIndex:1}}>❤️</div>
-                <div style={{fontSize:13, fontWeight:900, lineHeight:1.25, marginBottom:5, position:"relative", zIndex:1}}>Lecture d'ECG</div>
+                {/* Icône + titre sur la même ligne */}
+                <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:6, position:"relative", zIndex:1}}>
+                  <span style={{fontSize:24, lineHeight:1, flexShrink:0}}>❤️</span>
+                  <span style={{fontSize:13, fontWeight:900, lineHeight:1.2}}>Lecture d'ECG</span>
+                </div>
                 <div style={{fontSize:10, opacity:.9, position:"relative", zIndex:1, marginBottom:10, lineHeight:1.35}}>
                   📈 Série de {Math.min(10, ecgPool.length)} tracés · analyse puis révèle
                 </div>
