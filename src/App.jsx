@@ -82,6 +82,7 @@ function rowToItem(table, row) {
   if ("has_second_ecg" in r) { r.hasSecondEcg = r.has_second_ecg; delete r.has_second_ecg; }
   if ("second_title" in r) { r.secondTitle = r.second_title; delete r.second_title; }
   if ("has_second_image" in r) { r.hasSecondImage = r.has_second_image; delete r.has_second_image; }
+  if ("medias_apres" in r) { r.mediasApres = r.medias_apres || []; delete r.medias_apres; }
   if ("video_url"   in r) { r.videoUrl   = r.video_url;   delete r.video_url; }
   if ("is_video"    in r) { r.isVideo    = r.is_video;    delete r.is_video; }
   if ("lien_url"    in r) { r.lienUrl    = r.lien_url;    delete r.lien_url; }
@@ -127,6 +128,8 @@ function itemToRow(table, item) {
   delete r.photoData;
   // On retire aussi les données binaires des médias pour l'upsert DB
   if (r.medias) r.medias = (r.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "" }));
+  if (r.mediasApres) r.mediasApres = (r.mediasApres || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "" }));
+  if ("mediasApres" in r) { r.medias_apres = r.mediasApres; delete r.mediasApres; }
 
   if ("imageUrl"         in r) { r.image_url          = r.imageUrl;         delete r.imageUrl; }
   if ("imageUrl2"        in r) { r.image_url2         = r.imageUrl2;        delete r.imageUrl2; }
@@ -240,11 +243,13 @@ function DataProvider({ children }) {
           if (fd) item[dataField] = fd.value;
         }
       }
-      if (item.medias?.length) {
-        item.medias = await Promise.all(item.medias.map(async m => {
-          const fd = await safeGet("file_" + m.url);
-          return fd ? { ...m, data: fd.value } : m;
-        }));
+      for (const mediaKey of ["medias", "mediasApres"]) {
+        if (item[mediaKey]?.length) {
+          item[mediaKey] = await Promise.all(item[mediaKey].map(async m => {
+            const fd = await safeGet("file_" + m.url);
+            return fd ? { ...m, data: fd.value } : m;
+          }));
+        }
       }
     }
     return items;
@@ -501,27 +506,30 @@ function DataProvider({ children }) {
       }
     }
     // Médias complémentaires — upload chaque fichier vers Supabase Storage
-    if (item.medias && item.medias.length > 0) {
-      item.medias = await Promise.all(item.medias.map(async m => {
-        if (!m.data || m.isVideo) return m; // vidéos YouTube : pas de base64
-        // Si l'URL est déjà une URL publique Supabase, ne pas re-uploader
-        if (m.url && m.url.startsWith("http")) {
-          await safeSet("file_" + m.url, m.data);
-          return m;
-        }
-        try {
-          const fileName = m.name || m.url || ("media_" + Date.now() + ".jpg");
-          const publicUrl = await uploadMedia(fileName, m.data);
-          if (publicUrl) {
-            await safeSet("file_" + publicUrl, m.data); // cache local aussi
-            return { ...m, url: publicUrl, data: null }; // data retirée → stockée sur Storage
+    // Médias complémentaires (avant ET après diagnostic) — upload vers Supabase Storage
+    for (const mediaKey of ["medias", "mediasApres"]) {
+      if (item[mediaKey] && item[mediaKey].length > 0) {
+        item[mediaKey] = await Promise.all(item[mediaKey].map(async m => {
+          if (!m.data || m.isVideo) return m; // vidéos YouTube : pas de base64
+          // Si l'URL est déjà une URL publique Supabase, ne pas re-uploader
+          if (m.url && m.url.startsWith("http")) {
+            await safeSet("file_" + m.url, m.data);
+            return m;
           }
-        } catch(e) {
-          // Fallback : garder en localStorage
-          if (m.url) await safeSet("file_" + m.url, m.data);
-        }
-        return m;
-      }));
+          try {
+            const fileName = m.name || m.url || ("media_" + Date.now() + ".jpg");
+            const publicUrl = await uploadMedia(fileName, m.data);
+            if (publicUrl) {
+              await safeSet("file_" + publicUrl, m.data); // cache local aussi
+              return { ...m, url: publicUrl, data: null }; // data retirée → stockée sur Storage
+            }
+          } catch(e) {
+            // Fallback : garder en localStorage
+            if (m.url) await safeSet("file_" + m.url, m.data);
+          }
+          return m;
+        }));
+      }
     }
   }
 
@@ -2827,13 +2835,24 @@ function IconoScreen({ deepLinkId, onBack }) {
             <video src={c.imageData||c.imageUrl} controls style={{width:"100%", borderRadius:10, display:"block"}}/>
           ) : (c.imageData||c.imageUrl) ? (
             <ClickableImage src={c.imageData||c.imageUrl} alt={c.title} style={{borderRadius:10}}/>
-          ) : (
+          ) : !(c.medias?.length) ? (
             <div>
               <div style={{fontSize:60}}>{"🩻"}</div>
               <div style={{color:"rgba(255,255,255,.5)", fontSize:11, marginTop:8}}>{c.type} - {c.title}</div>
             </div>
-          )}
+          ) : null}
         </div>
+        {/* Médias supplémentaires affichés AVANT la révélation (plusieurs incidences, vidéos...) */}
+        {c.medias?.length > 0 && (
+          <div style={{marginBottom:16}}>
+            {(c.imageData||c.imageUrl) && (
+              <div style={{fontSize:11, fontWeight:800, color:"#9B59B6", marginBottom:8}}>
+                AUTRES CLICHÉS ({c.medias.length})
+              </div>
+            )}
+            <MediaGallery medias={c.medias}/>
+          </div>
+        )}
         <div style={{background:C.amberLight, border:`2px solid ${C.amber}`, borderRadius:12, padding:14, marginBottom:16}}>
           <div style={{fontSize:11, fontWeight:800, color:C.amber, marginBottom:4}}>QUESTION</div>
           <div style={{fontSize:14, fontWeight:700, color:C.text}}>{c.question}</div>
@@ -2855,10 +2874,10 @@ function IconoScreen({ deepLinkId, onBack }) {
               </div>
             )}
             </Card>
-            {c.medias?.length > 0 && (
+            {c.mediasApres?.length > 0 && (
               <div style={{marginTop:4}}>
                 <div style={{fontSize:11, fontWeight:800, color:"#9B59B6", marginBottom:8}}>IMAGES COMPLÉMENTAIRES</div>
-                <MediaGallery medias={c.medias}/>
+                <MediaGallery medias={c.mediasApres}/>
               </div>
             )}
           </>
@@ -4194,7 +4213,7 @@ function AdminScreen({ onNewItem, onBack }) {
   const [tab, setTab] = useState("home");
   const [saved, setSaved] = useState(null);
   const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
-  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" });
+  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[], tags:"" });
   const [ecgConfirmed, setEcgConfirmed] = useState(false);
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
@@ -4257,12 +4276,12 @@ function AdminScreen({ onNewItem, onBack }) {
     if(editingI !== null) {
       const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
       await updateItem("imagerie","admin_imagerie",item,["image"]);
-      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""});
       showSaved("Cas modifié !");
     } else {
       const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
       await addItem("imagerie","admin_imagerie",item,["image"]);
-      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],tags:""}); setImagerieConfirmed(false);
+      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""}); setImagerieConfirmed(false);
       showSaved("Cas ajouté !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
     }
@@ -4752,14 +4771,20 @@ function AdminScreen({ onNewItem, onBack }) {
             <label style={lbl}>Diagnostic</label>
             <textarea style={{...inp, height:70, resize:"vertical"}} placeholder="Diagnostic + commentaires..." value={iForm.diag} onChange={e=>setIForm({...iForm,diag:e.target.value})}/>
             <MediaUploader
-              label="Photos / Vidéos supplémentaires (optionnel)"
+              label="Photos / Vidéos supplémentaires (affichées avant le diagnostic)"
               medias={iForm.medias}
               onChange={upd => setIForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
               accept="image/*,video/*"
             />
+            <MediaUploader
+              label="Photos / Vidéos après le diagnostic (annotées, comparatifs...)"
+              medias={iForm.mediasApres||[]}
+              onChange={upd => setIForm(f=>({...f, mediasApres: typeof upd==="function"?upd(f.mediasApres||[]):upd}))}
+              accept="image/*,video/*"
+            />
                         <label style={lbl}>Tags (optionnel)</label>
             <input style={inp} placeholder="#Scanner #Radio #Fracture" value={iForm.tags} onChange={e=>setIForm({...iForm,tags:e.target.value})}/>
-            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], tags:"" }); setImagerieConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[], tags:"" }); setImagerieConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             {/* Case à cocher obligatoire */}
             <div onClick={()=>setImagerieConfirmed(v=>!v)}
               style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
