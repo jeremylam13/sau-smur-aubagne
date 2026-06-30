@@ -24446,7 +24446,7 @@ function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
   };
 
   return (
-    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 40px", overflowX: "hidden", width: "100%" }}>
+    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 40px", overflowX: "hidden", width: "calc(100% + 32px)", margin: "-16px -16px 0", boxSizing: "border-box" }}>
       <div style={{ background: Abg_C.navy, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 8px rgba(26,58,92,.18)" }}>
         <button onClick={onBack} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, color: "#fff", padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>← Retour</button>
         <div style={{ background: cfg.iconBg, border: `1.5px solid ${cfg.iconBorder}`, borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
@@ -24629,7 +24629,7 @@ function Abg_HomeScreen({ onSelect, onBackApp }) {
     setGlobalResults(found.slice(0, 20));
   };
   return (
-    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 48px", overflowX: "hidden", width: "100%" }}>
+    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 48px", overflowX: "hidden", width: "calc(100% + 32px)", margin: "-16px -16px 0", boxSizing: "border-box" }}>
       <div style={{ background: `linear-gradient(135deg, ${Abg_C.navy} 0%, ${Abg_C.navyLight} 100%)`, padding: "20px 18px 20px", boxShadow: "0 2px 12px rgba(26,58,92,.2)" }}>
         {onBackApp && (
           <button onClick={onBackApp} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,.12)", border: "none", borderRadius: 8, color: "rgba(255,255,255,.9)", fontSize: 12, fontWeight: 700, padding: "5px 10px", marginBottom: 12, cursor: "pointer", WebkitTapHighlightColor: "transparent" }}>
