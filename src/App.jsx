@@ -959,6 +959,38 @@ function useVus(moduleKey) {
   return { vus, markVu, isVu };
 }
 
+// ── Hook checklist matériel des gestes : cases cochées persistantes par mobile ─
+// Stockage local (localStorage) → chaque appareil garde son état, jusqu'à réinit.
+if(!window._gchk) window._gchk = window._gchk || {};
+
+function useGesteChecklist(gesteId) {
+  const key = "sau_geste_chk_" + gesteId;
+  const [checked, setChecked] = useState(() => {
+    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : {}; }
+    catch(e) { return {}; }
+  });
+
+  useEffect(() => {
+    try { const raw = localStorage.getItem(key); setChecked(raw ? JSON.parse(raw) : {}); }
+    catch(e) { setChecked({}); }
+  }, [gesteId]);
+
+  function toggle(i) {
+    setChecked(prev => {
+      const next = { ...prev, [i]: !prev[i] };
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch(e){}
+      return next;
+    });
+  }
+
+  function reset() {
+    setChecked({});
+    try { localStorage.removeItem(key); } catch(e){}
+  }
+
+  return { checked, toggle, reset };
+}
+
 // ── Tirage d'une série d'entraînement ECG avec rotation complète ──────────────
 // Mémorise localement (par mobile) les ECG déjà tirés, pour ne pas refaire
 // toujours les mêmes : on pioche d'abord parmi les non-encore-vus en
@@ -1482,6 +1514,7 @@ function HomeScreen({onNav}) {
     {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
     {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
     {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
+    {id:"antibioguide", icon:"🦠", label:"Antibioguide",    color:"#16A34A", bg:"#DCFCE7"},
     {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
     {id:"calcAdulte",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
@@ -1806,6 +1839,7 @@ function DerniersAjoutsWidget({ onNav }) {
     divers:    { label:"Divers",    icon:"⚡",  color:"#1A3A5C", bg:"#EFF6FF", nav:"divers" },
     contacts:  { label:"Contact",   icon:"📒",  color:"#1A3A5C", bg:"#F0FDF4", nav:"annuaire" },
     recoflash: { label:"Reco Flash",icon:"📋",  color:"#0891B2", bg:"#CFFAFE", nav:"recoflash" },
+    quizzes:   { label:"Quiz",      icon:"🧠",  color:"#6366F1", bg:"#EEF2FF", nav:"quiz" },
   };
 
   const derniers = React.useMemo(() => {
@@ -1819,7 +1853,7 @@ function DerniersAjoutsWidget({ onNav }) {
         all.push({ title, module: cfg.label, icon: cfg.icon, color: cfg.color, bg: cfg.bg, nav: cfg.nav, id: x.id, ts: x.created_at });
       });
     }
-    return all.sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 3);
+    return all.sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 5);
   }, [store]);
 
   if (!derniers.length) return null;
@@ -3316,6 +3350,71 @@ const GESTES_CATEGORIES = [
   { id: "autre",          label: "Autre",         icon: "⚡",  color: "#64748B" },
 ];
 
+function MaterielChecklist({ geste, color }) {
+  const C = useC();
+  const { checked, toggle, reset } = useGesteChecklist(geste.id);
+  const items = geste.materiel || [];
+  const nbCoches = items.filter((_, i) => checked[i]).length;
+  const tout = nbCoches === items.length && items.length > 0;
+  const secColor = C.blue;
+
+  return (
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:7}}>
+        <div style={{background:secColor+"18", borderRadius:10, width:34, height:34,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, flexShrink:0}}>
+          🧰
+        </div>
+        <span style={{fontSize:12, fontWeight:800, color:secColor, letterSpacing:.5, textTransform:"uppercase"}}>Matériel nécessaire</span>
+      </div>
+      <div style={{background:C.white, borderRadius:14, border:`1.5px solid ${secColor}30`,
+        borderLeft:`4px solid ${secColor}`, boxShadow:"0 2px 8px rgba(26,58,92,.05)", overflow:"hidden"}}>
+        <div style={{padding:"12px 14px"}}>
+          {/* Barre de progression + réinitialiser */}
+          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:12}}>
+            <div style={{flex:1, height:8, background:C.border, borderRadius:20, overflow:"hidden"}}>
+              <div style={{height:"100%", width:`${items.length?Math.round((nbCoches/items.length)*100):0}%`,
+                background: tout ? C.green : secColor, borderRadius:20, transition:"width .25s"}}/>
+            </div>
+            <span style={{fontSize:11, fontWeight:800, color: tout ? C.green : secColor, flexShrink:0, minWidth:54, textAlign:"right"}}>
+              {tout ? "✓ Prêt" : `${nbCoches}/${items.length} prêts`}
+            </span>
+            {nbCoches > 0 && (
+              <button onClick={reset} style={{flexShrink:0, background:"none", border:`1px solid ${C.border}`,
+                borderRadius:8, padding:"3px 9px", fontSize:10, fontWeight:700, color:C.sub, cursor:"pointer",
+                WebkitTapHighlightColor:"transparent"}}>
+                ↺ Réinitialiser
+              </button>
+            )}
+          </div>
+
+          {/* Cases à cocher */}
+          <div style={{display:"flex", flexDirection:"column", gap:6}}>
+            {items.map((item,i)=>{
+              const on = !!checked[i];
+              return (
+                <button key={i} onClick={()=>toggle(i)} style={{
+                  display:"flex", alignItems:"flex-start", gap:10, width:"100%", textAlign:"left",
+                  background: on ? C.green+"12" : "transparent", border:`1px solid ${on ? C.green+"55" : C.border}`,
+                  borderRadius:10, padding:"9px 11px", cursor:"pointer", WebkitTapHighlightColor:"transparent",
+                }}>
+                  <div style={{flexShrink:0, marginTop:1, width:20, height:20, borderRadius:6,
+                    border:`2px solid ${on ? C.green : C.sub+"77"}`, background: on ? C.green : "transparent",
+                    display:"flex", alignItems:"center", justifyContent:"center"}}>
+                    {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                  </div>
+                  <div style={{fontSize:13, color: on ? C.sub : C.text, lineHeight:1.5,
+                    textDecoration: on ? "line-through" : "none"}}>{item}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GestesScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
@@ -3588,21 +3687,9 @@ function GesteDetail({geste, onBack}) {
         </Section>
       )}
 
-      {/* Matériel */}
+      {/* Matériel — checklist cochable */}
       {(geste.materiel||[]).length > 0 && (
-        <Section icon="🧰" label="Matériel nécessaire" color={C.blue}>
-          <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:8}}>
-            {geste.materiel.map((item,i)=>(
-              <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10}}>
-                <div style={{background:C.blue+"22", borderRadius:6, padding:"2px 8px",
-                  fontSize:11, fontWeight:800, color:C.blue, flexShrink:0, marginTop:1, minWidth:22, textAlign:"center"}}>
-                  {i+1}
-                </div>
-                <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{item}</div>
-              </div>
-            ))}
-          </div>
-        </Section>
+        <MaterielChecklist geste={geste} color={COLOR}/>
       )}
 
       {/* Étapes */}
@@ -6549,6 +6636,216 @@ function ShockIndexCalculator({ onBack }) {
 // ApgarCalculator : Score d'Apgar (adaptation néonatale)
 // Évaluation à 1 minute, 5 minutes, et éventuellement 10 minutes
 // ────────────────────────────────────────────────────────────────────────────
+// Composant générique pour les scores de récupération/sortie post-sédation (5 items 0/1/2, /10, seuil ≥ 9)
+function ScoreSortieGenerique({ onBack, titre, sousTitre, emoji, color, colorDark, criteres, seuil, interpHaut, interpMoyen, interpBas, noteBas }) {
+  const C = useC();
+  const COLOR = color;
+
+  const empty = {};
+  criteres.forEach(c => { empty[c.key] = null; });
+  const [vals, setVals] = useState({ ...empty });
+
+  const values = Object.values(vals);
+  const complet = !values.some(v => v === null);
+  const total = complet ? values.reduce((a, b) => a + b, 0) : null;
+
+  let sev = null;
+  if (total !== null) {
+    if (total >= seuil) sev = { color: C.green, bg: C.greenLight, ...interpHaut };
+    else if (total >= seuil - 2) sev = { color: C.amber, bg: C.amberLight, ...interpMoyen };
+    else sev = { color: "#DC2626", bg: C.redLight, ...interpBas };
+  }
+
+  function setCritere(key, value) { setVals(v => ({ ...v, [key]: value })); }
+  function reset() { setVals({ ...empty }); }
+
+  function ScoreBtn({ option, selected, onSelect }) {
+    const isSelected = option.value === selected;
+    return (
+      <button onClick={() => onSelect(option.value)} style={{
+        flex: 1, padding: "8px 6px", border: `1.5px solid ${isSelected ? COLOR : C.border}`,
+        background: isSelected ? COLOR + "12" : C.white, borderRadius: 10, cursor: "pointer",
+        textAlign: "center", touchAction: "manipulation", display: "flex", flexDirection: "column",
+        alignItems: "center", gap: 4, minHeight: 70,
+      }}>
+        <span style={{display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24,
+          borderRadius: "50%", background: isSelected ? COLOR : C.border, color: isSelected ? "#fff" : C.sub,
+          fontSize: 12, fontWeight: 900, flexShrink: 0}}>{option.value}</span>
+        <span style={{fontSize: 10, lineHeight: 1.25, fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? COLOR : C.text}}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{background: `linear-gradient(135deg, ${COLOR} 0%, ${colorDark} 100%)`, borderRadius: 16,
+        padding: 18, marginTop: 8, marginBottom: 14, color: "#fff"}}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>{emoji}</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>{titre}</div>
+            <div style={{fontSize: 11, opacity: .85}}>{sousTitre}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Critères */}
+      {criteres.map(crit => (
+        <div key={crit.key} style={{marginBottom: 12}}>
+          <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 6}}>
+            <span style={{background: COLOR + "18", color: COLOR, borderRadius: 8, padding: "3px 9px",
+              fontSize: 13, fontWeight: 900, flexShrink: 0}}>{crit.letter}</span>
+            <span style={{fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.3}}>{crit.label}</span>
+          </div>
+          <div style={{display: "flex", gap: 6}}>
+            {crit.options.map(opt => (
+              <ScoreBtn key={opt.value} option={opt} selected={vals[crit.key]} onSelect={v => setCritere(crit.key, v)}/>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Résultat */}
+      <div style={{background: sev ? sev.bg : "#F1F5F9", border: `2px solid ${sev ? sev.color : C.border}`,
+        borderRadius: 16, padding: 18, marginTop: 6, marginBottom: 10}}>
+        <div style={{display: "flex", alignItems: "center", gap: 14, marginBottom: total !== null ? 10 : 0}}>
+          <div style={{background: sev ? sev.color : C.sub, color: "#fff", borderRadius: 12,
+            padding: "8px 16px", fontSize: 24, fontWeight: 900, minWidth: 78, textAlign: "center"}}>
+            {total !== null ? `${total}/10` : "—/10"}
+          </div>
+          <div style={{flex: 1}}>
+            <div style={{fontSize: 14, fontWeight: 800, color: sev ? sev.color : C.sub}}>
+              {sev ? sev.label : "Cotez les 5 critères"}
+            </div>
+          </div>
+        </div>
+        {sev && (
+          <>
+            <div style={{fontSize: 12, color: C.text, lineHeight: 1.55, marginBottom: 8}}>{sev.interp}</div>
+            <div style={{background: "#fff", borderRadius: 10, padding: "10px 12px"}}>
+              <div style={{fontSize: 10, fontWeight: 800, color: sev.color, marginBottom: 3}}>CONDUITE À TENIR</div>
+              <div style={{fontSize: 12, color: C.text, lineHeight: 1.5}}>{sev.action}</div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Reset */}
+      {total !== null && (
+        <button onClick={reset} style={{width: "100%", background: C.white, border: `1px solid ${C.border}`,
+          borderRadius: 10, padding: "10px", fontSize: 12, fontWeight: 700, color: C.sub, cursor: "pointer",
+          marginBottom: 12, touchAction: "manipulation"}}>↺ Réinitialiser</button>
+      )}
+
+      {/* Note de bas */}
+      {noteBas && (
+        <div style={{background: C.blueLight, borderRadius: 12, padding: "12px 14px", fontSize: 11,
+          color: C.sub, lineHeight: 1.6}}>{noteBas}</div>
+      )}
+    </div>
+  );
+}
+
+function MassCalculator({ onBack }) {
+  return (
+    <ScoreSortieGenerique
+      onBack={onBack}
+      titre="Score MASS"
+      sousTitre="Modified Aldrete — récupération post-sédation"
+      emoji="🛌"
+      color="#0D9488"
+      colorDark="#134E4A"
+      seuil={9}
+      criteres={[
+        { key: "activite", letter: "A", label: "Activité (motricité)", options: [
+          { value: 0, label: "Aucun membre" },
+          { value: 1, label: "2 membres" },
+          { value: 2, label: "4 membres mobiles" },
+        ]},
+        { key: "respiration", letter: "R", label: "Respiration", options: [
+          { value: 0, label: "Apnée" },
+          { value: 1, label: "Dyspnée / superficielle" },
+          { value: 2, label: "Respire & tousse" },
+        ]},
+        { key: "circulation", letter: "C", label: "Circulation (PA vs pré-sédation)", options: [
+          { value: 0, label: "> ± 50 mmHg" },
+          { value: 1, label: "± 20-50 mmHg" },
+          { value: 2, label: "± 20 mmHg" },
+        ]},
+        { key: "conscience", letter: "Co", label: "Conscience", options: [
+          { value: 0, label: "Ne répond pas" },
+          { value: 1, label: "Réveillable à l'appel" },
+          { value: 2, label: "Complètement réveillé" },
+        ]},
+        { key: "spo2", letter: "S", label: "Saturation (SpO₂)", options: [
+          { value: 0, label: "< 90% sous O₂" },
+          { value: 1, label: "O₂ pour > 90%" },
+          { value: 2, label: "> 92% à l'air" },
+        ]},
+      ]}
+      interpHaut={{ label: "Récupération satisfaisante", interp: "Score ≥ 9 : le patient a récupéré ses fonctions vitales et neurologiques après la sédation.",
+        action: "Critère de récupération atteint. Poursuivre la surveillance jusqu'à stabilité, puis envisager le passage à l'évaluation d'aptitude à la sortie (MPADSS). Maintenir le monitorage tant que le patient n'est pas pleinement réveillé." }}
+      interpMoyen={{ label: "Récupération incomplète", interp: "Score 7-8 : récupération en cours, critères non encore atteints.",
+        action: "Maintenir la surveillance rapprochée (conscience, respiration, SpO₂, hémodynamique). Oxygénothérapie si besoin. Réévaluer régulièrement. Ne pas lever la surveillance." }}
+      interpBas={{ label: "Récupération insuffisante", interp: "Score < 7 : récupération insuffisante, vigilance requise.",
+        action: "Surveillance continue rapprochée. Rechercher et traiter la cause (sédation résiduelle, hypoxie, instabilité hémodynamique). Oxygène, stimulation, antagonisation si indiquée (flumazénil/naloxone selon agent). Avis médical." }}
+      noteBas="Le score MASS (Modified Aldrete) évalue la récupération immédiate après sédation/anesthésie. Un score ≥ 9 est généralement requis pour considérer la phase de réveil terminée. À corréler à la clinique."
+    />
+  );
+}
+
+function MpadssCalculator({ onBack }) {
+  return (
+    <ScoreSortieGenerique
+      onBack={onBack}
+      titre="Score MPADSS"
+      sousTitre="Aptitude à la sortie post-sédation"
+      emoji="🚪"
+      color="#7C3AED"
+      colorDark="#5B21B6"
+      seuil={9}
+      criteres={[
+        { key: "vitaux", letter: "V", label: "Signes vitaux (PA + pouls vs pré-op)", options: [
+          { value: 0, label: "> 40% variation" },
+          { value: 1, label: "20-40% variation" },
+          { value: 2, label: "< 20% variation" },
+        ]},
+        { key: "deambulation", letter: "D", label: "Déambulation", options: [
+          { value: 0, label: "Impossible / vertiges" },
+          { value: 1, label: "Avec aide" },
+          { value: 2, label: "Démarche stable" },
+        ]},
+        { key: "nausees", letter: "N", label: "Nausées / vomissements", options: [
+          { value: 0, label: "Sévères" },
+          { value: 1, label: "Modérés (traités)" },
+          { value: 2, label: "Minimes" },
+        ]},
+        { key: "douleur", letter: "Do", label: "Douleur", options: [
+          { value: 0, label: "Sévère" },
+          { value: 1, label: "Modérée" },
+          { value: 2, label: "Minime / contrôlée" },
+        ]},
+        { key: "saignement", letter: "S", label: "Saignement", options: [
+          { value: 0, label: "Sévère" },
+          { value: 1, label: "Modéré" },
+          { value: 2, label: "Minime" },
+        ]},
+      ]}
+      interpHaut={{ label: "Apte à la sortie", interp: "Score ≥ 9 : le patient remplit les critères d'aptitude à la sortie (retour à domicile accompagné).",
+        action: "Sortie envisageable si : accompagnant présent, consignes écrites remises, pas de conduite automobile pendant 24h, contact médical disponible. Vérifier la reprise des fonctions (miction, prise orale selon protocole). Décision médicale finale." }}
+      interpMoyen={{ label: "Sortie différée", interp: "Score 7-8 : critères de sortie non encore réunis.",
+        action: "Prolonger la surveillance. Traiter les symptômes résiduels (antalgiques, antiémétiques). Réévaluer après amélioration. Ne pas autoriser la sortie." }}
+      interpBas={{ label: "Sortie contre-indiquée", interp: "Score < 7 : le patient ne peut pas sortir en l'état.",
+        action: "Maintenir en surveillance. Rechercher une complication (instabilité hémodynamique, douleur non contrôlée, saignement actif, sédation résiduelle). Avis médical. Réévaluer régulièrement." }}
+      noteBas="Le score MPADSS (Modified PADSS) évalue l'aptitude du patient à quitter le service après sédation/anesthésie ambulatoire. Un score ≥ 9 est requis pour autoriser la sortie, accompagné des critères cliniques habituels. À corréler à la clinique. Décision finale médicale."
+    />
+  );
+}
+
 function ApgarCalculator({ onBack }) {
   const C = useC();
   const COLOR = "#EC4899";
@@ -11860,6 +12157,150 @@ function AvpuCalculator({ onBack }) {
 // RamsayCalculator : Score de Ramsay (sédation, 6 niveaux)
 // Cible thérapeutique courante : R2-R3 (patient calme, coopératif)
 // ────────────────────────────────────────────────────────────────────────────
+function AsaCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0369A1";
+
+  const [selected, setSelected] = useState(null);
+  const [urgence, setUrgence] = useState(false);
+
+  // Les 6 classes ASA (American Society of Anesthesiologists)
+  const CLASSES = [
+    {
+      id: 1, roman: "I", title: "Patient sain",
+      icon: "💚", color: "#22C55E", bgLight: "#DCFCE7",
+      description: "Patient normal, en bonne santé, non fumeur, consommation d'alcool nulle ou minime.",
+      exemples: "Sujet sain.",
+    },
+    {
+      id: 2, roman: "II", title: "Maladie systémique légère",
+      icon: "🙂", color: "#84CC16", bgLight: "#ECFCCB",
+      description: "Atteinte systémique légère, sans limitation fonctionnelle.",
+      exemples: "Tabagisme actif, consommation d'alcool, grossesse, obésité (30 ≤ IMC < 40), diabète ou HTA bien équilibrés, asthme léger.",
+    },
+    {
+      id: 3, roman: "III", title: "Maladie systémique sévère",
+      icon: "😐", color: "#F59E0B", bgLight: "#FEF3C7",
+      description: "Atteinte systémique sévère avec limitation fonctionnelle, sans menace vitale immédiate.",
+      exemples: "Diabète ou HTA mal équilibrés, BPCO, obésité morbide (IMC ≥ 40), hépatite active, pacemaker, FEVG modérément abaissée, IRC dialysée, ATCD (> 3 mois) d'IDM/AVC/AIT/stent.",
+    },
+    {
+      id: 4, roman: "IV", title: "Menace vitale permanente",
+      icon: "🟧", color: "#F97316", bgLight: "#FFEDD5",
+      description: "Atteinte systémique sévère représentant une menace vitale constante.",
+      exemples: "IDM/AVC/AIT/stent récents (< 3 mois), ischémie myocardique en cours, dysfonction valvulaire sévère, FEVG très abaissée, sepsis, CIVD, IRC non dialysée.",
+    },
+    {
+      id: 5, roman: "V", title: "Moribond",
+      icon: "🔴", color: "#DC2626", bgLight: "#FEE2E2",
+      description: "Patient moribond dont la survie est improbable sans l'intervention.",
+      exemples: "Rupture d'anévrisme aortique, polytraumatisme grave, hémorragie intracrânienne avec effet de masse, ischémie mésentérique avec défaillance multiviscérale.",
+    },
+    {
+      id: 6, roman: "VI", title: "Mort encéphalique",
+      icon: "⚫", color: "#1F2937", bgLight: "#E5E7EB",
+      description: "Patient en état de mort encéphalique, dont les organes vont être prélevés en vue d'un don.",
+      exemples: "Prélèvement d'organes.",
+    },
+  ];
+
+  const cls = CLASSES.find(c => c.id === selected);
+
+  const Item = ({ c }) => {
+    const isSel = selected === c.id;
+    return (
+      <button onClick={()=>setSelected(c.id)} style={{
+        width:"100%", background: isSel ? c.bgLight : C.white,
+        border:`2px solid ${isSel ? c.color : C.border}`, borderRadius:12,
+        padding:"11px 14px", cursor:"pointer", textAlign:"left", touchAction:"manipulation",
+        display:"flex", alignItems:"center", gap:12, marginBottom:6,
+      }}>
+        <div style={{background:c.color, color:"#fff", borderRadius:10, minWidth:42, height:36,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, fontWeight:900, flexShrink:0, padding:"0 6px"}}>
+          {c.roman}
+        </div>
+        <span style={{fontSize:24, flexShrink:0}}>{c.icon}</span>
+        <div style={{flex:1, minWidth:0}}>
+          <div style={{fontSize:13, fontWeight: isSel?800:700, color: isSel?c.color:C.text, lineHeight:1.3}}>{c.title}</div>
+          <div style={{fontSize:10, color: isSel?c.color:C.sub, marginTop:2, lineHeight:1.4}}>{c.description}</div>
+        </div>
+      </button>
+    );
+  };
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{background:`linear-gradient(135deg, ${COLOR} 0%, #0C4A6E 100%)`, borderRadius:16,
+        padding:18, marginTop:8, marginBottom:14, color:"#fff"}}>
+        <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:6}}>
+          <span style={{fontSize:24}}>🩺</span>
+          <div>
+            <div style={{fontSize:17, fontWeight:800}}>Classification ASA</div>
+            <div style={{fontSize:11, opacity:.85}}>Statut physique pré-anesthésique (ASA-PS)</div>
+          </div>
+        </div>
+        <div style={{fontSize:11, opacity:.9, lineHeight:1.5, marginTop:8}}>
+          Évalue l'état de santé global du patient avant anesthésie. Classification clinique, à corréler au contexte.
+        </div>
+      </div>
+
+      {/* Liste des classes */}
+      <div style={{marginBottom:14}}>
+        {CLASSES.map(c => <Item key={c.id} c={c}/>)}
+      </div>
+
+      {/* Modificateur E (urgence) */}
+      <button onClick={()=>setUrgence(u=>!u)} style={{
+        width:"100%", background: urgence ? "#FEF3C7" : C.white,
+        border:`2px solid ${urgence ? "#D97706" : C.border}`, borderRadius:12,
+        padding:"11px 14px", cursor:"pointer", textAlign:"left", touchAction:"manipulation",
+        display:"flex", alignItems:"center", gap:12, marginBottom:14,
+      }}>
+        <div style={{flexShrink:0, width:22, height:22, borderRadius:6,
+          border:`2px solid ${urgence ? "#D97706" : C.sub+"77"}`, background: urgence ? "#D97706" : "transparent",
+          display:"flex", alignItems:"center", justifyContent:"center"}}>
+          {urgence && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13, fontWeight:800, color: urgence ? "#B45309" : C.text}}>Modificateur « E » — Urgence</div>
+          <div style={{fontSize:10, color: urgence ? "#B45309" : C.sub, marginTop:2, lineHeight:1.4}}>
+            À ajouter quand le report de l'intervention augmenterait la menace pour la vie ou un organe.
+          </div>
+        </div>
+      </button>
+
+      {/* Résultat */}
+      {cls && (
+        <div style={{background:cls.bgLight, border:`2px solid ${cls.color}`, borderRadius:16, padding:18, marginBottom:10}}>
+          <div style={{fontSize:11, fontWeight:800, color:cls.color, letterSpacing:.5, marginBottom:6}}>RÉSULTAT</div>
+          <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:10}}>
+            <div style={{background:cls.color, color:"#fff", borderRadius:12, padding:"8px 16px", fontSize:24, fontWeight:900}}>
+              ASA {cls.roman}{urgence ? " E" : ""}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14, fontWeight:800, color:C.text}}>{cls.title}</div>
+              {urgence && <div style={{fontSize:11, fontWeight:700, color:"#B45309", marginTop:2}}>Contexte d'urgence</div>}
+            </div>
+          </div>
+          <div style={{fontSize:12, color:C.text, lineHeight:1.55, marginBottom:8}}>{cls.description}</div>
+          <div style={{background:"#fff", borderRadius:10, padding:"10px 12px"}}>
+            <div style={{fontSize:10, fontWeight:800, color:cls.color, marginBottom:3}}>EXEMPLES</div>
+            <div style={{fontSize:12, color:C.text, lineHeight:1.5}}>{cls.exemples}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Note de bas */}
+      <div style={{background:C.blueLight, borderRadius:12, padding:"12px 14px", fontSize:11, color:C.sub, lineHeight:1.6}}>
+        La classification ASA-PS reflète l'état physique global, indépendamment du type de chirurgie. Elle ne prédit pas à elle seule le risque opératoire mais y contribue. L'attribution finale relève de l'anesthésiste.
+      </div>
+    </div>
+  );
+}
+
 function RamsayCalculator({ onBack }) {
   const C = useC();
   const COLOR = "#0D9488";
@@ -14794,6 +15235,33 @@ function SpesiCalculator({ onBack }) {
 
 const SCORES_LIST = [
   {
+    id: "asa",
+    category: "autres",
+    title: "Classification ASA",
+    subtitle: "Statut physique pré-anesthésique (ASA-PS)",
+    icon: "🩺",
+    color: "#0369A1",
+    tags: ["#anesthésie", "#préop", "#ASA", "#risque", "#sédation"],
+  },
+  {
+    id: "mass",
+    category: "autres",
+    title: "Score MASS",
+    subtitle: "Modified Aldrete — récupération post-sédation",
+    icon: "🛌",
+    color: "#0D9488",
+    tags: ["#sédation", "#réveil", "#aldrete", "#surveillance", "#analgésie"],
+  },
+  {
+    id: "mpadss",
+    category: "autres",
+    title: "Score MPADSS",
+    subtitle: "Aptitude à la sortie post-sédation",
+    icon: "🚪",
+    color: "#7C3AED",
+    tags: ["#sédation", "#sortie", "#PADSS", "#ambulatoire", "#analgésie"],
+  },
+  {
     id: "glasgow",
     category: "neuro",
     title: "Score de Glasgow",
@@ -16021,6 +16489,8273 @@ function QuizResult({ quiz, score, total, answers, onRestart, onBack }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ███ MODULE ANTIBIOGUIDE (intégré) ███
+// Portail antibiothérapie SAU/SMUR Aubagne — 19 modules. Palette Abg_C synchronisée
+// avec le thème jour/nuit via Abg_applyTheme(). Tous les identifiants préfixés Abg_.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANTIBIOGUIDE SAU/SMUR AUBAGNE — PORTAIL COMPLET
+// Centre Hospitalier Edmond Garcin — Dr Allemand-Sourrieu, 2022
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let Abg_C = {
+  bg:          "#F0F4F8",
+  card:        "#FFFFFF",
+  navy:        "#1A3A5C",
+  navyLight:   "#2A4E7A",
+  blue:        "#2E7EAD",
+  blueLight:   "#EBF4FA",
+  green:       "#2E9E6B",
+  greenLight:  "#E8F7F1",
+  red:         "#E05260",
+  redLight:    "#FDF0F1",
+  amber:       "#E8A82E",
+  amberLight:  "#FEF7E8",
+  purple:      "#7C3AED",
+  purpleLight: "#EDE9FE",
+  teal:        "#0D9488",
+  tealLight:   "#CCFBF1",
+  text:        "#1A2B3C",
+  sub:         "#5A7184",
+  border:      "#DCE8F0",
+  white:       "#FFFFFF",
+};
+
+// Palette sombre dérivée (alignée sur le thème DARK de l'app principale)
+const Abg_C_LIGHT = { ...Abg_C };
+const Abg_C_DARK = {
+  bg:"#0F172A", card:"#1E293B", navy:"#0F172A", navyLight:"#1E293B",
+  blue:"#38BDF8", blueLight:"#0F2942", green:"#34D399", greenLight:"#0D2B20",
+  red:"#F87171", redLight:"#2D1217", amber:"#FBBF24", amberLight:"#2A1F05",
+  purple:"#A78BFA", purpleLight:"#1E1B3A", teal:"#2DD4BF", tealLight:"#0D2B28",
+  text:"#F1F5F9", sub:"#94A3B8", border:"#334155", white:"#1E293B",
+};
+// Applique le thème courant à la palette de l'antibioguide
+function Abg_applyTheme(isDark) {
+  const src = isDark ? Abg_C_DARK : Abg_C_LIGHT;
+  for (const k in src) Abg_C[k] = src[k];
+}
+
+// ─── ICÔNES ──────────────────────────────────────────────────────────────────
+const Abg_ICONS = {
+  urinaire:    "💦",
+  pulmonaire:  "🫁",
+  digestif:    "💩",
+  neuro:       "🧠",
+  paludisme:   "🦟",
+  neutropenie: "😷",
+  peau:        "🪡",
+  pied:        "🦶",
+  ist:         "👩‍❤️‍👨",
+  orl2:        "👂",
+  grossesse:   "🤰",
+  tb:          "🫁",
+  voyage:      "🌍",
+  aes:         "🩸",
+  ei:          "🫀",
+  arthrite:    "🦴",
+  sepsis:      "🚨",
+  portail:     "🦠",
+  igh:         "👩",
+  orl:         "🫦",
+};
+
+const Abg_MODULES = [
+  { id: "sepsis",       label: "Sepsis & Choc Septique",      subtitle: "Réanimation, ATB probabiliste, contrôle de source",       color: Abg_C.red,    colorLight: Abg_C.redLight,    tags: ["qSOFA","Lactates","Noradrénaline","Bundle"] },
+  { id: "aes",          label: "AES — Exposition aux Liquides Biologiques", subtitle: "Sang, sécrétions sexuelles, viol — TPE VIH, VHB, VHC",  color: Abg_C.red,    colorLight: Abg_C.redLight,    tags: ["AES","TPE","VIH","VHB","VHC","Viol"] },
+  { id: "paludisme",   label: "Accès Palustre",             subtitle: "P. falciparum, non falciparum, artésunate IV",          color: Abg_C.amber,  colorLight: Abg_C.amberLight,  tags: ["Falciparum","Grave","Artésunate"] },
+  { id: "grossesse",    label: "Antibiotiques & Grossesse",    subtitle: "Molécules autorisées/CI par trimestre, situations fréquentes",  color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Grossesse","CRAT","Tératogène","Trimestre"] },
+  { id: "arthrite",     label: "Arthrite Septique",               subtitle: "Infection articulaire bactérienne — probabiliste",        color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Arthrite","Articulaire","SARM","Sepsis"] },
+  { id: "ei",           label: "Endocardite Infectieuse",          subtitle: "EI valvulaire native/prothétique — traitement probabiliste", color: Abg_C.red,    colorLight: Abg_C.redLight,    tags: ["EI","Endocardite","Prothèse","Valvulaire"] },
+  { id: "voyage",       label: "Fièvre au Retour de Voyage",   subtitle: "Paludisme, dengue, typhoïde, rickettsiose, diarrhée",      color: Abg_C.amber,  colorLight: Abg_C.amberLight,  tags: ["Paludisme","Dengue","Typhoïde","Rickettsiose"] },
+  { id: "ist",         label: "IST",                          subtitle: "Syphilis, Trichomonas vaginalis",                        color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Syphilis","Trichomonas","IST"] },
+  { id: "orl",         label: "Infections Cervicales Profondes", subtitle: "Adénite, abcès péri-pharyngé, cellulite, médiastinite", color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Adénite","Abcès","Cellulite","Médiastinite"] },
+  { id: "digestif",    label: "Infections Digestives",      subtitle: "Abg_C. difficile, médical, chirurgical",                    color: Abg_C.amber,  colorLight: Abg_C.amberLight,  tags: ["Abg_C. diff","Péritonite","Angiocholite"] },
+  { id: "igh",         label: "Infections Génitales Hautes", subtitle: "IGH non compliquée, compliquée, post-partum, DIU", color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Salpingite","ATO","Post-partum","DIU"] },
+  { id: "neuro",       label: "Infections Neuro-Méningées", subtitle: "Méningite, méningoencéphalite, aide à la PL",           color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Méningite","Encéphalite","PL"] },
+  { id: "orl2",        label: "Infections ORL",               subtitle: "Angine, OMA, sinusite, coqueluche",                     color: Abg_C.blue,   colorLight: Abg_C.blueLight,   tags: ["Angine","OMA","Sinusite","Coqueluche"] },
+  { id: "pulmonaire",  label: "Infections Pulmonaires",     subtitle: "BPCO, bronchite, PAC, nosocomial, réanimation",         color: Abg_C.teal,   colorLight: Abg_C.tealLight,   tags: ["BPCO","PAC","Grippal","USI"] },
+  { id: "urinaire",    label: "Infections Urinaires",       subtitle: "Cystite, PNA, IU masculine, grossesse, IUAS",          color: Abg_C.blue,   colorLight: Abg_C.blueLight,   tags: ["Cystite","PNA","BLSE","Grossesse"] },
+  { id: "neutropenie", label: "Neutropénie Fébrile",        subtitle: "Haut risque, faible risque, sepsis, BLSE",              color: Abg_C.red,    colorLight: Abg_C.redLight,    tags: ["PNN <500","BLSE","Sepsis"] },
+  { id: "peau",        label: "Peau & Tissus Mous",         subtitle: "Érysipèle, fasciite, gangrène, morsure, escarre",       color: Abg_C.blue,   colorLight: Abg_C.blueLight,   tags: ["Érysipèle","Fasciite","SARM"] },
+  { id: "pied",        label: "Pied du Diabétique",         subtitle: "Plaie, dermohypodermite, ostéite, choc septique",       color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Ostéite","SARM","Sepsis"] },
+  { id: "tb",           label: "Tuberculose",                  subtitle: "Suspicion, isolement, diagnostic, traitement — DO",        color: Abg_C.purple, colorLight: Abg_C.purpleLight, tags: ["Tuberculose","BAAR","Quadrithérapie","Isolement"] },
+];
+
+const Abg_DATA_IU = {
+  id: "root",
+  label: "Infections Urinaires",
+  children: [
+    {
+      id: "cystite",
+      label: "Cystite aiguë",
+      subtitle: "Femme hors grossesse",
+      icon: "💧",
+      color: Abg_C.blue,
+      colorLight: Abg_C.blueLight,
+      type: "info",
+      infoColor: Abg_C.amber,
+      infoColorLight: Abg_C.amberLight,
+      infoTitle: "Facteurs de risque de complications",
+      infoItems: [
+        "Anomalie organique ou fonctionnelle de l'arbre urinaire (résidu, reflux, lithiase, tumeur, acte récent…)",
+        "Sexe masculin",
+        "Grossesse",
+        "Sujet âgé : >75 ans OU >65 ans avec >3 critères de Fried",
+        "Immunodépression grave",
+        "IRC sévère (clairance <30 mL/min)",
+        "⚠️ Le DIABÈTE N'EST PAS un facteur de risque de complication",
+      ],
+      children: [
+        {
+          id: "cystite_simple",
+          label: "Non — Cystite aiguë simple",
+          subtitle: "Aucun facteur de risque",
+          icon: "🟢",
+          color: Abg_C.green,
+          colorLight: Abg_C.greenLight,
+          result: {
+            condition: "Cystite aiguë simple",
+            indication: "BU positive + symptômes : brûlures, pollakiurie, impériosités, hématurie",
+            preferred: [
+              { label: "1ère intention", drug: "Fosfomycine-Trométamol (Monuril®)", dose: "3 g en dose unique", duration: "Prise unique", notes: "Très peu de résistances. Inefficace sur S. saprophyticus." },
+              { label: "2ème intention", drug: "Pivmécillinam (Selexid®)", dose: "400 mg × 2/j", duration: "3 jours", notes: "Reco HAS/SPILF 2024" },
+            ],
+            alternatives: [
+              { label: "Si E. coli BLSE (après ECBU de contrôle)", items: ["Monuril® 3 g dose unique","Selexid® 5 jours","Nitrofurantoïne 5 jours","Amox + Ac. Clav. 5–7 jours","Bactrim® 3 jours"] },
+            ],
+            notRecommended: ["Amoxicilline","Quinolones 1ère génération (résistance élevée)","Amoxicilline + Ac. clavulanique","Bactrim® (résistance ~20%)","Céphalosporines (impact microbiote)"],
+            followUp: "Évolution favorable → pas d'ECBU de contrôle. Persistance à 72h → ECBU.",
+            source: "Antibioguide CHEG 2022",
+          },
+        },
+        {
+          id: "cystite_risque",
+          label: "Oui — Cystite à risque de complications",
+          subtitle: "Au moins un facteur de risque présent",
+          icon: "⚠️",
+          color: Abg_C.amber,
+          colorLight: Abg_C.amberLight,
+          children: [
+            {
+              id: "cystite_risque_urgent",
+              label: "Signes de gravité → traitement immédiat",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Cystite à risque — traitement non différable",
+                indication: "Présence de signes de gravité — ne pas différer",
+                preferred: [
+                  { label: "1ère intention", drug: "Nitrofurantoïne", dose: "Standard", duration: "5 jours", notes: "Puis adaptation à l'antibiogramme (reco HAS/SPILF 2024)" },
+                  { label: "2ème intention", drug: "Fosfomycine-Trométamol (Monuril®)", dose: "3 g à J1, J3 et J5", duration: "Schéma J1–J3–J5", notes: "Puis adaptation à l'antibiogramme" },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Adaptation obligatoire à l'antibiogramme dès résultats disponibles.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "cystite_risque_differe",
+              label: "Pas de signe de gravité → traitement différé",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Cystite à risque — traitement différable",
+                indication: "Attendre l'antibiogramme — population à haut risque de résistances",
+                preferred: [
+                  { label: "Par ordre de préférence (adapté à l'ATBgramme)", drug: "Amoxicilline", dose: "Standard", duration: "7 jours", notes: null },
+                  { label: "", drug: "Pivmécillinam", dose: "Standard", duration: "7 jours", notes: null },
+                  { label: "", drug: "Nitrofurantoïne", dose: "Standard", duration: "5 jours", notes: "Reco HAS/SPILF 2024" },
+                  { label: "", drug: "Monuril® 3 g", dose: "3 g à J1, J3 et J5", duration: "Schéma J1–J3–J5", notes: null },
+                  { label: "", drug: "Triméthoprime", dose: "300 mg × 1/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Molécules choisies : les moins pourvoyeuses de résistances avec excellente efficacité.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "pna",
+      label: "Pyélonéphrite aiguë",
+      subtitle: "PNA simple ou à risque de complications",
+      icon: "🔥",
+      color: Abg_C.red,
+      colorLight: Abg_C.redLight,
+      question: "Signes de gravité ?",
+      children: [
+            {
+              id: "pna_sans_gravite",
+              label: "PNA sans signe de gravité",
+              question: "Facteur de risque de complications ?",
+              type: "info",
+              infoColor: Abg_C.amber,
+              infoColorLight: Abg_C.amberLight,
+              infoTitle: "Facteurs de risque de complications",
+              infoItems: [
+                "Anomalie organique ou fonctionnelle de l'arbre urinaire (résidu, reflux, lithiase, tumeur, acte récent…)",
+                "Sexe masculin",
+                "Grossesse",
+                "Sujet âgé : >75 ans OU >65 ans avec >3 critères de Fried",
+                "Immunodépression grave",
+                "IRC sévère (clairance <30 mL/min)",
+              ],
+              icon: "🟢",
+              color: Abg_C.green,
+              colorLight: Abg_C.greenLight,
+              children: [
+                {
+                      id: "pna_sg_simple",
+                      label: "Non — PNA simple",
+                      icon: "✅",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "PNA simple sans signe de gravité",
+                        indication: "BU/ECBU. Echo non recommandée si évolution favorable.",
+                        preferred: [
+                          { label: "Probabiliste (C3G IV)", drug: "Ceftriaxone ou Céfotaxime", dose: "Standard IV", duration: "Relais après ATBgramme", notes: null },
+                          { label: "Alternative probabiliste", drug: "Fluoroquinolones PO (ofloxacine ou ciprofloxacine)", dose: "Standard PO", duration: "Sauf FQ dans les 6 mois", notes: null },
+                          { label: "Si CI C3G + FQ", drug: "Aminoside monothérapie (amikacine ou gentamicine)", dose: "Standard", duration: "5–7 jours", notes: "Ou aztréonam (polyallergie, en hospit.)" },
+                        ],
+                        alternatives: [
+                          { label: "Relais selon ATBgramme — durée totale 7 j", items: ["Amoxicilline (à privilégier si sensible)","Amoxicilline + Ac. clavulanique","Céfixime : 10 jours","Fluoroquinolone : 7 jours","Bactrim® : 10 jours"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Pas d'ECBU de contrôle sauf évolution défavorable à 72h. Si souche BLSE → fiche spécifique.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pna_sg_risque",
+                      label: "Oui — PNA à risque de complications",
+                      icon: "⚠️",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PNA à risque de complications, sans signe de gravité",
+                        indication: "BU/ECBU + urée/créat/CRP + Uroscanner (ou écho si CI).",
+                        preferred: [
+                          { label: "Probabiliste (C3G IV — à privilégier)", drug: "Céfotaxime ou Ceftriaxone", dose: "Standard IV", duration: "Relais après ATBgramme", notes: "Préférer C3G : résistances aux quinolones fréquentes dans cette population" },
+                          { label: "Alternative probabiliste", drug: "Fluoroquinolones PO (ofloxacine ou ciprofloxacine)", dose: "Standard", duration: "Sauf FQ dans les 6 mois", notes: null },
+                          { label: "Si CI C3G + FQ", drug: "Aminoside monothérapie", dose: "Amikacine ou Gentamicine", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Relais selon ATBgramme — durée totale 10–14 j", items: ["Amoxicilline (à privilégier si sensible)","Amoxicilline + Ac. clavulanique","Céfixime","Fluoroquinolone","Bactrim®"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Pas d'ECBU de contrôle sauf évolution défavorable à 72h.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "pna_grave_node",
+              label: "PNA grave (sepsis / choc / drainage)",
+              question: "Facteurs de risque EBLSE ?",
+              type: "info",
+              infoColor: Abg_C.red,
+              infoColorLight: Abg_C.redLight,
+              infoTitle: "Facteurs de risque d'entérobactérie BLSE",
+              infoItems: [
+                "Colonisation urinaire ou IU à EBLSE dans les 6 mois",
+                "ATB par pénicilline+inhibiteur, C2G/C3G, ou FQ dans les 6 mois",
+                "Voyage récent en zone d'endémie EBLSE",
+                "Hospitalisation dans les 3 mois précédents",
+                "Vie en établissement de long séjour",
+              ],
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                    {
+                      id: "pna_grave_no_blse",
+                      label: "Non — sans FdR BLSE",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PNA grave — sans facteur de risque BLSE",
+                        indication: "HOSPITALISATION. BU/ECBU + Hémocultures + Uroscanner en urgence.",
+                        preferred: [
+                          { label: "Traitement probabiliste", drug: "C3G parentérale + Amikacine", dose: "Ceftriaxone ou Céfotaxime + Amikacine", duration: "10–14 jours", notes: "⚠️ Fluoroquinolones non indiquées en probabiliste (résistances variables)" },
+                          { label: "Si allergie bétalactamines", drug: "Aztréonam + Amikacine", dose: "Standard", duration: "10–14 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Relais oral si contrôle du sepsis (10–14 j total)", items: ["Amoxicilline","Bactrim®","Amoxicilline + Ac. clavulanique","Céfixime","Fluoroquinolones"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Désescalade dès antibiogramme. Drainage chirurgical si obstacle.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pna_grave_blse_yes",
+                      label: "Oui — avec FdR BLSE",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "PNA grave — avec facteurs de risque BLSE",
+                        indication: "HOSPITALISATION. BU/ECBU + Hémocultures + Uroscanner en urgence.",
+                        preferred: [
+                          { label: "Traitement probabiliste", drug: "Carbapénème + Amikacine", dose: "Imipénème ou Méropénème + Amikacine 15 mg/kg/j IV (dosage résiduel)", duration: "10–14 jours", notes: null },
+                          { label: "Si allergie bétalactamines", drug: "Aztréonam + Amikacine", dose: "Standard", duration: "10–14 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Relais selon ATBgramme BLSE (sujet normorénal)", items: [
+                            "1er choix : Ciprofloxacine 500 mg matin+soir / Bactrim fort 1 cp matin+soir",
+                            "2ème choix : Amoxicilline–Ac. clavulanique 1 g × 3/j",
+                            "3ème choix : Céfépime 2 g × 2–3/j IV / Céfoxitine (E.coli) / Pip-Tazo 4 g × 3/j / Témocilline 2 g × 2/j IV",
+                            "4ème choix : Imipénème ou Méropénème 1 g × 3/j IV / Ertapénème 1 g/j (relais domicile)",
+                          ]},
+                        ],
+                        notRecommended: [],
+                        followUp: "Réévaluation clinique indispensable à 72h. Désescalade dès ATBgramme disponible.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+      ],
+    },
+    {
+      id: "iu_masculine",
+      label: "IU masculine",
+              question: "Sévérité clinique ?",
+      subtitle: "Prostatite, épididymite, orchite",
+      icon: "♂️",
+      color: Abg_C.navy,
+      colorLight: Abg_C.blueLight,
+      children: [
+        {
+              id: "iu_masc_febrile",
+              label: "Fièvre / Immunodépression / Rétention / Mauvaise tolérance SFU",
+              question: "Sepsis grave / Choc / Indication drainage ?",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "iu_masc_no_sepsis",
+                      label: "Non — IU fébrile sans sepsis grave",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "IU masculine fébrile sans sepsis grave ni drainage",
+                        indication: "BU/ECBU/Hémocultures. Écho sus-pubienne si douleurs lombaires, RAU ou sepsis sévère.",
+                        preferred: [
+                          { label: "1ère intention (à privilégier)", drug: "C3G parentérale : Céfotaxime ou Ceftriaxone IV", dose: "Standard", duration: "7 j puis relais", notes: "Privilégier C3G : résistances aux quinolones fréquentes" },
+                          { label: "Alternative", drug: "Fluoroquinolones PO : ofloxacine ou ciprofloxacine", dose: "Standard", duration: "Sauf FQ dans les 6 mois", notes: null },
+                          { label: "Polyallergie (hospit.)", drug: "Aztréonam", dose: "Standard", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Relais selon ATBgramme", items: [
+                            "Fluoroquinolones (à privilégier si multisensible) — 14 jours",
+                            "Bactrim® (alternative) — 14 jours",
+                            "Amoxicilline / C3G parentérale / Aztréonam",
+                            "⚠️ Céfixime, Amox+Clav, Monuril et Nitrofurantoïne n'ont PAS de place ici",
+                          ]},
+                        ],
+                        notRecommended: ["Céfixime","Amoxicilline + Ac. clavulanique","Fosfomycine-trométamol","Nitrofurantoïne"],
+                        followUp: "Durée 7 j si sans fièvre (reco SPILF 2024). 14 j si avec fièvre. 21 j si trouble du bas appareil ou autres FdR.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "iu_masc_sepsis_blse_q",
+                      label: "Oui — Sepsis grave / Choc",
+              question: "Facteurs de risque BLSE ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "iu_masc_sep_no_blse",
+                              label: "Non",
+                              icon: "🟡",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "IU masculine — sepsis grave — sans FdR BLSE",
+                                indication: "HOSPITALISATION. BU/ECBU + Hémocultures + Imagerie.",
+                                preferred: [
+                                  { label: "Traitement probabiliste", drug: "C3G parentérale + Amikacine", dose: "Ceftriaxone ou Céfotaxime + Amikacine", duration: "14 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "IRM pelvienne si évolution défavorable (abcès prostatique).",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "iu_masc_sep_blse",
+                              label: "Oui",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "IU masculine — sepsis grave — avec FdR BLSE",
+                                indication: "HOSPITALISATION. BU/ECBU + Hémocultures + Imagerie.",
+                                preferred: [
+                                  { label: "Traitement probabiliste", drug: "Carbapénème + Amikacine", dose: "Imipénème ou Méropénème + Amikacine", duration: "14 jours", notes: null },
+                                  { label: "Si allergie bétalactamines", drug: "Aztréonam + Amikacine", dose: "Standard", duration: "14 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Désescalade dès ATBgramme disponible.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+            {
+              id: "iu_masc_afebrile",
+              label: "Pas de fièvre / Pas de RAU / Bonne tolérance SFU",
+              icon: "🟢",
+              color: Abg_C.green,
+              colorLight: Abg_C.greenLight,
+              result: {
+                condition: "IU masculine — sans signe de gravité",
+                indication: "BU/ECBU obligatoire.",
+                preferred: [
+                  { label: "Traitement différé", drug: "Attendre l'antibiogramme", dose: "—", duration: "—", notes: "Différer autant que possible — adapter au germe identifié" },
+                ],
+                alternatives: [
+                  { label: "Relais selon ATBgramme (14–21 j selon contexte)", items: ["Fluoroquinolones (à privilégier)","Bactrim®"] },
+                ],
+                notRecommended: [],
+                followUp: "21 j si trouble du bas appareil, lithiase, immunodépression ou molécule autre que FQ/Bactrim/BL injectable.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+    {
+      id: "iu_grossesse",
+      label: "IU pendant la grossesse",
+              question: "Type d'IU gravidique ?",
+      subtitle: "Colonisation, cystite, PNA gravidique",
+      icon: "🤱",
+      color: Abg_C.purple,
+      colorLight: Abg_C.purpleLight,
+      children: [
+        {
+              id: "iu_grav_colonisation",
+              label: "Colonisation urinaire asymptomatique",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Colonisation urinaire gravidique",
+                indication: "Traiter si bactériurie ≥10⁵ UFC/mL (y compris strepto B). PAS de traitement probabiliste : attendre ATBgramme.",
+                preferred: [
+                  { label: "1ère intention", drug: "Amoxicilline", dose: "Standard", duration: "7 jours", notes: null },
+                  { label: "2ème intention", drug: "Pivmécillinam", dose: "Standard", duration: "7 jours", notes: null },
+                  { label: "3ème intention", drug: "Fosfomycine-Trométamol", dose: "3 g", duration: "Dose unique", notes: null },
+                  { label: "4ème intention", drug: "Triméthoprime", dose: "Standard", duration: "7 jours", notes: "À éviter les 2 premiers mois de grossesse" },
+                ],
+                alternatives: [
+                  { label: "5ème intention (selon impact écologique)", items: ["Nitrofurantoïne (traitements itératifs contre-indiqués)","Bactrim® (éviter 2 premiers mois)","Amoxicilline + Ac. clavulanique","Céfixime ou Ciprofloxacine"] },
+                ],
+                notRecommended: [],
+                followUp: "ECBU de contrôle 8–10 jours après arrêt du traitement.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "iu_grav_cystite",
+              label: "Cystite aiguë gravidique",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Cystite aiguë gravidique",
+                indication: "ECBU + ATBgramme obligatoires. Traitement probabiliste immédiat (risque PNA).",
+                preferred: [
+                  { label: "1ère intention (probabiliste)", drug: "Fosfomycine-Trométamol", dose: "3 g", duration: "Dose unique", notes: null },
+                  { label: "2ème intention", drug: "Pivmécillinam", dose: "Standard", duration: "Standard", notes: null },
+                  { label: "3ème intention", drug: "Nitrofurantoïne", dose: "Standard", duration: "Standard", notes: null },
+                ],
+                alternatives: [
+                  { label: "Relais selon ATBgramme (7 j, sauf Monuril dose unique)", items: ["Amoxicilline (à privilégier si sensible)","Pivmécillinam","Fosfomycine-Trométamol","Triméthoprime (éviter 2 premiers mois)","Nitrofurantoïne / Bactrim® / Amox+Clav / Céfixime / Cipro"] },
+                ],
+                notRecommended: [],
+                followUp: "ECBU de contrôle à 8–10 j puis mensuel jusqu'à l'accouchement.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "iu_grav_pna",
+              label: "Pyélonéphrite aiguë gravidique",
+              question: "Signes de gravité ?",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "pna_grav_no_grave",
+                      label: "Non",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PNA gravidique sans signe de gravité",
+                        indication: "ECBU en urgence. Traitement immédiat sans attendre ATBgramme.",
+                        preferred: [
+                          { label: "1ère intention", drug: "C3G injectable : Céfotaxime ou Ceftriaxone IV", dose: "Standard", duration: "10–14 jours total", notes: null },
+                          { label: "Si allergie C3G", drug: "Aztréonam (hospit.) ou Ciprofloxacine", dose: "Standard", duration: "Sauf FQ dans les 6 mois", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Relais selon ATBgramme", items: ["Amoxicilline (à privilégier si sensible)","Amoxicilline + Ac. clavulanique","Céfixime","Ciprofloxacine","Bactrim® (éviter 2 premiers mois)"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "ECBU de contrôle à 8–10 j puis mensuel jusqu'à l'accouchement.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pna_grav_grave",
+                      label: "Oui",
+              question: "ATCD colonisation/IU à EBLSE < 6 mois ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "pna_grav_no_blse",
+                              label: "Non",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "PNA gravidique GRAVE — sans ATCD BLSE",
+                                indication: "HOSPITALISATION URGENTE. ECBU + Hémocultures.",
+                                preferred: [
+                                  { label: "Traitement", drug: "C3G parentérale + Amikacine", dose: "Céfotaxime ou Ceftriaxone + Amikacine", duration: "10–14 jours", notes: null },
+                                  { label: "Si allergie", drug: "Aztréonam + Amikacine", dose: "Standard", duration: "10–14 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "ECBU de contrôle à 8–10 j puis mensuel jusqu'à l'accouchement.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "pna_grav_blse_yes",
+                              label: "Oui",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "PNA gravidique GRAVE — avec ATCD EBLSE ou choc + FdR BLSE",
+                                indication: "HOSPITALISATION URGENTE. ECBU + Hémocultures.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Imipénème + Amikacine", dose: "Standard", duration: "10–14 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Désescalade dès ATBgramme. ECBU mensuel jusqu'à l'accouchement.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+      ],
+    },
+    {
+      id: "iu_age",
+      label: "IU du sujet âgé",
+      subtitle: "Critères de fragilité (Fried)",
+      icon: "👴",
+      color: Abg_C.blue,
+      colorLight: Abg_C.blueLight,
+      result: {
+        condition: "IU du sujet âgé",
+        indication: "Seuil de risque : >75 ans OU >65 ans avec >3 critères de Fried",
+        preferred: [
+          { label: "Sujet âgé <75 ans et non fragile (<3 critères de Fried)", drug: "Même traitement que le sujet jeune", dose: "Voir protocoles cystite / PNA / IU masculine", duration: "Standard", notes: null },
+          { label: "Sujet âgé >75 ans OU >65 ans et fragile (>3 critères de Fried)", drug: "IU traitée comme «à risque de complication»", dose: "Voir protocoles cystite à risque / PNA / IU masculine", duration: "Standard", notes: "⚠️ Risque de résistance accrue aux fluoroquinolones" },
+        ],
+        alternatives: [
+          { label: "Critères de Fried (fragilité)", items: ["Perte de poids involontaire dans la dernière année","Vitesse de marche lente","Faible endurance","Faiblesse / fatigue","Activité physique réduite"] },
+        ],
+        notRecommended: [],
+        followUp: "Les symptômes aspécifiques (confusion, chutes) peuvent être le seul signe d'IU chez le sujet très âgé.",
+        source: "Antibioguide CHEG 2022",
+      },
+    },
+    {
+      id: "iuas",
+      label: "IUAS — Associée aux soins",
+      subtitle: "Sonde, soins, long séjour",
+      icon: "🏥",
+      color: Abg_C.navy,
+      colorLight: Abg_C.blueLight,
+      result: {
+        condition: "Infection urinaire associée aux soins (IUAS)",
+        indication: "NE PAS TRAITER : colonisations, signes mictionnels post-RTU sans fièvre, SIRS post-chir sans sepsis grave.",
+        preferred: [
+          { label: "Cystite (si non différable)", drug: "Fosfomycine-Trométamol / Nitrofurantoïne / Fluoroquinolone", dose: "En attendant ATBgramme", duration: "Selon ATBgramme", notes: null },
+          { label: "Pyélonéphrite — 1ère intention", drug: "Pip-Tazo ou Ceftriaxone ou Céfotaxime", dose: "Standard", duration: "Selon ATBgramme", notes: "Si CGP examen direct → Amox-Clav ± aminoside" },
+          { label: "Sepsis grave / Choc", drug: "Cas général : ajouter Amikacine. ATCD EBLSE <6 mois : Imipénème/Méropénème + Amikacine", dose: "Standard", duration: "Selon évolution", notes: null },
+        ],
+        alternatives: [
+          { label: "À NE PAS faire", items: ["Ne pas changer la sonde vésicale pour réaliser l'ECBU","Ne pas utiliser la BU si sonde endo-vésicale","Ne pas tenir compte de la leucocyturie si sonde (seuil bactériurie : ≥10⁵ UFC/mL)"] },
+        ],
+        notRecommended: [],
+        followUp: "Traiter colonisations : avant intervention au contact de l'urine / avant résection trans-urétrale / avant changement sonde endo-urétérale chez asymptomatique.",
+        source: "Antibioguide CHEG 2022 — SPILF 2015",
+      },
+    },
+  ],
+};
+
+const Abg_DATA_PULMO = {
+  id: "root",
+  label: "Infections Pulmonaires",
+  children: [
+
+    // ── 1. EXACERBATION DE BPCO ────────────────────────────────────────────
+    {
+      id: "bpco",
+      label: "Exacerbation de BPCO",
+              question: "Sévérité de la dyspnée ?",
+      subtitle: "Évaluation hors toute exacerbation",
+      icon: "💨",
+      color: Abg_C.blue,
+      colorLight: Abg_C.blueLight,
+      children: [
+        {
+              id: "bpco_leger",
+              label: "Absence de dyspnée OU VEMS > 50%",
+              icon: "🟢",
+              color: Abg_C.green,
+              colorLight: Abg_C.greenLight,
+              result: {
+                condition: "Exacerbation BPCO légère",
+                indication: "Pas d'antibiothérapie indiquée",
+                preferred: [
+                  { label: "", drug: "PAS D'ANTIBIOTHÉRAPIE", dose: "—", duration: "—", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Traitement symptomatique. Réévaluer si aggravation.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "bpco_modere",
+              label: "Dyspnée d'effort OU VEMS < 50% + expectorations purulentes verdâtres",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Exacerbation BPCO modérée",
+                indication: "Antibiothérapie indiquée",
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j — 4 jours"] },
+                ],
+                notRecommended: ["Levofloxacine non prioritaire (politique d'épargne des fluoroquinolones)"],
+                followUp: "Échec thérapeutique : éliminer une infection parenchymateuse (radio thorax) et rechercher Pseudomonas si BPCO évoluée.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "bpco_severe",
+              label: "Dyspnée au moindre effort / repos OU VEMS < 30%",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Exacerbation BPCO sévère",
+                indication: "Antibiothérapie systématique + recherche autres causes d'exacerbation",
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie / CI)", items: ["Levofloxacine 500 mg × 1/j — 7 jours"] },
+                ],
+                notRecommended: ["Levofloxacine non prioritaire (politique d'épargne des fluoroquinolones)"],
+                followUp: "Durée moyenne 10 jours. Rechercher Pseudomonas si BPCO évoluée en cas d'échec.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+    // ── 2. BRONCHITE AIGUË ─────────────────────────────────────────────────
+    {
+      id: "bronchite",
+      label: "Bronchite aiguë",
+              question: "Terrain du patient ?",
+      subtitle: "",
+      icon: "🌬️",
+      color: Abg_C.blue,
+      colorLight: Abg_C.blueLight,
+      children: [
+        {
+              id: "bronchite_sain",
+              label: "Sujet sain ou BPCO sans syndrome ventilatoire obstructif",
+              icon: "🟢",
+              color: Abg_C.green,
+              colorLight: Abg_C.greenLight,
+              result: {
+                condition: "Bronchite aiguë — sujet sain",
+                indication: "Cause virale dans la très grande majorité des cas",
+                preferred: [
+                  { label: "", drug: "PAS D'ANTIBIOTHÉRAPIE", dose: "—", duration: "—", notes: "Cause virale — traitement symptomatique" },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Traitement symptomatique exclusif.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "bronchite_age",
+              label: "Sujet âgé",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Bronchite aiguë — sujet âgé",
+                indication: "Antibiothérapie indiquée",
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j — 4 jours"] },
+                ],
+                notRecommended: [],
+                followUp: "Réévaluation à 48h.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+    // ── 3. PAC SANS SIGNE DE GRAVITÉ ───────────────────────────────────────
+    {
+      id: "pac",
+      label: "Pneumonie aiguë communautaire",
+      subtitle: "Sans signe de gravité",
+      question: "Hospitalisation ?",
+      type: "info",
+      infoColor: Abg_C.red,
+      infoColorLight: Abg_C.redLight,
+      infoTitle: "Critères d'hospitalisation",
+      infoItems: [
+        "Signes de gravité : altération conscience, PA syst <90 mmHg, FC >120/min, FR >30/min, T° <35°Abg_C ou ≥40°Abg_C",
+        "Néoplasie associée (cancer actif ou <1 an, hors basocellulaire)",
+        "Pneumonie d'inhalation ou obstacle trachéo-bronchique",
+        "Complication (épanchement pleural, abcédation)",
+        "Conditions socio-économiques défavorables / inobservance prévisible / isolement social",
+      ],
+      icon: "🫁",
+      color: Abg_C.amber,
+      colorLight: Abg_C.amberLight,
+      children: [
+            {
+              id: "pac_ambulatoire",
+              label: "Non hospitalisé — ambulatoire",
+              question: "Profil du patient ?",
+              icon: "🟢",
+              color: Abg_C.green,
+              colorLight: Abg_C.greenLight,
+              children: [
+                {
+                      id: "pac_amb_sain",
+                      label: "Sujet sain, sans signe de gravité, début brutal",
+                      subtitle: "Suspicion pneumocoque",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "PAC ambulatoire — suspicion pneumocoque",
+                        indication: "Radio pulmonaire ± ECBC ± recherche grippe. ⚠️ Antigénurie légio/pneumocoque non recommandée en ambulatoire (reco SPILF/SPLF 2025)",
+                        preferred: [
+                          { label: "Préférentielle ✓", drug: "Amoxicilline", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j — 7 jours"] },
+                        ],
+                        notRecommended: ["Ceftriaxone / Céfotaxime non recommandés en 1ère intention","Association systématique non recommandée"],
+                        followUp: "Durée 5 jours si critères de stabilité à 72h (reco SPILF/SPLF 2025). Réévaluation à 48h. Échec → macrolide ou hospitalisation si 2ème échec.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pac_amb_jeune",
+                      label: "Sujet jeune < 40 ans, début progressif, fièvre modérée, manifestation extra-respiratoire",
+                      subtitle: "Suspicion bactérie atypique (Chlamydiae, Mycoplasme, Légionelle, Coxiella)",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PAC ambulatoire — suspicion bactérie atypique",
+                        indication: "Radio pulmonaire ± ECBC ± recherche grippe. ⚠️ Antigénurie légio/pneumocoque non recommandée en ambulatoire (reco SPILF/SPLF 2025)",
+                        preferred: [
+                          { label: "Préférentielle ✓", drug: "Macrolide", dose: "Ex : Clarithromycine 500 mg × 2/j, Azithromycine 500 mg J1 puis 250 mg/j, Spiramycine 6–9 MUI en 2–3 prises", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j — 7 jours"] },
+                        ],
+                        notRecommended: ["Levofloxacine non prioritaire (épargne fluoroquinolones)"],
+                        followUp: "Durée 5 jours si critères de stabilité à 72h (reco SPILF/SPLF 2025). Échec → Amoxicilline 3 g × 3/j ou Levofloxacine 500 mg/j. Hospitalisation si 2ème échec.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pac_amb_comorbide",
+                      label: "Sujet avec comorbidités ou sujet âgé ambulatoire, sans signe de gravité",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PAC ambulatoire — comorbidités / sujet âgé",
+                        indication: "Radio pulmonaire ± ECBC ± recherche grippe. ⚠️ Antigénurie légio/pneumocoque non recommandée en ambulatoire (reco SPILF/SPLF 2025)",
+                        preferred: [
+                          { label: "Préférentielle ✓", drug: "Amoxicilline / Ac. clavulanique", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Levofloxacine 500 mg × 1/j — 7 jours"] },
+                        ],
+                        notRecommended: ["Levofloxacine non prioritaire (épargne fluoroquinolones)"],
+                        followUp: "Durée 5 jours si critères de stabilité à 72h (reco SPILF/SPLF 2025). Échec → hospitalisation.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "pac_hospit_node",
+              label: "Hospitalisé",
+              question: "Profil clinique ?",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "pac_hosp_pneumo",
+                      label: "Début brutal / Ag urinaire pneumocoque+ / Cocci Gram+ à l'ECBC / Argument clinique en faveur du pneumocoque",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PAC hospitalisée — suspicion pneumocoque",
+                        indication: "Radio pulmonaire + ECBC + hémocultures + antigénurie légio/pneumocoque ± grippe",
+                        preferred: [
+                          { label: "Préférentielle ✓", drug: "Amoxicilline", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j"] },
+                        ],
+                        notRecommended: ["Levofloxacine non prioritaire"],
+                        followUp: "Échec à 48h → association macrolide ou substitution Levofloxacine 500 mg/j.",
+                        source: "Antibioguide CHEG 2022 — AFSSAPS/SPILF/SPLF 2010",
+                      },
+                    },
+                    {
+                      id: "pac_hosp_atypique",
+                      label: "Sujet jeune, pas d'argument pneumocoque, contexte épidémique, manifestations extra-respiratoires, antigénurie pneumocoque–",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PAC hospitalisée — suspicion bactérie atypique",
+                        indication: "Radio pulmonaire + ECBC + hémocultures + antigénurie légio/pneumocoque",
+                        preferred: [
+                          { label: "Préférentielle ✓", drug: "Amoxicilline", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j"] },
+                        ],
+                        notRecommended: ["Levofloxacine non prioritaire"],
+                        followUp: "Échec à 48h → association macrolide ou substitution Levofloxacine 500 mg/j.",
+                        source: "Antibioguide CHEG 2022 — AFSSAPS/SPILF/SPLF 2010",
+                      },
+                    },
+                    {
+                      id: "pac_hosp_comorbide",
+                      label: "Sujet avec comorbidités ou sujet âgé, pas d'argument clinique/épidémio en faveur du pneumocoque",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "PAC hospitalisée — comorbidités / sujet âgé",
+                        indication: "Radio pulmonaire + ECBC + hémocultures + antigénurie légio/pneumocoque",
+                        preferred: [
+                          { label: "Préférentielle ✓", drug: "Amoxicilline / Ac. clavulanique", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Ceftriaxone 1 g/j"] },
+                        ],
+                        notRecommended: ["Levofloxacine non prioritaire"],
+                        followUp: "Échec à 48h → association macrolide ou substitution Levofloxacine 500 mg/j.",
+                        source: "Antibioguide CHEG 2022 — AFSSAPS/SPILF/SPLF 2010",
+                      },
+                    },
+              ],
+            },
+      ],
+    },
+
+    // ── 4. PAC CONTEXTE GRIPPAL ────────────────────────────────────────────
+    {
+      id: "pac_grippal",
+      label: "PAC — contexte grippal",
+              question: "Terrain / Gravité ?",
+      subtitle: "Post-grippe : pneumocoque, Staph aureus, Haemophilus",
+      icon: "🤧",
+      color: Abg_C.red,
+      colorLight: Abg_C.redLight,
+      type: "info",
+      infoColor: Abg_C.amber,
+      infoColorLight: Abg_C.amberLight,
+      infoTitle: "Germes à évoquer en contexte grippal",
+      infoItems: [
+        "Pneumocoque +++ (traitement de référence : amoxicilline)",
+        "Staphylocoque aureus (penser à Toxine de Ponton-Valentine)",
+        "Haemophilus influenzae",
+        "BGN",
+        "Les germes atypiques jouent peu de rôle dans ce contexte (AFSSAPS 2010)",
+        "⚠️ Ceftriaxone non recommandée (activité insuffisante sur Staph. aureus) → utiliser Céfotaxime",
+      ],
+      children: [
+        {
+              id: "pac_grip_ambulatoire",
+              label: "Patient ambulatoire",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "PAC grippal — ambulatoire",
+                indication: "Germes probables : pneumocoque, Staph aureus, Haemophilus",
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique", dose: "2 g × 3/j", duration: "7 jours", notes: "Si pneumocoque documenté → désescalade Amoxicilline 2 g × 3" },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j — 7 jours"] },
+                ],
+                notRecommended: ["Ceftriaxone (activité insuffisante sur Staph. aureus)"],
+                followUp: "Désescalade si pneumocoque documenté : Amoxicilline 2 g × 3.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pac_grip_hosp_jeune",
+              label: "Hospitalisation — sujet jeune",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "PAC grippal — hospitalisé sujet jeune",
+                indication: "Germes probables : pneumocoque, Staph aureus, Haemophilus",
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique", dose: "2 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Pristinamycine 1 g × 3/j — 7 jours"] },
+                ],
+                notRecommended: ["Ceftriaxone (activité insuffisante sur Staph. aureus)"],
+                followUp: "Désescalade si pneumocoque documenté : Amoxicilline 2 g × 3.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pac_grip_hosp_age",
+              label: "Hospitalisation — sujet âgé / comorbidités",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "PAC grippal — hospitalisé sujet âgé/comorbidités",
+                indication: "Germes probables : pneumocoque, Staph aureus, Haemophilus, BGN",
+                preferred: [
+                  { label: "Préférentielle", drug: "Céfotaxime", dose: "2 g × 3/j", duration: "7 jours", notes: "⚠️ Utiliser Céfotaxime et non Ceftriaxone" },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Levofloxacine 500 mg × 1/j — 7 jours"] },
+                ],
+                notRecommended: ["Ceftriaxone (activité insuffisante sur Staph. aureus)"],
+                followUp: "Désescalade si pneumocoque documenté : Amoxicilline 2 g × 3.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pac_grip_reani",
+              label: "Réanimation — suspicion SARM/Toxine PVL",
+              question: "Forte suspicion SARM / Pneumonie nécrosante (Toxine PVL) ?",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "pac_grip_reani_no_sarm",
+                      label: "Non — cas général",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "PAC grippal en réanimation — cas général",
+                        indication: "Germes : Streptocoque, Staph aureus, BGN, germe atypique (rare). Penser Toxine PVL.",
+                        preferred: [
+                          { label: "Préférentielle", drug: "Céfotaxime + Érythromycine", dose: "Céfotaxime 2 g × 3 + Érythromycine 1 g × 3", duration: "7–14 jours", notes: "⚠️ Céfotaxime et non Ceftriaxone" },
+                        ],
+                        alternatives: [],
+                        notRecommended: ["Ceftriaxone (activité insuffisante sur Staph. aureus)"],
+                        followUp: "Réévaluation à 48/72h.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pac_grip_reani_sarm_yes",
+                      label: "Oui — pneumonie gravissime nécrosante (SARM PVL+)",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "PAC grippal réa — forte suspicion SARM / Toxine PVL",
+                        indication: "Pneumonie nécrosante gravissime — URGENCE",
+                        preferred: [
+                          { label: "Traitement initial", drug: "Céfotaxime + Vancomycine + Clindamycine", dose: "Céfotaxime 2 g × 3 + Vancomycine dose charge 20 mg/kg puis 30 mg/kg/j en continu + Clindamycine 600 mg × 3/j", duration: "7–14 jours", notes: "⚠️ Céfotaxime et non Ceftriaxone" },
+                        ],
+                        alternatives: [
+                          { label: "Désescalade après documentation", items: [
+                            "Pneumocoque ou BGN : stop vancomycine, rifampicine et clindamycine",
+                            "SASM PVL– : arrêt céfotaxime → Pénicilline M + rifampicine ou clindamycine",
+                            "SASM PVL+ : Péni M + rifampicine ou clindamycine",
+                            "SARM PVL– : vancomycine seule",
+                            "SARM PVL+ : linézolide",
+                          ]},
+                        ],
+                        notRecommended: ["Ceftriaxone"],
+                        followUp: "Réévaluation et désescalade après documentation microbiologique.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+      ],
+    },
+
+    // ── 5. PAC GRAVE (USI / RÉANIMATION) ──────────────────────────────────
+    {
+      id: "pac_grave",
+      label: "PAC grave — USI / Réanimation",
+      subtitle: "Score de Fine et/ou CRB65",
+      question: "Facteur de risque Pseudomonas ?",
+      type: "info",
+      infoColor: Abg_C.red,
+      infoColorLight: Abg_C.redLight,
+      infoTitle: "Facteurs de risque Pseudomonas aeruginosa",
+      infoItems: [
+        "ATCD d'exacerbation de BPCO due à P. aeruginosa",
+        "Mucoviscidose",
+        "Bronchectasies",
+      ],
+      icon: "🆘",
+      color: Abg_C.red,
+      colorLight: Abg_C.redLight,
+      children: [
+            {
+              id: "pac_grave_no_pseudo",
+              label: "Non — sans FdR Pseudomonas",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "PAC grave USI/Réa — sans risque Pseudomonas",
+                indication: "Germes : Pneumocoque, Légionelle, atypiques, BGN. Prélèvements avant ATB : hémocultures, prélèvements bronchiques, antigénurie légio/pneumocoque, écouvillon nasal grippe.",
+                preferred: [
+                  { label: "Préférentielle", drug: "Ceftriaxone + Érythromycine", dose: "Ceftriaxone 2 g + Érythromycine 1 g × 3/j", duration: "7–10 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie/CI)", items: [
+                    "Ceftriaxone 2 g + Levofloxacine 500 mg × 2 J1 puis 500 mg × 1",
+                    "Si légionelle confirmée et légionurie– → arrêt Érythromycine et Levofloxacine",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Désescalade rapide dès documentation bactériologique. ⚠️ PAC sévère en soins critiques : hydrocortisone précoce peut réduire la mortalité à J28 (reco SPILF/SPLF 2025). Corticoïdes non recommandés pour PAC non sévère ou grippale.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pac_grave_pseudo_yes",
+              label: "Oui — avec FdR Pseudomonas",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "PAC grave USI/Réa — avec risque Pseudomonas",
+                indication: "Germes : Pneumocoque, Légionelle, atypiques, BGN, Pseudomonas aeruginosa. Prélèvements avant ATB.",
+                preferred: [
+                  { label: "Préférentielle", drug: "Pipéracilline/Tazobactam + Tobramycine + Érythromycine", dose: "Pip/Tazo 4 g × 4/j + Tobramycine 7 mg/kg + Érythromycine 1 g × 3/j", duration: "14 jours", notes: "Tobramycine : 2 jours" },
+                ],
+                alternatives: [
+                  { label: "Alternative", items: [
+                    "Céfépime 60 mg/kg/j + Tobramycine 7 mg/kg + Levofloxacine 500 mg × 2 J1 puis 500 mg × 1",
+                    "Réévaluation si pyurie confirmée et légionelle négative : arrêt Érythromycine",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Réévaluation à 48/72h. Désescalade dès documentation.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+    // ── 6. PNEUMONIES NOSOCOMIALES ─────────────────────────────────────────
+    {
+      id: "pn_noso",
+      label: "Pneumonie nosocomiale",
+              question: "Délai d'apparition ?",
+      subtitle: "Patient non intubé",
+      icon: "🏥",
+      color: Abg_C.purple,
+      colorLight: Abg_C.purpleLight,
+      children: [
+        {
+              id: "pn_noso_precoce",
+              label: "Précoce < 5 jours — sans antibiothérapie préalable",
+              subtitle: "Germes commensaux : Pneumocoque, Entérobactérie, S. aureus, Haemophilus",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Pneumonie nosocomiale précoce (<5 j, sans ATB préalable)",
+                indication: "Prélèvements avant ATB : hémocultures, prélèvements bronchiques, antigénurie légio/pneumocoque, écouvillon nasal grippe.",
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique + Gentamicine", dose: "Amox/Clav 2 g × 3 + Gentamicine 7 mg/kg × 1/j", duration: "7–10 jours", notes: "Amikacine : 2 jours" },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Céfotaxime 2 g × 3 + Gentamicine 7 mg/kg × 1/j"] },
+                ],
+                notRecommended: [],
+                followUp: "Réévaluation après documentation. Désescalade rapide.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pn_noso_tardive",
+              label: "Tardive > 5 jours OU antibiothérapie préalable",
+              subtitle: "Germes hospitaliers multirésistants : Entérobactérie, P. aeruginosa, S. maltophilia, Acinetobacter",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Pneumonie nosocomiale tardive (>5 j ou ATB préalable)",
+                indication: "Prélèvements avant ATB : hémocultures, prélèvements bronchiques, antigénurie légio/pneumocoque, écouvillon nasal grippe.",
+                preferred: [
+                  { label: "Préférentielle", drug: "Pipéracilline/Tazobactam + Amikacine", dose: "Pip/Tazo 4 g × 4/j + Amikacine 25 mg/kg × 1/j", duration: "14 jours", notes: "Amikacine : 2 jours" },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Céfépime 60 mg/kg/j + Amikacine 25 mg/kg/j"] },
+                ],
+                notRecommended: [],
+                followUp: "Réévaluation si pyurie confirmée et légionelle négative. Arrêt Érythromycine.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+    // ── 7. AUTRES SITUATIONS GRAVES ────────────────────────────────────────
+    {
+      id: "pn_autres",
+      label: "Pneumopathies graves — Autres situations",
+              question: "Situation clinique ?",
+      subtitle: "Légionellose, inhalation, splénectomisés, pleurésie, abcès",
+      icon: "⚠️",
+      color: Abg_C.teal,
+      colorLight: Abg_C.tealLight,
+      children: [
+        {
+              id: "pn_legio",
+              label: "Légionellose confirmée ou forte suspicion (immunodéprimé)",
+              question: "Terrain ?",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "pn_legio_immuno_comp",
+                      label: "Patient immunocompétent",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Légionellose — immunocompétent",
+                        indication: "L'activité des macrolides est supérieure à celle des quinolones.",
+                        preferred: [
+                          { label: "Préférentielle", drug: "Azithromycine", dose: "500 mg J1 puis 250 mg", duration: "5 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative", items: ["Levofloxacine 500 mg × 2 J1 puis 500 mg × 1 — 8 jours"] },
+                        ],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pn_legio_immuno_dep",
+                      label: "Immunodéprimé ou Réanimation",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Légionellose — immunodéprimé / réanimation",
+                        indication: "Association recommandée.",
+                        preferred: [
+                          { label: "Préférentielle", drug: "Levofloxacine IV + Spiramycine IV", dose: "Levofloxacine 500 mg × 2 J1 puis 500 mg × 1 + Spiramycine IV 3 MU × 3/j", duration: "21 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "pn_splenect",
+              label: "Splénectomisés / Drépanocytaires",
+              subtitle: "Pneumocoque, Haemophilus",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Pneumopathie — splénectomisé / drépanocytaire",
+                indication: null,
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline", dose: "2 g × 3/j", duration: "10 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative", items: ["Levofloxacine 500 mg × 2 J1 puis 500 mg × 1 — 10 jours"] },
+                ],
+                notRecommended: [],
+                followUp: null,
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pn_pleuresie",
+              label: "Pleurésie purulente / Abcès pulmonaire",
+              subtitle: "Entérobactéries, anaérobies, streptocoques, BGN",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Pleurésie purulente / Abcès pulmonaire",
+                indication: null,
+                preferred: [
+                  { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique + Gentamicine", dose: "Amox/Clav 2 g × 3 + Gentamicine 7 mg/kg/j", duration: "21 jours (Gentamicine 2 jours)", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative (allergie)", items: ["Clindamycine 500 mg × 3/j + Gentamicine 7 mg/kg/j"] },
+                ],
+                notRecommended: [],
+                followUp: null,
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+
+    // ── 8. PNEUMOPATHIE D'INHALATION ────────────────────────────────────────
+    {
+      id: "pn_inhalation",
+      label: "Pneumopathie d'Inhalation (PI)",
+      subtitle: "Trouble de la déglutition ou inhalation documentée",
+      question: "Situation clinique ?",
+      type: "info",
+      infoColor: "#E8A82E",
+      infoColorLight: "#FEF7E8",
+      infoTitle: "Diagnostic de Pneumopathie d'Inhalation",
+      infoItems: [
+        "Signe clinique d'infection respiratoire basse + infiltrat radiologique NOUVEAU",
+        "Trouble de la déglutition ou inhalation documentée",
+        "⚠️ Tableau respiratoire aigu IMMÉDIATEMENT secondaire à une fausse route ≠ PI (ne répond pas à la définition)",
+        "Imagerie : Scanner thoracique non injecté — à défaut écho thoracique ou radio thoracique",
+        "Microbiologie : Aucun examen en systématique",
+      ],
+      icon: "😮‍💨",
+      color: Abg_C.amber,
+      colorLight: Abg_C.amberLight,
+      children: [
+        {
+          id: "pni_ttt",
+          label: "Traitement antibiotique",
+          question: "Allergie ou CI aux bêtalactamines ?",
+          icon: "🟠",
+          color: Abg_C.amber,
+          colorLight: Abg_C.amberLight,
+          children: [
+            {
+              id: "pni_ttt_1ere",
+              label: "Pas d'allergie — Voie PO possible",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Pneumopathie d'inhalation — 1ère intention",
+                indication: null,
+                preferred: [
+                  { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique PO", dose: "1 g × 3/j", duration: "5 jours si évolution favorable", notes: null },
+                  { label: "Si forme grave (IV)", drug: "Amoxicilline / Ac. clavulanique IV", dose: "1 g × 3/j", duration: "5 jours si évolution favorable", notes: null },
+                ],
+                alternatives: [
+                  { label: "Échec à 72h", items: ["Pipéracilline / Tazobactam IV 4 g/500 mg toutes les 6–8h"] },
+                ],
+                notRecommended: [],
+                followUp: "Durée 5j si évolution favorable. Si récidive précoce : ne pas débuter d'ATB préemptive — surveillance clinique, reprendre ATB uniquement si critères de PI réunis. Si récidive → reprendre le même antibiotique.",
+                source: "SPILF — Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pni_ttt_2eme",
+              label: "Allergie pénicilline ou voie PO impossible",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Pneumopathie d'inhalation — 2ème intention",
+                indication: "Si allergie à la pénicilline ou impossibilité de la voie orale ou IV avec amoxicilline/clav.",
+                preferred: [
+                  { label: "2ème intention", drug: "Ceftriaxone SC ou IV", dose: "1 g × 1/j", duration: "5 jours si évolution favorable", notes: null },
+                ],
+                alternatives: [
+                  { label: "Échec à 72h", items: ["Pipéracilline / Tazobactam IV 4 g/500 mg toutes les 6–8h"] },
+                ],
+                notRecommended: [],
+                followUp: "Durée 5j si évolution favorable. Si récidive → reprendre le même antibiotique.",
+                source: "SPILF — Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "pni_ttt_3eme",
+              label: "CI aux bêtalactamines",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Pneumopathie d'inhalation — 3ème intention (CI bêtalactamines)",
+                indication: null,
+                preferred: [
+                  { label: "3ème intention", drug: "Cotrimoxazole PO ou IV", dose: "Sulfaméthoxazole 800 mg / Triméthoprime 160 mg toutes les 8h", duration: "5 jours si évolution favorable", notes: null },
+                ],
+                alternatives: [
+                  { label: "Échec à 72h", items: ["Pipéracilline / Tazobactam IV 4 g/500 mg toutes les 6–8h"] },
+                ],
+                notRecommended: [],
+                followUp: "Durée 5j si évolution favorable. Si récidive → reprendre le même antibiotique.",
+                source: "SPILF — Antibioguide CHEG 2022",
+              },
+            },
+          ],
+        },
+        {
+          id: "pni_recidive",
+          label: "Récidive précoce",
+          icon: "🔄",
+          color: "#2E7EAD",
+          colorLight: "#EBF4FA",
+          result: {
+            condition: "Pneumopathie d'inhalation — récidive précoce",
+            indication: null,
+            preferred: [
+              { label: "Principe", drug: "Ne PAS débuter d'ATB préemptive", dose: "—", duration: "—", notes: "Surveiller cliniquement. Ne débuter une ATB que si les critères de PI sont à nouveau réunis." },
+              { label: "Si récidive avec critères PI réunis", drug: "Reprendre le MÊME antibiotique que lors de l'épisode précédent", dose: "—", duration: "5 jours si évolution favorable", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: ["ATB préemptive sans critères de PI réunis"],
+            followUp: null,
+            source: "SPILF — Antibioguide CHEG 2022",
+          },
+        },
+      ],
+    },,
+
+  ],
+};
+
+const Abg_DATA_DIGESTIF = {
+  id: "root",
+  label: "Infections Digestives",
+  children: [
+
+    // ── 1. CLOSTRIDIUM DIFFICILE ───────────────────────────────────────────
+    {
+      id: "cdifficile",
+      label: "Infection à Clostridium difficile",
+              question: "Quel épisode ?",
+      subtitle: "ICD — 1er épisode ou récidive",
+      icon: "🦠",
+      color: Abg_C.purple,
+      colorLight: Abg_C.purpleLight,
+      type: "info",
+      infoColor: Abg_C.navy,
+      infoColorLight: Abg_C.blueLight,
+      infoTitle: "Mesures associées systématiques",
+      infoItems: [
+        "Mise en place des mesures d'hygiène",
+        "Réhydratation",
+        "Arrêt rapide de l'antibiothérapie si possible",
+        "Arrêt des IPP et des anti-H2",
+        "Ralentisseurs de transit (Immodium) contre-indiqués",
+        "Surveillance stricte du nombre de selles",
+      ],
+      children: [
+        {
+              id: "icd_1er",
+              label: "1er épisode d'ICD",
+              question: "Forme compliquée ?",
+              type: "info",
+              infoColor: Abg_C.red,
+              infoColorLight: Abg_C.redLight,
+              infoTitle: "Critères de forme compliquée",
+              infoItems: [
+                "Réanimation pour ICD",
+                "Choc septique",
+                "Lactates > 5 mmol/L",
+                "Iléus / mégacôlon toxique",
+                "Indication chirurgicale",
+              ],
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                  id: "icd_1er_complic_oui",
+                  label: "Oui — forme compliquée",
+                  icon: "🔴",
+                  color: Abg_C.red,
+                  colorLight: Abg_C.redLight,
+                  result: {
+                    condition: "ICD 1er épisode — forme compliquée",
+            isolement: "contact_cdifficile",
+                    indication: null,
+                    preferred: [
+                      { label: "Traitement", drug: "Vancomycine PO + Métronidazole IV", dose: "Vanco PO 500 mg × 4/j (ou SNG ou intrarectal si iléus) + Métronidazole IV 500 mg × 3/j", duration: "14 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: ["Métronidazole seul dans les formes sévères"],
+                    followUp: null,
+                    source: "Antibioguide CHEG 2022",
+                  },
+                },
+                {
+                  id: "icd_1er_complic_non",
+                  label: "Non — forme non compliquée",
+                  question: "Forme grave ou à risque de gravité ?",
+                  type: "info",
+                  infoColor: Abg_C.amber,
+                  infoColorLight: Abg_C.amberLight,
+                  infoTitle: "Critères de forme grave ou à risque",
+                  infoItems: [
+                    "Âge > 65 ans",
+                    "Comorbidités importantes",
+                    "Sepsis sévère",
+                    "Ascite / douleurs abdominales",
+                    "Leucocytes > 15 000/mm³",
+                    "Créatinine > 1,5 × base",
+                    "Albumine < 30 mg/L",
+                    "Lactates > 2 mmol/L",
+                    "Distension colique > 6 cm",
+                    "Colite pseudomembraneuse",
+                  ],
+                  icon: "🟢",
+                  color: Abg_C.green,
+                  colorLight: Abg_C.greenLight,
+                  children: [
+                    {
+                      id: "icd_1er_grave_oui",
+                      label: "Oui — forme grave ou à risque",
+                      question: "Facteur de risque de récidive ?",
+                      type: "info",
+                      infoColor: Abg_C.amber,
+                      infoColorLight: Abg_C.amberLight,
+                      infoTitle: "Facteurs de risque de récidive",
+                      infoItems: [
+                        "Âge > 75 ans",
+                        "Importantes comorbidités",
+                        "Antibiothérapie concomitante à maintenir",
+                      ],
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                        {
+                          id: "icd_1er_grave_recidive_oui",
+                          label: "Oui — FdR de récidive",
+                          question: "Antibiothérapie concomitante à maintenir ?",
+                          icon: "🟠",
+                          color: Abg_C.amber,
+                          colorLight: Abg_C.amberLight,
+                          children: [
+                            {
+                              id: "icd_atb_concomitante_oui",
+                              label: "Oui",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "ICD grave + FdR récidive + ATB concomitante",
+            isolement: "contact_cdifficile",
+                                indication: null,
+                                preferred: [
+                                  { label: "1ère ligne", drug: "Fidaxomycine PO", dose: "200 mg × 2/j", duration: "10 jours", notes: "Intérêt pour limiter le risque de récidive (souches NON 027)" },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Avis infectiologie recommandé.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "icd_atb_concomitante_non",
+                              label: "Non",
+                              icon: "🟡",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "ICD grave + FdR récidive — sans ATB concomitante",
+                                indication: null,
+                                preferred: [
+                                  { label: "Option 1", drug: "Vancomycine PO", dose: "125 mg × 4/j", duration: "10 jours", notes: null },
+                                  { label: "Option 2", drug: "Fidaxomycine PO", dose: "200 mg × 2/j", duration: "10 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                          ],
+                        },
+                        {
+                          id: "icd_1er_grave_recidive_non",
+                          label: "Non — sans FdR de récidive",
+                          icon: "🟡",
+                          color: Abg_C.amber,
+                          colorLight: Abg_C.amberLight,
+                          result: {
+                            condition: "ICD grave — sans FdR de récidive",
+            isolement: "contact_cdifficile",
+                            indication: null,
+                            preferred: [
+                              { label: "Traitement", drug: "Vancomycine PO", dose: "125 mg × 4/j", duration: "10 jours", notes: null },
+                            ],
+                            alternatives: [],
+                            notRecommended: [],
+                            followUp: null,
+                            source: "Antibioguide CHEG 2022",
+                          },
+                        },
+                      ],
+                    },
+                    {
+                      id: "icd_1er_grave_non",
+                      label: "Non — forme légère",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "ICD 1er épisode — forme légère",
+            isolement: "contact_cdifficile",
+                        indication: null,
+                        preferred: [
+                          { label: "Traitement", drug: "Vancomycine PO", dose: "125 mg × 4/j", duration: "10 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: ["Métronidazole dans les formes sévères"],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              id: "icd_2eme",
+              label: "2ème épisode ou récidive",
+              question: "Forme compliquée ?",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "icd_2eme_complic_oui",
+                      label: "Oui — forme compliquée",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "ICD récidive — forme compliquée",
+                        indication: null,
+                        preferred: [
+                          { label: "Traitement", drug: "Vancomycine PO + Métronidazole IV", dose: "Vanco PO 500 mg × 4/j (ou SNG ou intrarectal si iléus) + Métronidazole IV 500 mg × 3/j", duration: "14 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: "Avis infectiologie.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "icd_2eme_complic_non",
+                      label: "Non",
+              question: "Fidaxomycine utilisée en 1ère ligne ?",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                        {
+                              id: "icd_2eme_fidaxo_non",
+                              label: "Non",
+                              icon: "🟡",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "ICD récidive non compliquée — Fidaxomycine naïf",
+                                indication: null,
+                                preferred: [
+                                  { label: "Traitement", drug: "Fidaxomycine PO", dose: "200 mg × 2/j", duration: "10 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Avis infectiologie.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "icd_2eme_fidaxo_oui",
+                              label: "Oui — déjà utilisée",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "ICD récidive non compliquée — Fidaxomycine déjà utilisée",
+                                indication: null,
+                                preferred: [
+                                  { label: "Traitement", drug: "Vancomycine PO avec protocole de décroissance", dose: "125 mg × 4/j 10 j → 125 mg × 2/j 7 j → 125 mg toutes les 48h pendant 1 mois", duration: "~6 semaines", notes: "Ou greffe de microbiote fécal selon avis infectiologie" },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Avis infectiologie indispensable.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+            {
+              id: "icd_recidives_multiples",
+              label: "Récidives multiples",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "ICD — Récidives multiples",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Fidaxomycine PO (si jamais utilisée)", dose: "200 mg × 2/j", duration: "10 jours", notes: null },
+                  { label: "Option 2", drug: "Vancomycine PO avec protocole de décroissance", dose: "125 mg × 4/j 10 j → 125 mg × 2/j 7 j → 125 mg toutes les 48h pendant 1 mois", duration: "~6 semaines", notes: null },
+                  { label: "Option 3", drug: "Greffe de microbiote fécal", dose: "—", duration: "—", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Avis infectiologie indispensable.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+    // ── 2. INFECTIONS DIGESTIVES MÉDICALES ────────────────────────────────
+    {
+      id: "digestif_medical",
+      label: "Infections digestives médicales",
+              question: "Situation clinique ?",
+      subtitle: "Hors Clostridium difficile",
+      icon: "🩺",
+      color: Abg_C.blue,
+      colorLight: Abg_C.blueLight,
+      children: [
+        {
+              id: "diarrhee_invasive",
+              label: "Diarrhée invasive (dysentériforme)",
+              question: "Germe documenté ?",
+              subtitle: "Coprocultures + hémocultures si fièvre",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              type: "info",
+              infoColor: Abg_C.blue,
+              infoColorLight: Abg_C.blueLight,
+              infoTitle: "Indications de l'antibiothérapie",
+              infoItems: [
+                "Diarrhée fébrile > 3 jours",
+                "Immunodéprimé",
+                "Porteur de prothèse ostéo-articulaire ou cardio-vasculaire",
+              ],
+              children: [
+                {
+                      id: "diarrhee_non_doc",
+                      label: "Non documentée — colite aiguë bactérienne",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Colite aiguë bactérienne sans documentation",
+                        indication: null,
+                        preferred: [
+                          { label: "Option 1", drug: "Ceftriaxone", dose: "1 g/j", duration: "5 jours", notes: null },
+                          { label: "Option 2", drug: "Ofloxacine", dose: "200 mg × 2/j", duration: "5 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: "Adapter à l'antibiogramme dès résultats.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "diarrhee_salmonelle",
+                      label: "Salmonelle ou Shigelles",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Diarrhée à Salmonelle ou Shigelles",
+                        indication: null,
+                        preferred: [
+                          { label: "Option 1", drug: "Ofloxacine", dose: "200 mg × 2/j PO", duration: "3–5 jours", notes: "Adapter à l'ATBgramme" },
+                          { label: "Option 2", drug: "Ceftriaxone", dose: "1 g/j IV", duration: "3–5 jours", notes: null },
+                          { label: "Option 3", drug: "Azithromycine", dose: "500 mg J1 puis 250 mg/j PO", duration: "3–5 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: "Adapter à l'antibiogramme.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "diarrhee_campylo",
+                      label: "Campylobacter",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Diarrhée à Campylobacter",
+                        indication: null,
+                        preferred: [
+                          { label: "Préférentielle", drug: "Azithromycine", dose: "500 mg × 1/j", duration: "5 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative", items: ["Ofloxacine 1 cp × 2/j PO — 5 jours"] },
+                        ],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "diarrhee_yersinia",
+                      label: "Yersinia",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Diarrhée à Yersinia",
+                        indication: null,
+                        preferred: [
+                          { label: "Préférentielle", drug: "Ofloxacine", dose: "1 cp × 2/j PO", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative", items: ["Doxycycline 100 mg × 2/j — 7 jours", "Cotrimoxazole fort 1 cp × 2/j PO — 7 jours"] },
+                        ],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "pancreatite",
+              label: "Pancréatite aiguë",
+              question: "Infection documentée (ponction guidée) ?",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "pancrea_non_infectee",
+                      label: "Non — Pancréatite sans infection",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "Pancréatite aiguë sans infection",
+                        indication: null,
+                        preferred: [
+                          { label: "", drug: "PAS D'ANTIBIOTHÉRAPIE", dose: "—", duration: "—", notes: "Traitement symptomatique uniquement" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pancrea_infectee",
+                      label: "Oui — Pancréatite avec infection",
+                      subtitle: "BGN, CG+, Bacteroïdes — Hémocultures + scanner + ponction",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Pancréatite aiguë infectée",
+                        indication: "Hémocultures + scanner + ponction guidée. Drainage chirurgical ou radiologique.",
+                        preferred: [
+                          { label: "Option 1", drug: "Ceftriaxone + Métronidazole", dose: "Ceftriaxone 2 g/j + Métronidazole 0,5 g × 3/j IV", duration: "Jusqu'à disparition collection + normalisation paramètres infectieux", notes: null },
+                          { label: "Option 2", drug: "Pipéracilline/Tazobactam", dose: "4 g × 3/j", duration: "Idem", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: "Drainage chirurgical ou sous scanner.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "sigmoidite",
+              label: "Sigmoïdite / Diverticulite aiguë",
+              subtitle: "BGN, Entérocoques, Anaérobies dont Bacteroides",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Sigmoïdite / Diverticulite aiguë",
+                indication: null,
+                preferred: [
+                  { label: "Préférentielle", drug: "Ceftriaxone + Métronidazole", dose: "Ceftriaxone 2 g/j + Métronidazole 0,5 g × 3/j", duration: "7 j si régression", notes: "± Gentamicine 5 mg/kg/j si sepsis sévère (3 j max)" },
+                ],
+                alternatives: [
+                  { label: "Alternative", items: ["Ofloxacine 200 mg × 2/j + Métronidazole 0,5 g × 3/j (± Gentamicine 5 mg/kg/j si sepsis sévère)"] },
+                ],
+                notRecommended: [],
+                followUp: "7 j si régression de la symptomatologie et des signes de sepsis.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "cholecystite",
+              label: "Cholécystite / Angiocholite",
+              question: "Cholécystite ou angiocholite ?",
+              subtitle: "BGN, Anaérobies — Hémocultures + écho voies biliaires",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "cholecystite_simple",
+                      label: "Cholécystite",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Cholécystite aiguë",
+                        indication: "Hémocultures + écho voies biliaires + scanner + avis spécialisé.",
+                        preferred: [
+                          { label: "Préférentielle", drug: "Ceftriaxone + Métronidazole", dose: "Ceftriaxone 2 g/j + Métronidazole 0,5 g × 3/j IV", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Ofloxacine 200 mg × 3/j + Métronidazole ± Gentamicine 7 mg/kg/j IV (grave)"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Désescalade sur ATBgramme.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "angiocholite",
+                      label: "Angiocholite / Angiocholite post-CPRE",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Angiocholite / Angiocholite post-CPRE",
+                        indication: "Hémocultures + écho voies biliaires + scanner + avis spécialisé. Levée d'obstacle urgente.",
+                        preferred: [
+                          { label: "Préférentielle", drug: "Ceftriaxone + Métronidazole", dose: "Ceftriaxone 2 g/j + Métronidazole 0,5 g × 3/j IV", duration: "7 j si levée obstacle, sinon 10 j", notes: null },
+                          { label: "Si post-CPRE / grave", drug: "Pipéracilline/Tazobactam + Amikacine", dose: "Pip/Tazo 200 mg/kg/j + Amikacine 20 mg/kg/j", duration: "Selon évolution", notes: "Gentamicine/Amikacine : 3 jours max" },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie)", items: ["Ofloxacine 200 mg × 3/j + Métronidazole ± Gentamicine 7 mg/kg/j IV"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Abcès : 3 semaines puis réévaluer. Désescalade sur ATBgramme.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "ascite_infectee",
+              label: "Infection du liquide d'ascite",
+              subtitle: "BGN ++, Streptocoque — Hémocultures + ponction d'ascite",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Infection du liquide d'ascite / Rupture VO",
+                indication: "Hémocultures + ponction d'ascite.",
+                preferred: [
+                  { label: "Option 1", drug: "Céfotaxime", dose: "2 g × 3/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Ofloxacine", dose: "200 mg × 2/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Désescalade sur antibiogramme.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+    // ── 3. INFECTIONS DIGESTIVES CHIRURGICALES ────────────────────────────
+    {
+      id: "digestif_chir",
+      label: "Infections digestives chirurgicales",
+              question: "Situation chirurgicale ?",
+      subtitle: "Appendicite, péritonite, abcès de paroi",
+      icon: "🔪",
+      color: Abg_C.red,
+      colorLight: Abg_C.redLight,
+      children: [
+        {
+              id: "appendicite",
+              label: "Appendicite",
+              question: "Type d'appendicite ?",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "appendicite_simple",
+                      label: "Appendicite simple",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "Appendicite simple",
+                        indication: null,
+                        preferred: [
+                          { label: "", drug: "Antibioprophylaxie uniquement", dose: "1 dose unique péri-opératoire", duration: "Dose unique", notes: "PAS d'antibiothérapie curative" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "appendicite_complic",
+                      label: "Appendicite gangréneuse / abcès / phlegmon",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Appendicite gangréneuse / abcès appendiculaire / phlegmon",
+                        indication: null,
+                        preferred: [
+                          { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique", dose: "1 g × 3/j (2 g × 3/j si > 80 kg)", duration: "2 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie pénicillines)", items: ["Métronidazole 0,5 g × 3/j + Gentamicine 7 mg/kg/j — 1 jour"] },
+                        ],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "peritonite",
+              label: "Péritonite",
+              question: "Type de péritonite ?",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "peritonite_localisee",
+                      label: "Péritonite communautaire localisée",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Péritonite communautaire localisée",
+                        indication: null,
+                        preferred: [
+                          { label: "Préférentielle", drug: "Amoxicilline / Ac. clavulanique + Amikacine", dose: "Amox/Clav 2 g × 3/j + Amikacine 30 mg/kg × 1/j", duration: "2 jours", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie pénicillines)", items: ["Aztréonam 2 g × 3/j + Métronidazole 0,5 g × 3/j — 2 jours"] },
+                        ],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "peritonite_generalisee",
+                      label: "Péritonite communautaire généralisée",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Péritonite communautaire généralisée",
+                        indication: null,
+                        preferred: [
+                          { label: "Préférentielle", drug: "Ceftriaxone + Métronidazole + Amikacine", dose: "Ceftriaxone 2 g × 1/j + Métronidazole 0,5 g × 3/j + Amikacine 30 mg/kg/j", duration: "5 j (Amikacine 2 j) — stercorales 7 j", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie pénicillines)", items: ["Aztréonam 2 g × 3/j + Métronidazole 0,5 g × 3/j + Amikacine 30 mg/kg/j"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Péritonite stercorales : 7 j (Amikacine 2 j).",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "peritonite_choc",
+                      label: "Péritonite communautaire avec choc septique",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Péritonite communautaire avec choc septique",
+                        indication: null,
+                        preferred: [
+                          { label: "Préférentielle", drug: "Pipéracilline/Tazobactam + Amikacine", dose: "Pip/Tazo 4 g × 4/j + Amikacine 30 mg/kg/j", duration: "5 j (Amikacine 2 j)", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Alternative (allergie pénicillines)", items: ["Aztréonam 2 g × 3/j + Métronidazole 0,5 g × 3/j + Amikacine 30 mg/kg/j"] },
+                        ],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "peritonite_noso",
+                      label: "Péritonite nosocomiale (réintervention / persistance syndrome inflammatoire)",
+              question: "Choc septique associé ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "peritonite_noso_non",
+                              label: "Non",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Péritonite nosocomiale",
+                                indication: null,
+                                preferred: [
+                                  { label: "Option 1", drug: "Pipéracilline/Tazobactam + Amikacine", dose: "Pip/Tazo 4 g × 4/j + Amikacine 30 mg/kg/j", duration: "8 j (Amikacine 2 j)", notes: null },
+                                  { label: "Option 2", drug: "Méropénème + Amikacine", dose: "Méropénème 1 g × 3/j + Amikacine 30 mg/kg/j", duration: "8 j (Amikacine 2 j)", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "peritonite_noso_choc_oui",
+                              label: "Oui — avec choc septique",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Péritonite nosocomiale avec choc septique",
+                                indication: null,
+                                preferred: [
+                                  { label: "Traitement", drug: "Pip/Tazo ou Méropénème + Amikacine + ± Vancomycine + ± Antifongique", dose: "Pip/Tazo 4 g × 4/j ou Méropénème 1 g × 3/j + Amikacine 30 mg/kg/j", duration: "8 j (Amikacine 2 j)", notes: "Discuter Vancomycine si FdR SARM. Discuter antifongique." },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+            {
+              id: "abces_paroi",
+              label: "Abcès de paroi",
+              icon: "🟢",
+              color: Abg_C.green,
+              colorLight: Abg_C.greenLight,
+              result: {
+                condition: "Abcès de paroi",
+                indication: null,
+                preferred: [
+                  { label: "", drug: "PAS D'ANTIBIOTHÉRAPIE — soins locaux uniquement", dose: "—", duration: "—", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Soins locaux exclusifs.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+      ],
+    },
+
+  ],
+};
+
+const Abg_DATA_NEURO = {
+  id: "root",
+  label: "Infections Neuro-Méningées",
+  children: [
+
+    // ── 1. MÉNINGITE ──────────────────────────────────────────────────────
+    {
+      id: "meningite",
+      label: "Méningite de l'adulte",
+              question: "Type de méningite ?",
+      subtitle: "Purulente ou lymphocytaire",
+      icon: "🧠",
+      color: Abg_C.red,
+      colorLight: Abg_C.redLight,
+      type: "info",
+      infoColor: Abg_C.red,
+      infoColorLight: Abg_C.redLight,
+      infoTitle: "Corticothérapie — à débuter AVANT ou EN MÊME TEMPS que l'ATB",
+      infoItems: [
+        "Méningite à pneumocoque ou méningocoque : Dexaméthasone 10 mg toutes les 6h pendant 4 jours",
+        "Idéalement débutée immédiatement avant ou en même temps que la 1ère dose d'antibiotique",
+        "Peut aussi être démarrée APRÈS la 1ère dose d'ATB",
+        "Interrompre les corticoïdes si l'hypothèse de méningite bactérienne est écartée",
+      ],
+      children: [
+        // Méningite purulente
+            {
+              id: "meningite_purulente",
+              label: "Méningite purulente",
+              subtitle: "LCR trouble, syndrome méningé franc",
+              question: "Examen direct du LCR ?",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                    {
+                      id: "meningite_ed_positif",
+                      label: "Examen direct positif",
+                      question: "Germe suspecté ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                            {
+                              id: "meningite_pneumo",
+                              label: "Cocci Gram + → Pneumocoque",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite purulente — suspicion pneumocoque",
+            isolement: "gouttelettes",
+                                indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours.",
+                                preferred: [
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Isolement gouttelettes jusqu'à 48h d'ATB efficace.",
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                            {
+                              id: "meningite_meningo",
+                              label: "Cocci Gram − → Méningocoque",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite purulente — suspicion méningocoque",
+            isolement: "gouttelettes",
+                                indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours. ISOLEMENT GOUTTELETTES.",
+                                preferred: [
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Isolement gouttelettes levé après 48h d'ATB efficace. Déclaration obligatoire + prophylaxie entourage.",
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                            {
+                              id: "meningite_listeria",
+                              label: "Bacille Gram + → Listéria",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite purulente — suspicion Listéria",
+            isolement: "gouttelettes",
+                                indication: "Pas de corticothérapie si Listéria confirmée.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Amoxicilline IV + Gentamicine IV", dose: "Amoxicilline 200 mg/kg/j en 4 perfusions ou en continu + Gentamicine 3–5 mg/kg/j en 1 perfusion unique journalière", duration: "21 jours (Gentamicine 7 jours)", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: ["Céphalosporines inactives sur Listéria"],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                            {
+                              id: "meningite_haemophilus",
+                              label: "Bacille Gram − → Haemophilus influenzae",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite purulente — suspicion Haemophilus influenzae",
+            isolement: "gouttelettes",
+                                indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours.",
+                                preferred: [
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Isolement gouttelettes jusqu'à 48h d'ATB efficace.",
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                            {
+                              id: "meningite_ecoli",
+                              label: "Bacille Gram − → E. coli",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite purulente — suspicion E. coli",
+            isolement: "gouttelettes",
+                                indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours.",
+                                preferred: [
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                      ],
+                    },
+                    {
+                      id: "meningite_ed_negatif",
+                      label: "Examen direct négatif",
+                      question: "Argument en faveur d'une Listériose ?",
+                      type: "info",
+                      infoColor: Abg_C.amber,
+                      infoColorLight: Abg_C.amberLight,
+                      infoTitle: "Arguments en faveur d'une Listériose",
+                      infoItems: [
+                        "Sujet > 50 ans ou immunodéprimé",
+                        "Grossesse",
+                        "Alcoolisme chronique",
+                        "Néoplasie / hémopathie",
+                        "Corticothérapie au long cours",
+                        "Tableau de rhombencéphalite (atteinte du tronc cérébral)",
+                      ],
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                            {
+                              id: "meningite_ed_neg_no_listeria",
+                              label: "Non — sans argument pour Listéria",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Méningite purulente — examen direct négatif, sans argument Listéria",
+            isolement: "gouttelettes",
+                                indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours.",
+                                preferred: [
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Adapter dès résultats culture LCR.",
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                            {
+                              id: "meningite_ed_neg_listeria_oui",
+                              label: "Oui — avec argument pour Listéria",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite purulente — examen direct négatif, avec argument Listéria",
+            isolement: "gouttelettes",
+                                indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours (interrompre si Listéria confirmée).",
+                                preferred: [
+                                  { label: "Traitement triple", drug: "Céfotaxime ou Ceftriaxone + Amoxicilline + Gentamicine", dose: "Céfotaxime 300 mg/kg/j (ou Ceftriaxone 100 mg/kg/j) + Amoxicilline 200 mg/kg/j en continu + Gentamicine 3–5 mg/kg/j en 1 perfusion/j", duration: "21 jours Amox (Genta 7 j)", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Adapter dès résultats culture LCR.",
+                                source: "Antibioguide CHEG 2022 — SPILF",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+
+            // Méningite lymphocytaire
+            {
+              id: "meningite_lympho",
+              label: "Méningite lymphocytaire",
+              subtitle: "LCR clair, lymphocytes prédominants",
+              question: "Glycorachie ?",
+              type: "info",
+              infoColor: Abg_C.blue,
+              infoColorLight: Abg_C.blueLight,
+              infoTitle: "Interprétation de la glycorachie",
+              infoItems: [
+                "Basse (hypoglycorachie) : < ½ de la glycémie → évoquer tuberculose, Listéria, cryptocoque",
+                "Normale : = ½ de la glycémie → évoquer herpès/VZV, entérovirus",
+              ],
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                    {
+                      id: "meningite_lympho_hypo",
+                      label: "Hypoglycorachie — glycorachie basse",
+                      question: "Étiologie suspectée ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "meningite_lympho_tb",
+                              label: "Tuberculose",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Méningite lymphocytaire — Tuberculose",
+                                indication: null,
+                                preferred: [
+                                  { label: "Quadrithérapie antituberculeuse", drug: "Isoniazide + Rifampicine + Pyrazinamide + Éthambutol", dose: "Isoniazide 5 mg/kg/j + Rifampicine 10 mg/kg/j + Pyrazinamide 30 mg/kg/j + Éthambutol 15 mg/kg/j — en une prise à jeun", duration: "Selon protocole BK", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Avis infectiologie / pneumologie.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "meningite_lympho_listeria2",
+                              label: "Listéria",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Méningite lymphocytaire — Listéria",
+                                indication: null,
+                                preferred: [
+                                  { label: "Traitement", drug: "Amoxicilline IV", dose: "200–300 mg/kg/j en 4 fois", duration: "21 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "meningite_lympho_crypto",
+                              label: "Cryptocoque (immunodépression)",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite lymphocytaire — Cryptocoque (immunodéprimé)",
+                                indication: null,
+                                preferred: [
+                                  { label: "Traitement", drug: "Amphotéricine B IV + 5-Fluorocytosine PO/IV", dose: "Ampho B 0,7–1 mg/kg/j en 1 injection + 5-FC 100 mg/kg/j en 4 prises", duration: "Selon évolution", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Avis infectiologie indispensable.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+                    {
+                      id: "meningite_lympho_normale",
+                      label: "Glycorachie normale",
+              question: "Étiologie suspectée ?",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                        {
+                              id: "meningite_lympho_herpes",
+                              label: "Herpès / VZV (méningite avec signes encéphalitiques)",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Méningoencéphalite — Herpès ou VZV",
+                                indication: "PCR HSV/VZV dans le LCR.",
+                                preferred: [
+                                  { label: "HSV", drug: "Aciclovir IV", dose: "10–15 mg/kg toutes les 8h", duration: "14–21 jours", notes: null },
+                                  { label: "VZV", drug: "Aciclovir IV", dose: "15 mg/kg toutes les 8h", duration: "14–21 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Traitement symptomatique associé.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "meningite_lympho_entero",
+                              label: "Entérovirus (examen neuro normal + contexte épidémique)",
+                              icon: "🟢",
+                              color: Abg_C.green,
+                              colorLight: Abg_C.greenLight,
+                              result: {
+                                condition: "Méningite lymphocytaire — Entérovirus",
+                                indication: "PCR entérovirus dans le LCR.",
+                                preferred: [
+                                  { label: "", drug: "Traitement symptomatique exclusif", dose: "—", duration: "—", notes: "Pas de traitement antiviral spécifique" },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "meningite_lympho_westnile",
+                              label: "West-Nile / Toscana (mai à octobre — région PACA)",
+                              icon: "🟡",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Méningite lymphocytaire — West-Nile ou Toscana",
+                                indication: "Recherche systématique de mai à octobre dans notre région. Remplir formulaire de demande PCR West-Nile et Toscana (contacter le laboratoire).",
+                                preferred: [
+                                  { label: "", drug: "Traitement symptomatique", dose: "—", duration: "—", notes: "Pas de traitement antiviral spécifique disponible" },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Contacter le laboratoire pour demande PCR spécifique ARS.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+      ],
+    },
+
+    // ── 2. MÉNINGOENCÉPHALITE ─────────────────────────────────────────────
+    {
+      id: "meningo_encephalite",
+      label: "Méningoencéphalite de l'adulte",
+      subtitle: "Signes encéphalitiques associés au syndrome méningé",
+      icon: "⚡",
+      color: Abg_C.purple,
+      colorLight: Abg_C.purpleLight,
+      type: "info",
+      infoColor: Abg_C.purple,
+      infoColorLight: Abg_C.purpleLight,
+      infoTitle: "Signes évocateurs d'encéphalite",
+      infoItems: [
+        "Troubles de la vigilance (obnubilation → coma)",
+        "Troubles du comportement (agitation, anxiété, agressivité, torpeur, syndrome psychiatrique aigu)",
+        "Troubles mnésiques antérogrades",
+        "Signes neurologiques focaux",
+        "Crises épileptiques",
+        "Fièvre",
+      ],
+      children: [
+        {
+          id: "encephalite_bilan",
+          label: "Bilan paraclinique initial",
+          type: "info",
+          infoColor: Abg_C.blue,
+          infoColorLight: Abg_C.blueLight,
+          infoTitle: "Examens paracliniques à réaliser",
+          infoItems: [
+            "Bilan sanguin : NFS, coag, iono, glycémie, urée, créat, CRP, ammoniémie, lactatémie, toxiques, hémocultures",
+            "PL (si pas de CI) : 4 tubes — cytologie, chimie, bactériologie, PCR HSV/VZV/Entérovirus + PCR West-Nile/Toscana (mai–oct)",
+            "IRM cérébrale (référence) ou TDM cérébral avec injection — ne doit pas retarder le traitement",
+            "EEG",
+            "Radio pulmonaire de face",
+            "⚠️ TDM avant PL uniquement si : signes de focalisation, Glasgow ≤ 11, crises convulsives récentes",
+          ],
+          children: [
+            {
+              id: "encephalite_traitement_initial",
+              label: "Traitement initial dans les 48 premières heures",
+              question: "Résultats PCR / cultures à 48h ?",
+              type: "info",
+              infoColor: Abg_C.red,
+              infoColorLight: Abg_C.redLight,
+              infoTitle: "Traitement probabiliste immédiat — NE PAS ATTENDRE",
+              infoItems: [
+                "Amoxicilline IV 200 mg/kg/jour",
+                "Aciclovir IV 10 mg/kg toutes les 8h",
+                "Anticonvulsivant si crise convulsive",
+              ],
+              children: [
+                {
+                      id: "encephalite_hsv",
+                      label: "PCR HSV positive",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Méningoencéphalite — HSV confirmé",
+                        indication: null,
+                        preferred: [
+                          { label: "Traitement", drug: "Aciclovir IV", dose: "10 mg/kg toutes les 8h", duration: "14–21 jours", notes: "Traitement symptomatique associé" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "encephalite_vzv",
+                      label: "PCR VZV positive",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Méningoencéphalite — VZV confirmé",
+                        indication: null,
+                        preferred: [
+                          { label: "Traitement", drug: "Aciclovir IV", dose: "15 mg/kg toutes les 8h", duration: "14–21 jours", notes: "Traitement symptomatique associé" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "encephalite_enterovirus",
+                      label: "PCR Entérovirus+ ou PCR West-Nile / Toscana+",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "Méningoencéphalite — Entérovirus / West-Nile / Toscana",
+                        indication: null,
+                        preferred: [
+                          { label: "", drug: "Traitement symptomatique exclusif", dose: "—", duration: "—", notes: "Pas de traitement antiviral spécifique" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "encephalite_listeria2",
+                      label: "Listéria positive",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Méningoencéphalite — Listéria confirmée",
+                        indication: null,
+                        preferred: [
+                          { label: "Traitement", drug: "Amoxicilline IV + Gentamicine IV", dose: "Amoxicilline 200 mg/kg/j en 4–6 injections ou en continu + Gentamicine 5 mg/kg/j", duration: "Amoxicilline 21 j — Gentamicine 7 j", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "encephalite_negatif_48h",
+                      label: "Résultats négatifs à 48h",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Méningoencéphalite — résultats négatifs à 48h",
+                        indication: "Maintien du même traitement probabiliste.",
+                        preferred: [
+                          { label: "Maintien traitement probabiliste", drug: "Amoxicilline IV + Aciclovir IV", dose: "Amoxicilline 200 mg/kg/j + Aciclovir 10 mg/kg × 3/j", duration: "Jusqu'aux résultats complémentaires", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: "Refaire PL ± scanner ± EEG. Contacter neurologue et infectiologue. Orienter les explorations selon le contexte clinique.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── 3. AIDE À LA PL — INDICATIONS SCANNER AVANT PL ──────────────────
+    {
+      id: "pl_indications",
+      label: "Aide à la PL — Quand faire un scanner avant ?",
+      subtitle: "Indications et contre-indications",
+      icon: "💉",
+      color: Abg_C.blue,
+      colorLight: Abg_C.blueLight,
+      result: {
+        condition: "Ponction lombaire — indications et précautions",
+        indication: "Indications d'une ATB AVANT la PL (purpura fulminans, délai >90 min, CI à la PL) : réaliser hémocultures avant ATB puis PL dès que possible.",
+        preferred: [
+          { label: "En cas de purpura", drug: "Hémoculture ou tube sec 10 cc → ATB immédiate (C3G) → biopsie cutanée si ATB avant PL ou examen direct LCR négatif", dose: "—", duration: "—", notes: null },
+          { label: "Prélèvements PL", drug: "Minimum 3 tubes", dose: "Tube 1 : bactériologie + cytologie (20 gouttes) — Tube 2 : biochimie (10 gouttes) — Tube 3 : réserve réfrigérateur (BK, herpès, entérovirus, cryptocoque, PCR West-Nile/Toscana, méningocoque)", duration: "—", notes: null },
+        ],
+        alternatives: [
+          {
+            label: "Indications scanner cérébral AVANT PL",
+            items: [
+              "Signes de focalisation neurologiques",
+              "Troubles de la vigilance : score de Glasgow ≤ 11",
+              "Crises convulsives récentes ou en cours, focales ou généralisées (après 5 ans ; hémi-corporelles avant cet âge)",
+            ],
+          },
+          {
+            label: "CI à la PL",
+            items: [
+              "Anomalie connue de l'hémostase / traitement anticoagulant efficace / suspicion trouble majeur de l'hémostase",
+              "Risque élevé d'engagement cérébral",
+              "Instabilité hémodynamique",
+            ],
+          },
+          {
+            label: "Isolement gouttelettes",
+            items: [
+              "Suspicion méningocoque ou Haemophilus → isolement gouttelettes",
+              "Levée de l'isolement après 48h d'ATB efficace",
+            ],
+          },
+        ],
+        notRecommended: [],
+        followUp: null,
+        source: "Antibioguide CHEG 2022 — SPILF",
+      },
+    },
+
+  ],
+};
+
+const Abg_DATA_PALU = {
+  id: "root",
+  label: "Accès Palustre",
+  children: [
+    {
+      id: "palu_recherche",
+      label: "Test rapide + frottis sanguin + goutte épaisse",
+              question: "Type de Plasmodium ?",
+      type: "info",
+      infoColor: Abg_C.red,
+      infoColorLight: Abg_C.redLight,
+      infoTitle: "Bilan initial — fièvre au retour d'une zone d'endémie",
+      infoItems: [
+        "Test rapide + frottis sanguin + goutte épaisse",
+        "Si négatif : autre cause de fièvre ? prise récente d'antipaludique ? → discuter nouvelle recherche à 12h",
+        "Si forte présomption (anémie, thrombopénie, hypocholestérolémie) → débuter traitement",
+      ],
+      children: [
+        // ── FALCIPARUM ──
+            {
+              id: "palu_falciparum",
+              label: "Plasmodium falciparum",
+              question: "Signes de gravité ?",
+              type: "info",
+              infoColor: Abg_C.red,
+              infoColorLight: Abg_C.redLight,
+              infoTitle: "Critères de gravité du paludisme",
+              infoItems: [
+                "Troubles de la conscience / convulsions",
+                "Choc / défaillance respiratoire",
+                "Syndrome hémorragique",
+                "Ictère ou bilirubine totale > 50 µmol/L",
+                "Hémoglobine < 7 g/dL",
+                "Créatininémie > 265 µmol/L",
+                "Glycémie < 2,2 mmol/L",
+                "Parasitémie > 4 %",
+                "Hyperlactatémie / acidose métabolique",
+              ],
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                    {
+                      id: "palu_falci_grave",
+                      label: "Oui — forme grave",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Paludisme grave à P. falciparum",
+                        indication: "HOSPITALISATION EN RÉANIMATION. Avis réanimateur.",
+                        preferred: [
+                          { label: "Traitement de référence", drug: "Artésunate IV (MALACEF 60 mg) — KIT PALU pharmacie", dose: "Adulte et enfant >20 kg : 2,4 mg/kg à H0, H12, H24 puis toutes les 24h (max 9 doses)", duration: "Au moins 3 doses (24h min)", notes: "En IV lente au PSE au débit de 3 mL/min. Après ≥24h et si tolérance orale : relais ACT" },
+                        ],
+                        alternatives: [
+                          { label: "Relais per os (dès tolérance orale)", items: [
+                            "Eurartesim (arténimol + pipéraquine) — disponible pharmacie",
+                            "Riamet (artémether + luméfantrine) — disponible pharmacie",
+                          ]},
+                          { label: "Surveillance post-artésunate", items: [
+                            "Risque hémolyse différée S2–S3 (15% des patients)",
+                            "Suivi : signes anémie + stigmates hémolyse à J7, J14, J21, J28",
+                            "Suivi parasitologique : frottis J3, J7, J28",
+                          ]},
+                        ],
+                        notRecommended: [],
+                        followUp: "Enfant ≤20 kg : 3 mg/kg à H0, H12, H24 puis toutes les 24h.",
+                        source: "Antibioguide CHEG 2022 — SPILF 2017",
+                      },
+                    },
+                    {
+                      id: "palu_falci_non_grave",
+                      label: "Non — forme non grave",
+              question: "Vomissements ?",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                        {
+                              id: "palu_falci_vomis_oui",
+                              label: "Oui — vomissements",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "P. falciparum non grave — avec vomissements",
+                                indication: "HOSPITALISATION. Voie orale impossible.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Quinine IV", dose: "8 mg/kg toutes les 8h en 4h dans du G10% — sans dose de charge", duration: "Relais per os dès que possible", notes: "Surveillance glycémie capillaire toutes les 4h. Disponible pharmacie." },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Relais per os dès tolérance : Eurartesim ou Riamet.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "palu_falci_vomis_non",
+                              label: "Non — tolérance orale",
+                              icon: "🟢",
+                              color: Abg_C.green,
+                              colorLight: Abg_C.greenLight,
+                              result: {
+                                condition: "P. falciparum non grave — sans vomissements",
+                                indication: "Prise en charge ambulatoire possible si critères réunis (plaquettes >50 000, Hb >10 g/dL, créat <150 µmol/L, parasitémie <2%, suivi J3 et J7 possible — Consult infectio tél : 7047).",
+                                preferred: [
+                                  { label: "1ère ligne ✓", drug: "Eurartesim (arténimol + pipéraquine)", dose: "3 cp en 1 prise à jeun — 3 jours consécutifs (4 cp si poids >75 kg)", duration: "3 jours", notes: "Disponible pharmacie. CI : QT long, grossesse, allaitement." },
+                                  { label: "1ère ligne ✓", drug: "Riamet (artémether + luméfantrine)", dose: "4 cp à H0–H8–H24–H36–H60 au cours d'un repas (total 24 cp en 60h)", duration: "60 heures", notes: "À partir de 35 kg. CI : QT long, grossesse 1er trimestre." },
+                                ],
+                                alternatives: [
+                                  { label: "2ème ligne", items: ["Malarone (proguanil + atovaquone) 4 cp/j pendant 3 jours avec repas gras — à partir de 40 kg"] },
+                                ],
+                                notRecommended: [],
+                                followUp: "Suivi J3 et J7 obligatoire (consultation infectiologie tél : 7047).",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+            // ── NON FALCIPARUM ──
+            {
+              id: "palu_non_falciparum",
+              label: "Plasmodium non falciparum (vivax, ovale, malariae, knowlesi)",
+              question: "Complications ou vomissements ?",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "palu_nf_complic",
+                      label: "P. vivax / knowlesi avec complications",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "P. non falciparum — avec complications",
+                        indication: "HOSPITALISATION EN USI / RÉANIMATION.",
+                        preferred: [
+                          { label: "Traitement", drug: "Quinine IV avec dose de charge", dose: "Standard IV", duration: "Selon évolution", notes: "Disponible pharmacie" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "palu_nf_vomis",
+                      label: "Vomissements sans complications",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "P. non falciparum — vomissements sans complications",
+                        indication: "HOSPITALISATION.",
+                        preferred: [
+                          { label: "Traitement", drug: "Quinine IV sans dose de charge", dose: "8 mg/kg toutes les 8h en 4h dans du G10%", duration: "Relais per os dès que possible", notes: "Surveillance glycémie capillaire toutes les 4h" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "palu_nf_simple",
+                      label: "Sans vomissements, sans complications",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "P. non falciparum — simple, sans vomissements",
+                        indication: null,
+                        preferred: [
+                          { label: "Option 1", drug: "Chloroquine (Nivaquine®)", dose: "10 mg/kg à J1, 10 mg/kg à J2, 5 mg/kg à J3 (total 25 mg/kg sur 3 jours)", duration: "3 jours", notes: "CI : allergie, rétinopathie. Disponible pharmacie." },
+                          { label: "Option 2 (infection mixte ou zone résistance chloroquine)", drug: "Eurartesim ou Riamet (ACT)", dose: "Voir schéma P. falciparum", duration: "3 jours", notes: "En particulier si P. vivax et retour zone de résistance à la chloroquine" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+      ],
+    },
+  ],
+};
+
+const Abg_DATA_NEUTRO = {
+  id: "root",
+  label: "Neutropénie Fébrile",
+  children: [
+    {
+      id: "neutro_def",
+      label: "Neutropénie fébrile",
+              question: "Niveau de risque ?",
+      type: "info",
+      infoColor: Abg_C.red,
+      infoColorLight: Abg_C.redLight,
+      infoTitle: "Définition — URGENCE THÉRAPEUTIQUE",
+      infoItems: [
+        "PNN < 500/mm³",
+        "Isolement protecteur obligatoire",
+        "Bilan initial : Radio pulmonaire, hémocultures périphérie et sur KT, ECBU, NFS-plaquettes, CRP, urée, créat, bilan hépatique, gazo, lactates",
+        "ECBC + Ag légio + pneumocoque si point d'appel pulmonaire",
+      ],
+      children: [
+        // HAUT RISQUE
+            {
+              id: "neutro_haut",
+              label: "Patient à HAUT RISQUE",
+              question: "Patient stable ou sepsis sévère ?",
+              subtitle: "Neutropénie >7j OU PNN <100 OU comorbidités OU échec 1ère ligne OU hospit/C3G/FQ dans les 3 mois",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "neutro_haut_stable_node",
+                      label: "Patient stable",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Neutropénie fébrile haut risque — patient stable",
+            isolement: "protecteur",
+                        indication: "Isolement protecteur. Bilan complet avant ATB.",
+                        preferred: [
+                          { label: "Option 1", drug: "Tazocilline (Pip/Tazo)", dose: "200 mg/kg/j (max 16 g/j)", duration: "Selon évolution", notes: null },
+                          { label: "Option 2", drug: "Céfépime", dose: "60 mg/kg/j (max 6 g/j)", duration: "Selon évolution", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Si allergie bétalactamines", items: ["Aztréonam 6–8 g/24h en 3–4 injections ± Vancomycine"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Réévaluation à 72h. Arrêt aminoside J3. Sortie neutropénie : arrêt ATB à 7j si apyrexie + pas de foyer profond.",
+                        source: "Antibioguide CHEG 2022 — Dr Allemand-Sourrieu 2018",
+                      },
+                    },
+                    {
+                      id: "neutro_haut_sepsis",
+                      label: "Sepsis sévère",
+              question: "Portage BLSE dans les 12 mois ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "neutro_haut_sep_no_blse",
+                              label: "Non",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Neutropénie fébrile haut risque — sepsis sévère — sans portage BLSE",
+                                indication: "Isolement protecteur. Bilan complet avant ATB.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Tazocilline ou Céfépime + Amikacine", dose: "Pip/Tazo 200 mg/kg/j (max 16 g/j) ou Céfépime 60 mg/kg/j (max 6 g/j) + Amikacine 15 mg/kg/j en 1 injection", duration: "Aminoside 3 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Choc septique ou hémocultures CGP+ ou signes cutanés ou infection sur KT → AJOUTER Vancomycine 30 mg/kg/j IVSE après dose de charge + ablation KT infecté.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "neutro_haut_sep_blse_oui",
+                              label: "Oui — portage BLSE",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Neutropénie fébrile haut risque — sepsis sévère — avec portage BLSE",
+                                indication: "Isolement protecteur. Bilan complet avant ATB.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Méropénème ou Imipénème + Amikacine", dose: "Méropénème 1 g × 3/j (ou Imipénème 1 g × 3/j) + Amikacine 15 mg/kg/j en 1 injection", duration: "Aminoside 3 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Choc + CGP+ → ajouter Vancomycine. Neutropénie >7j : scanner TAP + Ag aspergillaire + discuter antifongique.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+            // FAIBLE RISQUE
+            {
+              id: "neutro_faible",
+              label: "Patient à RISQUE FAIBLE",
+              question: "Patient stable ou sepsis sévère ?",
+              subtitle: "Neutropénie <7j ET peu/pas de comorbidités",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "neutro_faible_stable_node",
+                      label: "Patient stable",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Neutropénie fébrile faible risque — patient stable",
+            isolement: "protecteur",
+                        indication: "Isolement protecteur. Bilan complet avant ATB.",
+                        preferred: [
+                          { label: "Traitement", drug: "Céfotaxime", dose: "100 mg/kg/j", duration: "Selon évolution", notes: null },
+                        ],
+                        alternatives: [
+                          { label: "Si allergie bétalactamines", items: ["Aztréonam 6–8 g/24h en 3–4 injections ± Vancomycine"] },
+                        ],
+                        notRecommended: [],
+                        followUp: "Réévaluation à 72h. Neutropénie <7j : poursuite même traitement J5, pas d'escalade si malade stable.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "neutro_faible_sepsis",
+                      label: "Sepsis sévère",
+              question: "Portage BLSE dans les 12 mois ?",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "neutro_faible_sep_no_blse",
+                              label: "Non",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Neutropénie fébrile faible risque — sepsis sévère — sans portage BLSE",
+                                indication: "Isolement protecteur. Bilan complet avant ATB.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Céfotaxime + Gentamicine", dose: "Céfotaxime 100 mg/kg/j + Gentamicine 5 mg/kg/j", duration: "Gentamicine 3 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Choc + CGP+ → ajouter Vancomycine 30 mg/kg/j IVSE après dose de charge.",
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "neutro_faible_sep_blse_oui",
+                              label: "Oui — portage BLSE",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Neutropénie fébrile faible risque — sepsis sévère — avec portage BLSE",
+                                indication: "Isolement protecteur. Bilan complet avant ATB.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Méropénème ou Imipénème + Amikacine", dose: "Méropénème 1 g × 3/j (ou Imipénème 1 g × 3/j) + Amikacine 15 mg/kg/j", duration: "Aminoside 3 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+              ],
+            },
+      ],
+    },
+  ],
+};
+
+const Abg_DATA_PEAU = {
+  id: "root",
+  label: "Peau & Tissus Mous",
+  question: "Type de lésion ?",
+  type: "info",
+  infoColor: Abg_C.amber,
+  infoColorLight: Abg_C.amberLight,
+  infoTitle: "⚠️ Dans tous les cas : contrôler la protection antitétanique",
+  infoItems: ["Vérifier statut vaccinal tétanos avant toute prise en charge d'infection cutanée"],
+  children: [
+        {
+          id: "peau_furoncle",
+              label: "Furoncle",
+              question: "Simple ou compliqué ?",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "furoncle_simple",
+                      label: "Furoncle simple",
+                      icon: "🟢",
+                      color: Abg_C.green,
+                      colorLight: Abg_C.greenLight,
+                      result: {
+                        condition: "Furoncle simple — S. aureus",
+                        indication: null,
+                        preferred: [
+                          { label: "Traitement local", drug: "Antiseptique local", dose: "—", duration: "—", notes: "Alternative : antibiothérapie locale Mupirocine" },
+                        ],
+                        alternatives: [],
+                        notRecommended: ["Fluoroquinolones et rifampicine en 1ère intention","Antibiotiques systémiques si furoncle simple"],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "furoncle_complic",
+                      label: "Furoncle compliqué (anthrax, furonculose diffuse…)",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Furoncle compliqué — S. aureus",
+                        indication: "Prélèvement du pus.",
+                        preferred: [
+                          { label: "Traitement", drug: "Pristinamycine", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: ["Fluoroquinolones et rifampicine en 1ère intention"],
+                        followUp: "Prélèvement local pour rechercher SARM et/ou Toxine PVL si lésion récidivante, extensive, nécrotique ou atteinte familiale.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "peau_impetigo",
+              label: "Impétigo",
+              subtitle: "Streptocoques, S. aureus",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Impétigo",
+                indication: "Si fièvre : hémocultures.",
+                preferred: [
+                  { label: "Si < 5 lésions peu étendues", drug: "Traitement local Mupirocine", dose: "—", duration: "—", notes: null },
+                  { label: "Si > 5 lésions ou étendues", drug: "Pristinamycine", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "peau_erysipele",
+              label: "Érysipèle des membres",
+              subtitle: "Streptocoque, Staph (25%)",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Érysipèle des membres",
+                indication: "NFS + hémocultures.",
+                preferred: [
+                  { label: "Option 1", drug: "Amoxicilline IV/PO", dose: "1 g × 3/j (2 g × 3/j si > 80 kg)", duration: "Jusqu'à 48h après disparition signes cutanés — relais PO à 48h d'apyrexie", notes: null },
+                  { label: "Option 2", drug: "Pristinamycine", dose: "1 g × 3/j", duration: "Idem", notes: null },
+                  { label: "Option 3", drug: "Amoxicilline / Ac. clavulanique", dose: "1 g × 3/j (2 g × 3/j si > 80 kg)", duration: "Idem", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "peau_fasciite",
+              label: "Fasciite nécrosante",
+              subtitle: "Streptococcus pyogenes, BGN, anaérobies — URGENCE CHIRURGICALE",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Fasciite nécrosante — URGENCE CHIRURGICALE",
+            isolement: "contact",
+                indication: "Hémocultures + prélèvement pus ou tissulaire. Débridement chirurgical urgent.",
+                preferred: [
+                  { label: "Traitement médical", drug: "Amoxicilline/Clav ou Pip/Tazo + Clindamycine + Gentamicine", dose: "Amox/Clav 4–6 g/j (ou Pip/Tazo 200 mg/kg/j si abdomino-périnéal) + Clindamycine 600 mg × 3/j + Gentamicine 7 mg/kg/24h", duration: "14 j — Gentamicine arrêt J3", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: ["Fluoroquinolones et rifampicine en 1ère intention"],
+                followUp: "Désescalade sur ATBgramme. Arrêt gentamicine à J3.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "peau_gangrene",
+              label: "Gangrène gazeuse",
+              subtitle: "CG+, BGN, anaérobies dont Clostridium spp",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Gangrène gazeuse — URGENCE CHIRURGICALE",
+                indication: "Hémocultures + prélèvement pus ou tissulaire. Débridement chirurgical urgent.",
+                preferred: [
+                  { label: "Option 1", drug: "Amoxicilline / Ac. clavulanique + Gentamicine", dose: "Amox/Clav 60–100 mg/kg/j + Gentamicine 7 mg/kg/j", duration: "5 j — Gentamicine arrêt J3", notes: null },
+                  { label: "Option 2 (abdomino-périnéal)", drug: "Pipéracilline/Tazobactam + Gentamicine", dose: "Pip/Tazo 200 mg/kg/j + Gentamicine 7 mg/kg/j", duration: "5 j — Gentamicine arrêt J3", notes: null },
+                  { label: "Option 3", drug: "Céfotaxime + Métronidazole + Gentamicine", dose: "Céfotaxime 60–100 mg/kg/24h + Métronidazole 0,5 g × 3/j ± Gentamicine 7 mg/kg/j", duration: "5 j — Gentamicine arrêt J3", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Désescalade sur ATBgramme.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "peau_staphy_face",
+              label: "Staphylococcie maligne de la face",
+              subtitle: "S. aureus",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              result: {
+                condition: "Staphylococcie maligne de la face",
+                indication: "Hémocultures + prélèvement pus ou tissulaire.",
+                preferred: [
+                  { label: "Option 1", drug: "Cloxacilline ± Gentamicine", dose: "Cloxacilline 100 mg/kg/24h ± Gentamicine 5 mg/kg/24h", duration: "5 j — Gentamicine arrêt J3", notes: null },
+                  { label: "Option 2", drug: "Céfotaxime + Fosfomycine IV", dose: "Céfotaxime 100 mg/kg/j + Fosfomycine 4 g × 3/j IV", duration: "5 j — Gentamicine arrêt J3", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Désescalade sur ATBgramme.",
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "peau_morsure",
+              label: "Morsure animale inflammatoire",
+              subtitle: "Anaérobies, pyogènes",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              result: {
+                condition: "Morsure animale inflammatoire",
+                indication: "Vérifier statut antitétanique.",
+                preferred: [
+                  { label: "Traitement", drug: "Amoxicilline / Ac. clavulanique", dose: "1 g × 3/j (2 g × 3/j si > 80 kg)", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "Antibioguide CHEG 2022",
+              },
+            },
+            {
+              id: "peau_escarre_sepsis",
+              label: "Sepsis sur escarre",
+              subtitle: "CG+, BGN, anaérobies — escarre simple : soins locaux uniquement",
+              question: "Sévérité ?",
+              icon: "🟠",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                    {
+                      id: "escarre_sans_gravite",
+                      label: "Sans signe de sévérité",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Sepsis sur escarre — sans signe de sévérité",
+                        indication: "Hémocultures + prélèvement pus ou tissulaire.",
+                        preferred: [
+                          { label: "Option 1", drug: "Pipéracilline/Tazobactam", dose: "4 g × 3/j (4 g × 4/j si > 80 kg)", duration: "7 jours", notes: null },
+                          { label: "Option 2", drug: "Céfotaxime + Métronidazole", dose: "Céfotaxime 1 g × 3/j (2 g × 3/j si > 80 kg) + Métronidazole 500 mg × 3/j ± Gentamicine 7 mg/kg/j", duration: "7 jours", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "escarre_avec_gravite",
+                      label: "Avec signes de sévérité (dont suspicion SARM)",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Sepsis sur escarre — avec signes de sévérité / suspicion SARM",
+                        indication: "Hémocultures + prélèvement pus ou tissulaire.",
+                        preferred: [
+                          { label: "Traitement", drug: "Pip/Tazo ou Céfotaxime+Métronidazole + Vancomycine ou Téicoplanine ou Linézolide", dose: "Pip/Tazo 4 g × 3/j + Vancomycine ou Téicoplanine ou Linézolide 600 mg × 2/j", duration: "7 jours", notes: "Suspicion SARM : hospit récente, portage connu, épidémie communautaire" },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+  ],
+};
+
+const Abg_DATA_PIED = {
+  id: "root",
+  label: "Pied du Diabétique",
+  question: "Ostéite présente ?",
+  type: "info",
+  infoColor: Abg_C.blue,
+  infoColorLight: Abg_C.blueLight,
+  infoTitle: "À réaliser impérativement",
+  infoItems: [
+    "Équilibre du diabète",
+    "Geste de revascularisation si AOMI (doppler artériel ± angioTDM + consultation chirurgie vasculaire)",
+    "Protocole pansement adapté",
+    "Mise en décharge (prescrire chaussure de décharge)",
+    "Prélèvements AVANT ATB : hémocultures, aspiration à l'aiguille souple ou prélèvements profonds",
+    "NE PAS réaliser de prélèvements superficiels à l'écouvillon",
+  ],
+  children: [
+        {
+          id: "pied_no_osteite",
+              label: "Pas d'ostéite",
+              question: "Type d'infection ?",
+              icon: "🟡",
+              color: Abg_C.amber,
+              colorLight: Abg_C.amberLight,
+              children: [
+                {
+                      id: "pied_plaie_superficielle",
+                      label: "Plaie superficielle récente (<1 mois)",
+              question: "Suspicion SARM ?",
+                      subtitle: "SAMS / Strepto pyogènes ou SARM",
+                      icon: "🟡",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                        {
+                              id: "pied_sup_no_sarm",
+                              label: "Non — SAMS / Strepto pyogènes",
+                              icon: "🟡",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Plaie superficielle récente — SAMS/Strepto",
+                                indication: null,
+                                preferred: [
+                                  { label: "Option 1", drug: "Clindamycine", dose: "600 mg × 3/j", duration: "1–2 semaines", notes: null },
+                                  { label: "Option 2", drug: "Augmentin®", dose: "1 g × 3/j", duration: "1–2 semaines", notes: null },
+                                ],
+                                alternatives: [
+                                  { label: "Alternative", items: ["Pristinamycine 1 g × 3/j"] },
+                                ],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "pied_sup_sarm_oui",
+                              label: "Oui — SARM",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Plaie superficielle récente — SARM",
+                                indication: null,
+                                preferred: [
+                                  { label: "Traitement", drug: "Clindamycine", dose: "1 g × 3/j", duration: "1–2 semaines", notes: null },
+                                ],
+                                alternatives: [
+                                  { label: "Alternative", items: ["Linézolide PO 600 mg × 2/j"] },
+                                ],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+                    {
+                      id: "pied_dermohypo",
+                      label: "Dermohypodermite extensive",
+              question: "Suspicion SARM ?",
+                      subtitle: "SAMS/Strepto pyogènes ou SARM",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      children: [
+                        {
+                              id: "pied_dermohypo_no_sarm",
+                              label: "Non — SAMS/Strepto",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Dermohypodermite extensive — SAMS/Strepto",
+                                indication: "ATB guidée par prélèvements profonds per-opératoires ou à l'aiguille souple.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Cloxacilline / Oxacilline ± Aminoside", dose: "100–150 mg/kg/j ± aminoside 72h", duration: "2–4 semaines ± drainage chirurgical", notes: null },
+                                ],
+                                alternatives: [
+                                  { label: "Alternative", items: ["Téicoplanine 12 mg/kg × 2/j × 5 doses puis 6 mg/kg/12h"] },
+                                ],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "pied_dermohypo_sarm_oui",
+                              label: "Oui — SARM",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Dermohypodermite extensive — SARM",
+                                indication: "ATB guidée par prélèvements profonds per-opératoires ou à l'aiguille souple.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Vancomycine IV + Aminoside 72h", dose: "Vancomycine 30 mg/kg/j + aminoside 72h", duration: "2–4 semaines ± drainage chirurgical", notes: null },
+                                ],
+                                alternatives: [
+                                  { label: "Alternative", items: ["Linézolide PO 600 mg × 2/j"] },
+                                ],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+                    {
+                      id: "pied_profonde",
+                      label: "Lésion profonde et/ou chronique avec ou sans sepsis",
+              question: "Suspicion SARM ?",
+                      subtitle: "SAMS/Strepto/BGN/Anaérobies ou SARM",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      children: [
+                        {
+                              id: "pied_prof_no_sarm",
+                              label: "Non",
+                              icon: "🟠",
+                              color: Abg_C.amber,
+                              colorLight: Abg_C.amberLight,
+                              result: {
+                                condition: "Lésion profonde/chronique — sans SARM",
+                                indication: "ATB guidée par prélèvements profonds per-opératoires.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Augmentin® IV puis PO + Aminoside 72h", dose: "Augmentin® 1 g × 3/j IV puis PO + aminoside 72h", duration: "2–4 semaines ± drainage chirurgical", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                            {
+                              id: "pied_prof_sarm_oui",
+                              label: "Oui — SARM",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Lésion profonde/chronique — SARM",
+                                indication: "ATB guidée par prélèvements profonds per-opératoires.",
+                                preferred: [
+                                  { label: "Traitement", drug: "Vancomycine IV + Aminoside 72h", dose: "Vancomycine 30 mg/kg/j + aminoside 72h", duration: "2–4 semaines", notes: null },
+                                ],
+                                alternatives: [
+                                  { label: "Alternative", items: ["Téicoplanine / Linézolide 600 mg × 2/j"] },
+                                ],
+                                notRecommended: [],
+                                followUp: null,
+                                source: "Antibioguide CHEG 2022",
+                              },
+                            },
+                      ],
+                    },
+                    {
+                      id: "pied_sepsis_severe",
+                      label: "Sepsis sévère / Choc septique",
+                      subtitle: "SAMS/SARM/Strepto/Pseudomonas/BGN/anaérobies",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Pied diabétique — sepsis sévère / choc septique",
+                        indication: "Hémocultures avant ATB.",
+                        preferred: [
+                          { label: "Option 1 (sans FdR BLSE)", drug: "Pipéracilline/Tazobactam + Vancomycine", dose: "Pip/Tazo 4 g × 3/j + Vancomycine 30 mg/kg/j", duration: "2–4 semaines", notes: null },
+                          { label: "Option 2 (FdR BLSE)", drug: "Tiénam® + Vancomycine", dose: "Imipénème 1 g × 3/j + Vancomycine 30 mg/kg/j", duration: "2–4 semaines", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+            {
+              id: "pied_osteite",
+              label: "Ostéite présente (critères cliniques et radiologiques)",
+              question: "Sepsis sévère ?",
+              icon: "🔴",
+              color: Abg_C.red,
+              colorLight: Abg_C.redLight,
+              children: [
+                {
+                      id: "pied_osteite_sep_oui",
+                      label: "Oui — sepsis sévère",
+                      icon: "🔴",
+                      color: Abg_C.red,
+                      colorLight: Abg_C.redLight,
+                      result: {
+                        condition: "Ostéite pied diabétique — avec sepsis sévère",
+                        indication: "Démarrer ATB de 1ère intention après réalisation bactério (hémocultures, prélèvements locaux à l'aiguille souple).",
+                        preferred: [
+                          { label: "Voir", drug: "→ Sepsis sévère / Choc septique ci-dessus", dose: "—", duration: "—", notes: null },
+                        ],
+                        alternatives: [],
+                        notRecommended: [],
+                        followUp: null,
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+                    {
+                      id: "pied_osteite_sep_non",
+                      label: "Non — pas de sepsis sévère",
+                      icon: "🟠",
+                      color: Abg_C.amber,
+                      colorLight: Abg_C.amberLight,
+                      result: {
+                        condition: "Ostéite pied diabétique — sans sepsis sévère",
+                        indication: "Prélèvements profonds ostéo-articulaires au bloc opératoire avec le KIT OS disponible au laboratoire. NE PAS débuter ATB avant prélèvements.",
+                        preferred: [
+                          { label: "", drug: "ATB selon résultats prélèvements profonds", dose: "—", duration: "—", notes: "Attendre résultats microbiologiques avant de démarrer l'ATB" },
+                        ],
+                        alternatives: [],
+                        notRecommended: ["Prélèvements superficiels à l'écouvillon"],
+                        followUp: "KIT OS disponible au laboratoire.",
+                        source: "Antibioguide CHEG 2022",
+                      },
+                    },
+              ],
+            },
+  ],
+};
+
+const Abg_DATA_ORL = {
+  id: "root",
+  label: "Infections Cervicales Profondes",
+  question: "Situation clinique ?",
+  type: "info",
+  infoColor: "#1A3A5C",
+  infoColorLight: "#EBF4FA",
+  infoTitle: "Prélèvements microbiologiques avant ATB — sauf :",
+  infoItems: [
+    "Urgence thérapeutique (sepsis ou choc septique)",
+    "Adénites aiguës non compliquées traitées en ambulatoire",
+    "Hémocultures si sepsis ou choc septique",
+  ],
+  children: [
+    {
+      id: "orl_adenite",
+      label: "Adénite (adulte)",
+      subtitle: "SGA, Staphylococcus aureus méti-S",
+      icon: "🟡",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      result: {
+        condition: "Adénite cervicale (adulte)",
+        indication: "PO d'emblée sauf hospitalisation, impossibilité de la prise per os, signes de gravité. En cas de mauvaise évolution : avis infectiologique.",
+        preferred: [
+          { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique", dose: "80 mg/kg/j d'amoxicilline en 3–4 prises (max 3 g/j)", duration: "7 jours", notes: "PO d'emblée si possible" },
+        ],
+        alternatives: [
+          { label: "Allergie vraie aux pénicillines", items: [
+            "Céfazoline IV : 100 mg/kg/j en continu ou 3 injections/j",
+            "Si CI bêtalactamines : Clindamycine ou Linézolide",
+          ]},
+          { label: "Antibiothérapie ciblée (ATBgramme) — par ordre de préférence", items: [
+            "SGA : 1. Amoxicilline — 2. Clindamycine",
+            "SAMS : 1. Céfalexine PO — 2. Clindamycine — 3. Cotrimoxazole",
+            "SARM : 1. Clindamycine — 2. Cotrimoxazole — 3. Linézolide",
+          ]},
+        ],
+        notRecommended: [],
+        followUp: "Relais PO dès évolution favorable (apyrexie, reprise alimentation orale). Durée : 7 jours.",
+        source: "SPILF/SFORL 2024",
+      },
+    },
+    {
+      id: "orl_abces",
+      label: "Abcès péri/rétro-pharyngé ou péri-amygdalien (adulte)",
+      subtitle: "SGA, Streptococcus milleri, SA, S. pneumoniae, Fusobacterium, anaérobies",
+      icon: "🟠",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      result: {
+        condition: "Abcès péri ou rétro-pharyngé / Abcès péri-amygdalien (adulte)",
+        indication: "PO d'emblée possible sauf hospitalisation, impossibilité de prise orale, signes de gravité.",
+        preferred: [
+          { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique", dose: "100 mg/kg/j d'amoxicilline en 4–6 administrations (max 1200 mg/j d'ac. clav.)", duration: "7–10 jours", notes: "+ 1 dose unique Gentamicine si choc septique" },
+        ],
+        alternatives: [
+          { label: "Allergie aux pénicillines", items: [
+            "Céfazoline IV + Métronidazole 500 mg × 3/j",
+            "Si CI bêtalactamines : Linézolide 600 mg × 2/j (± dose unique Gentamicine si choc)",
+          ]},
+          { label: "Antibiothérapie ciblée — par ordre de préférence", items: [
+            "1. Amoxicilline / Ac. clavulanique",
+            "2. Clindamycine",
+            "3. Linézolide",
+          ]},
+        ],
+        notRecommended: [],
+        followUp: "Relais PO dès évolution favorable. Drainé : 7 jours. Non drainé : 10 jours.",
+        source: "SPILF/SFORL 2024",
+      },
+    },
+    {
+      id: "orl_cellulite",
+      label: "Cellulite cervicale profonde extensive / Médiastinite nécrosante (adulte)",
+      subtitle: "SGA, Streptococcus milleri, SA, S. pneumoniae, Fusobacterium, anaérobies — URGENCE CHIRURGICALE",
+      question: "Signes toxiniques ? (rash, troubles digestifs, confusion, hypotension)",
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+            {
+              id: "orl_cell_no_tox",
+              label: "Non",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Cellulite cervicale / Médiastinite — sans signes toxiniques",
+            isolement: "contact",
+                indication: "URGENCE CHIRURGICALE. Hémocultures obligatoires.",
+                preferred: [
+                  { label: "Option 1", drug: "Amoxicilline / Ac. clavulanique IV", dose: "100 mg/kg/j en 4–6 administrations + dose unique Gentamicine 6–7 mg/kg si choc", duration: "14 jours post-chirurgie", notes: null },
+                  { label: "Option 2", drug: "Céfotaxime ou Ceftriaxone IV + Métronidazole", dose: "Céfotaxime 100 mg/kg/j ou Ceftriaxone 35 mg/kg/j + Métronidazole 500 mg × 3/j", duration: "14 jours post-chirurgie", notes: null },
+                ],
+                alternatives: [
+                  { label: "Allergie aux pénicillines", items: [
+                    "Céfotaxime/Ceftriaxone + Métronidazole",
+                    "Si allergie croisée céphalosporines (sans hypersensibilité retardée grave) : Méropénème 2 g × 3/j en perfusion 4–8h",
+                    "Si CI toutes bêtalactamines : Lévofloxacine + Linézolide + avis infectiologique",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Durée : 14 jours post-chirurgie. Relais PO dès évolution favorable.",
+                source: "SPILF/SFORL 2024",
+              },
+            },
+            {
+              id: "orl_cell_tox",
+              label: "Oui — signes toxiniques",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Cellulite cervicale / Médiastinite — avec signes toxiniques",
+            isolement: "contact",
+                indication: "URGENCE CHIRURGICALE. Hémocultures obligatoires. Ajouter Clindamycine pour effet anti-toxinique.",
+                preferred: [
+                  { label: "Option 1", drug: "Amoxicilline / Ac. clavulanique IV + Clindamycine", dose: "Amox/Clav 100 mg/kg/j + Clindamycine IV (<70 kg : 600 mg/8h ; >70 kg : 900 mg/8h) + dose unique Gentamicine 6–7 mg/kg si choc", duration: "14 jours post-chirurgie", notes: "Clindamycine : pas d'IV directe" },
+                  { label: "Option 2", drug: "Céfotaxime ou Ceftriaxone + Métronidazole + Clindamycine", dose: "Céfotaxime 100 mg/kg/j ou Ceftriaxone 35 mg/kg/j + Métronidazole 500 mg × 3/j + Clindamycine", duration: "14 jours post-chirurgie", notes: null },
+                ],
+                alternatives: [
+                  { label: "Allergie aux pénicillines", items: [
+                    "Céfotaxime/Ceftriaxone + Métronidazole + Clindamycine si signes toxiniques",
+                    "Si allergie croisée céphalosporines (sans hypersensibilité retardée grave) : Méropénème + Clindamycine",
+                    "Si CI toutes bêtalactamines : Lévofloxacine + Linézolide + avis infectiologique",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Durée : 14 jours post-chirurgie.",
+                source: "SPILF/SFORL 2024",
+              },
+            },
+      ],
+    },
+  ],
+};
+
+const Abg_DATA_IGH = {
+  id: "root",
+  label: "Infections Génitales Hautes",
+  question: "Type d'IGH ?",
+  type: "info",
+  infoColor: "#7C3AED",
+  infoColorLight: "#EDE9FE",
+  infoTitle: "Germes impliqués — IGH",
+  infoItems: [
+    "IST : Chlamydia trachomatis, Neisseria gonorrhoeae, Mycoplasma genitalium",
+    "Dysbiose vaginale : Gardnerella vaginalis, Atopobium spp, anaérobies (Prevotella…)",
+    "Flore vaginale : entérobactéries, Haemophilus, streptocoques, staphylocoques",
+    "⚠️ Débuter ATB dès diagnostic probable, après prélèvements. Retard → risque GEU et infertilité tubaire",
+  ],
+  children: [
+    {
+      id: "igh_non_complic_simple",
+      label: "IGH non compliquée simple",
+      subtitle: "Compatible avec prise en charge externe",
+      question: "Traitement de 1ère intention ou alternative ?",
+      icon: "🟢",
+      color: "#2E9E6B",
+      colorLight: "#E8F7F1",
+      children: [
+        {
+          id: "igh_simple_1ere",
+          label: "1ère intention — externe",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "IGH non compliquée simple — 1ère intention",
+            indication: "Réévaluation entre J3 et J5 : évolution clinique, tolérance, observance, résultats microbiologiques.",
+            preferred: [
+              { label: "Traitement de référence", drug: "Ceftriaxone + Doxycycline + Métronidazole", dose: "Ceftriaxone 1 g IM/IV dose unique + Doxycycline 100 mg × 2/j PO + Métronidazole 500 mg × 2/j PO", duration: "Ceftriaxone 1 dose — Doxy + Métro 10 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Réévaluation J3–J5. Si N. gonorrhoeae résistant aux FQ sans Ceftriaxone → ajouter Ceftriaxone. Si M. genitalium → Azithromycine (500 mg J1 puis 250 mg/j jusqu'à J5) ou Moxifloxacine. TAAN vaginal à 3–6 mois.",
+            source: "SPILF/CNGOF 2020",
+          },
+        },
+        {
+          id: "igh_simple_alt",
+          label: "Alternatives — externe",
+          question: "Molécule de substitution ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "igh_simple_oflo",
+              label: "Ofloxacine + Métronidazole",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "IGH non compliquée simple — alternative Ofloxacine",
+                indication: null,
+                preferred: [
+                  { label: "Traitement", drug: "Ofloxacine + Métronidazole ± Ceftriaxone", dose: "Ofloxacine 200 mg × 2/j PO + Métronidazole 500 mg × 2/j PO ± Ceftriaxone 1 g IM/IV dose unique si N. gonorrhoeae résistant aux FQ", duration: "10 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Réévaluation J3–J5.",
+                source: "SPILF/CNGOF 2020",
+              },
+            },
+            {
+              id: "igh_simple_levo",
+              label: "Lévofloxacine + Métronidazole",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "IGH non compliquée simple — alternative Lévofloxacine",
+                indication: null,
+                preferred: [
+                  { label: "Traitement", drug: "Lévofloxacine + Métronidazole ± Ceftriaxone", dose: "Lévofloxacine 500 mg × 1/j PO + Métronidazole 500 mg × 2/j PO ± Ceftriaxone 1 g IM/IV dose unique si N. gonorrhoeae résistant aux FQ", duration: "10 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Réévaluation J3–J5.",
+                source: "SPILF/CNGOF 2020",
+              },
+            },
+            {
+              id: "igh_simple_moxi",
+              label: "Moxifloxacine ± Ceftriaxone",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "IGH non compliquée simple — alternative Moxifloxacine",
+                indication: "⚠️ Vérifier ECG avant prescription (conditions pro-arythmogènes) et absence de médicaments allongeant le QT.",
+                preferred: [
+                  { label: "Traitement", drug: "Moxifloxacine ± Ceftriaxone", dose: "Moxifloxacine 400 mg × 1/j PO ± Ceftriaxone 1 g IM/IV dose unique", duration: "10 jours", notes: "⚠️ ECG obligatoire avant prescription" },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Réévaluation J3–J5.",
+                source: "SPILF/CNGOF 2020",
+              },
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "igh_intermediaire",
+      label: "IGH intermédiaire",
+      subtitle: "Hospitalisation : hyperalgie, voie orale impossible, échec traitement antérieur, incertitude diagnostique",
+      question: "Phase du traitement ?",
+      icon: "🟡",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "igh_inter_induction",
+          label: "Induction en hospitalisation",
+          question: "1ère intention ou alternative ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "igh_inter_ind_1",
+              label: "1ère intention",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "IGH intermédiaire — induction 1ère intention",
+                indication: "La biodisponibilité orale de la Doxycycline et du Métronidazole autorise la voie orale.",
+                preferred: [
+                  { label: "Traitement", drug: "Ceftriaxone + Doxycycline + Métronidazole", dose: "Ceftriaxone 1–2 g/j IV + Doxycycline 100 mg × 2/j IV ou PO + Métronidazole 500 mg × 3/j IV ou PO", duration: "Jusqu'à relais oral", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternatives", items: [
+                    "Céfoxitine 2 g × 4/j IV + Doxycycline 100 mg × 2/j IV ou PO",
+                    "Clindamycine 600 mg × 4/j IV + Gentamicine 5 mg/kg × 1/j IV (⚠️ place limitée : résistances, faible activité BGN, toxicité)",
+                    "Allergie vraie pénicilline/céphalosporines : Fluoroquinolone + Métronidazole",
+                  ]},
+                ],
+                notRecommended: ["Clindamycine à limiter : résistances croissantes, faible activité BGN, toxicité association aminosides"],
+                followUp: "Relais oral dès amélioration clinique.",
+                source: "SPILF/CNGOF 2020",
+              },
+            },
+          ],
+        },
+        {
+          id: "igh_inter_relais",
+          label: "Relais oral",
+          question: "Schéma de relais ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "igh_inter_rel_doxy",
+              label: "Doxycycline + Métronidazole",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "IGH intermédiaire — relais oral Doxycycline",
+                indication: null,
+                preferred: [
+                  { label: "Relais", drug: "Doxycycline + Métronidazole", dose: "Doxycycline 100 mg × 2/j PO + Métronidazole 500 mg × 3/j PO", duration: "Jusqu'à 14 j total", notes: null },
+                ],
+                alternatives: [
+                  { label: "Autres options relais", items: [
+                    "Clindamycine 600 mg × 3/j PO",
+                    "Ofloxacine 200 mg × 3/j + Métronidazole 500 mg × 3/j PO",
+                    "Lévofloxacine 500 mg × 1/j + Métronidazole 500 mg × 3/j PO",
+                    "Moxifloxacine 400 mg × 1/j PO",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Durée totale : 14 jours.",
+                source: "SPILF/CNGOF 2020",
+              },
+            },
+          ],
+        },
+      ],
+    },
+    {
+      id: "igh_compliquee",
+      label: "IGH compliquée",
+      subtitle: "Abcès tubo-ovarien (ATO) ≥ 3–4 cm ou pelvipéritonite",
+      question: "Forme grave ?",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "IGH compliquée grave",
+      infoItems: [
+        "Rupture d'abcès, péritonite généralisée, choc septique → chirurgie en urgence",
+        "ATO ≥ 3–4 cm : drainage guidé par imagerie ou cœlioscopie",
+        "Choc septique : ajouter Gentamicine 5–7 mg/kg/j (max 3 jours) au schéma",
+        "Durée totale d'antibiothérapie : 14 jours",
+      ],
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "igh_comp_ind_1",
+          label: "Induction — 1ère intention",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "IGH compliquée — induction 1ère intention",
+            indication: "Hospitalisation obligatoire. Drainage si ATO ≥ 3–4 cm. Chirurgie urgente si forme grave.",
+            preferred: [
+              { label: "Traitement de référence", drug: "Ceftriaxone + Doxycycline + Métronidazole", dose: "Ceftriaxone 1–2 g/j IV (2 g si sepsis/signe de gravité ou poids >80 kg) + Doxycycline 100 mg × 2/j IV ou PO + Métronidazole 500 mg × 3/j IV ou PO", duration: "Jusqu'à relais oral puis 14 jours total", notes: "+ Gentamicine 5–7 mg/kg/j IV si choc septique (max 3 jours)" },
+            ],
+            alternatives: [
+              { label: "Alternatives", items: [
+                "Céfoxitine 2 g × 4/j IV + Doxycycline 100 mg × 2/j",
+                "Clindamycine 600 mg × 4/j IV + Gentamicine 5 mg/kg × 1/j IV (⚠️ place limitée)",
+                "Allergie vraie pénicilline/céphalosporines : Fluoroquinolone + Métronidazole",
+              ]},
+              { label: "Relais oral (même options qu'IGH intermédiaire)", items: [
+                "Doxycycline 100 mg × 2/j + Métronidazole 500 mg × 3/j PO",
+                "Ofloxacine 200 mg × 3/j + Métronidazole 500 mg × 3/j PO",
+                "Lévofloxacine 500 mg × 1/j + Métronidazole 500 mg × 3/j PO",
+                "Moxifloxacine 400 mg × 1/j PO",
+              ]},
+            ],
+            notRecommended: ["Clindamycine à limiter : résistances, faible activité BGN, toxicité association aminosides"],
+            followUp: "Durée totale : 14 jours. DIU : pas de retrait systématique si non compliquée. Discuter retrait si forme compliquée ou évolution défavorable à J3.",
+            source: "SPILF/CNGOF 2020",
+          },
+        },
+      ],
+    },
+    {
+      id: "igh_post_partum",
+      label: "IGH du post-partum",
+      subtitle: "Fièvre, douleurs abdomino-pelviennes, lochies fétides",
+      icon: "🤱",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      result: {
+        condition: "IGH du post-partum",
+        indication: "Diagnostic : douleur utérine provoquée + température ≥ 38°Abg_C. Si fièvre persistante sous ATB adaptée → TDM ou IRM (thrombophlébite ou abcès profond).",
+        preferred: [
+          { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique", dose: "3 à 6 g/j selon poids, IV ou PO", duration: "Jusqu'à 48h d'apyrexie et disparition douleurs provoquées", notes: null },
+        ],
+        alternatives: [
+          { label: "Allergie vraie pénicilline (réaction anaphylactique) ou allergie céphalosporines", items: [
+            "Lévofloxacine + Métronidazole (y compris allaitement — CRAT)",
+            "Clindamycine 600 mg × 3/j IV + Gentamicine 5 mg/kg × 1/j IV (⚠️ déconseillée en allaitement, résistances, faible activité BGN)",
+          ]},
+        ],
+        notRecommended: ["Clindamycine déconseillée en cas d'allaitement"],
+        followUp: "Si thrombophlébite pelvienne → anticoagulation héparine 6 semaines.",
+        source: "SPILF/CNGOF 2020",
+      },
+    },
+    {
+      id: "igh_diu",
+      label: "IGH et DIU",
+      subtitle: "Dispositif intra-utérin en place",
+      icon: "💡",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "IGH sur DIU",
+        indication: null,
+        preferred: [
+          { label: "IGH non compliquée sur DIU", drug: "Retrait du DIU NON systématique", dose: "—", duration: "—", notes: "Même antibiothérapie que IGH non compliquée simple" },
+        ],
+        alternatives: [
+          { label: "Retrait à discuter si :", items: [
+            "Forme compliquée (ATO, pelvipéritonite)",
+            "Évolution défavorable après 3 jours d'antibiothérapie",
+          ]},
+        ],
+        notRecommended: [],
+        followUp: null,
+        source: "SPILF/CNGOF 2020",
+      },
+    },
+  ],
+};
+
+const Abg_DATA_ORL2 = {
+  id: "root",
+  label: "Infections ORL",
+  question: "Type d'infection ?",
+  children: [
+
+    // ── ANGINE ────────────────────────────────────────────────────────────────
+    {
+      id: "orl2_angine",
+      label: "Angine",
+      subtitle: "Score de Mac-Isaac avant TDR",
+      question: "Score de Mac-Isaac ?",
+      type: "info",
+      infoColor: "#2E7EAD",
+      infoColorLight: "#EBF4FA",
+      infoTitle: "Score de Mac-Isaac — 1 point par critère",
+      infoItems: [
+        "Fièvre > 38°Abg_C",
+        "Absence de toux",
+        "Adénopathies cervicales antérieures douloureuses",
+        "Exsudat ou gonflement amygdalien",
+        "Âge : 3–14 ans (+1 pt) / 15–44 ans (0) / ≥ 45 ans (−1 pt)",
+        "─────────────────────────────",
+        "Score ≤ 2 → probabilité SGA ~5% → pas de TDR, pas d'ATB",
+        "Score ≥ 3 → TDR recommandé",
+      ],
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "orl2_angine_maciasaac_bas",
+          label: "Score ≤ 2 — probabilité SGA faible",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Angine — Score Mac-Isaac ≤ 2",
+            indication: "Probabilité d'infection à SGA ~5% — TDR non nécessaire.",
+            preferred: [
+              { label: "", drug: "PAS D'ANTIBIOTHÉRAPIE — PAS DE TDR", dose: "—", duration: "—", notes: "Traitement symptomatique exclusif" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: null,
+            source: "SPILF/SFORL",
+          },
+        },
+        {
+          id: "orl2_angine_maciasaac_haut",
+          label: "Score ≥ 3 — TDR recommandé",
+          question: "Résultat du TDR ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "orl2_angine_positif",
+              label: "TDR positif",
+              question: "Allergie aux bêtalactamines ?",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              children: [
+                {
+                  id: "orl2_angine_no_allergie",
+                  label: "Pas d'allergie",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "Angine — TDR positif, sans allergie",
+                    indication: null,
+                    preferred: [
+                      { label: "1ère intention", drug: "Amoxicilline PO", dose: "1 g × 2/j", duration: "6 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+                {
+                  id: "orl2_angine_allergie_benigne",
+                  label: "Allergie bénigne à la pénicilline",
+                  icon: "🟡",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  result: {
+                    condition: "Angine — TDR positif, allergie bénigne pénicilline",
+                    indication: null,
+                    preferred: [
+                      { label: "Option 1", drug: "Céfuroxime-axétil PO", dose: "250 mg × 2/j", duration: "4 jours", notes: null },
+                      { label: "Option 2", drug: "Céfpodoxime-proxétil PO", dose: "100 mg × 2/j", duration: "5 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+                {
+                  id: "orl2_angine_ci_blactam",
+                  label: "Contre-indication aux bêtalactamines",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: {
+                    condition: "Angine — TDR positif, CI bêtalactamines",
+                    indication: null,
+                    preferred: [
+                      { label: "Traitement", drug: "Clarithromycine PO", dose: "250 mg × 2/j", duration: "5 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+              ],
+            },
+            {
+              id: "orl2_angine_negatif",
+              label: "TDR négatif",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Angine — TDR négatif",
+                indication: null,
+                preferred: [
+                  { label: "", drug: "PAS D'ANTIBIOTHÉRAPIE", dose: "—", duration: "—", notes: "Traitement symptomatique exclusif" },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── COQUELUCHE ────────────────────────────────────────────────────────────
+    {
+      id: "orl2_coqueluche",
+      label: "Coqueluche",
+      subtitle: "Hospitalisation si : mauvaise tolérance des quintes, apnées, défaillance cardio-respiratoire, état de mal convulsif",
+      question: "Traitement et mesures associées",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "Mesures associées — Coqueluche",
+      infoItems: [
+        "Éviter le contact avec nourrissons < 6 mois",
+        "Antibioprophylaxie de l'entourage familial et sujets fragiles (mêmes modalités qu'en curatif, jusqu'à 21 jours après contact)",
+        "Port de masque et lavage de mains",
+        "Éviction scolaire : 3–5 j après début traitement, ou 3 semaines après début toux si pas d'ATB",
+      ],
+      icon: "🟠",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "orl2_coqueluche_ttt",
+          label: "Traitement antibiotique",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Coqueluche",
+            indication: "Hospitalisation si mauvaise tolérance, apnées, défaillance cardio-respiratoire, état de mal convulsif.",
+            preferred: [
+              { label: "1ère intention", drug: "Clarithromycine PO", dose: "500 mg × 2/j", duration: "7 jours", notes: null },
+              { label: "2ème intention", drug: "Azithromycine PO", dose: "500 mg × 1/j", duration: "3 jours", notes: null },
+              { label: "3ème intention", drug: "Cotrimoxazole PO", dose: "800 mg/160 mg × 2/j", duration: "7 jours", notes: null },
+              { label: "En cas de rupture de stock", drug: "Érythromycine PO", dose: "1 g × 2/j", duration: "14 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Antibioprophylaxie de l'entourage dans les mêmes modalités, jusqu'à 21 jours après le contact.",
+            source: "SPILF/SFORL",
+          },
+        },
+      ],
+    },
+
+    // ── OMA ────────────────────────────────────────────────────────────────────
+    {
+      id: "orl2_oma",
+      label: "Otite Moyenne Aiguë",
+      subtitle: "Seules les OMA purulentes confirmées par visualisation des tympans justifient une ATB",
+      question: "Symptomatologie ?",
+      type: "info",
+      infoColor: "#E8A82E",
+      infoColorLight: "#FEF7E8",
+      infoTitle: "⚠️ Prescription antibiotique strictement encadrée",
+      infoItems: [
+        "ATB uniquement si OMA purulente confirmée par visualisation des tympans",
+        "Toute prescription sans visualisation des tympans doit être proscrite",
+        "Abstention possible si patient peu symptomatique",
+      ],
+      icon: "🟡",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "orl2_oma_pauci",
+          label: "Pauci-symptomatique",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "OMA — pauci-symptomatique",
+            indication: null,
+            preferred: [
+              { label: "", drug: "Abstention thérapeutique possible", dose: "—", duration: "—", notes: "Traitement symptomatique si patient peu symptomatique" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: null,
+            source: "SPILF/SFORL",
+          },
+        },
+        {
+          id: "orl2_oma_bruyante",
+          label: "Symptomatologie bruyante — OMA purulente confirmée",
+          question: "Allergie aux bêtalactamines ?",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          children: [
+            {
+              id: "orl2_oma_no_allergie",
+              label: "Pas d'allergie",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "OMA purulente — sans allergie",
+                indication: null,
+                preferred: [
+                  { label: "1ère intention", drug: "Amoxicilline PO", dose: "3 g/j en 2 à 3 prises", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Échec à 72h → avis spécialisé.",
+                source: "SPILF/SFORL",
+              },
+            },
+            {
+              id: "orl2_oma_allergie_benigne",
+              label: "Allergie à la pénicilline (sans CI céphalosporines)",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "OMA purulente — allergie pénicilline sans CI céphalo",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Céfuroxime-axétil PO", dose: "250 mg × 2/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Céfpodoxime-proxétil PO", dose: "200 mg × 2/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Échec à 72h → avis spécialisé.",
+                source: "SPILF/SFORL",
+              },
+            },
+            {
+              id: "orl2_oma_ci_blactam",
+              label: "Contre-indication aux bêtalactamines",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "OMA purulente — CI bêtalactamines",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Pristinamycine PO", dose: "1 g × 2/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Cotrimoxazole PO", dose: "800 mg/160 mg × 2/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Échec à 72h → avis spécialisé.",
+                source: "SPILF/SFORL",
+              },
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── SINUSITE ───────────────────────────────────────────────────────────────
+    {
+      id: "orl2_sinusite",
+      label: "Sinusite",
+      subtitle: "Critères bactériens : persistance douleurs >48h sous symptomatiques, douleur unilatérale/pulsatile, rhinorrhée purulente",
+      question: "Type de sinusite ?",
+      icon: "🟠",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "orl2_sinus_maxillaire",
+          label: "Sinusite maxillaire",
+          question: "Forme ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "orl2_sinus_max_bilat",
+              label: "Bilatérale",
+              question: "Allergie aux bêtalactamines ?",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              children: [
+                {
+                  id: "orl2_sinus_max_bilat_no_all",
+                  label: "Pas d'allergie",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "Sinusite maxillaire bilatérale — sans allergie",
+                    indication: null,
+                    preferred: [
+                      { label: "1ère intention", drug: "Amoxicilline PO", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                    ],
+                    alternatives: [
+                      { label: "Échec : 2ème intention (après documentation)", items: ["Amoxicilline / Ac. clavulanique PO 1 g × 3/j — 7 jours"] },
+                    ],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+                {
+                  id: "orl2_sinus_max_bilat_all_ben",
+                  label: "Allergie bénigne à la pénicilline",
+                  icon: "🟡",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  result: {
+                    condition: "Sinusite maxillaire bilatérale — allergie bénigne pénicilline",
+                    indication: null,
+                    preferred: [
+                      { label: "Option 1", drug: "Céfuroxime-axétil PO", dose: "250 mg × 2/j", duration: "5 jours", notes: null },
+                      { label: "Option 2", drug: "Céfpodoxime-proxétil PO", dose: "200 mg × 2/j", duration: "5 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+                {
+                  id: "orl2_sinus_max_bilat_ci_bl",
+                  label: "Contre-indication aux bêtalactamines",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: {
+                    condition: "Sinusite maxillaire bilatérale — CI bêtalactamines",
+                    indication: null,
+                    preferred: [
+                      { label: "Traitement", drug: "Pristinamycine PO", dose: "1 g × 2/j", duration: "4 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+              ],
+            },
+            {
+              id: "orl2_sinus_max_unilat",
+              label: "Unilatérale + infection dentaire homolatérale supérieure",
+              question: "Allergie aux bêtalactamines ?",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              children: [
+                {
+                  id: "orl2_sinus_max_unilat_no_all",
+                  label: "Pas d'allergie",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "Sinusite maxillaire unilatérale + infection dentaire — sans allergie",
+                    indication: "Avis odontologique si rhinorrhée fétide.",
+                    preferred: [
+                      { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique PO", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+                {
+                  id: "orl2_sinus_max_unilat_all",
+                  label: "Allergie / CI bêtalactamines",
+                  icon: "🟠",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  result: {
+                    condition: "Sinusite maxillaire unilatérale + dentaire — allergie/CI bêtalactamines",
+                    indication: "Avis odontologique si rhinorrhée fétide.",
+                    preferred: [
+                      { label: "Allergie bénigne pénicilline", drug: "Céfuroxime-axétil ou Céfpodoxime-proxétil", dose: "250 mg × 2/j ou 200 mg × 2/j", duration: "5 jours", notes: null },
+                      { label: "CI bêtalactamines", drug: "Pristinamycine PO", dose: "1 g × 2/j", duration: "4 jours", notes: null },
+                    ],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: null,
+                    source: "SPILF/SFORL",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "orl2_sinus_frontale",
+          label: "Sinusite frontale",
+          subtitle: "⚠️ Signes de complications → hospitalisation urgente (syndrome méningé, exophtalmie, œdème palpébral, troubles oculomoteurs, douleurs insomniantes)",
+          question: "Allergie aux bêtalactamines ?",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          children: [
+            {
+              id: "orl2_sinus_front_no_all",
+              label: "Pas d'allergie",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Sinusite frontale — sans allergie",
+                indication: "Signes de complications → hospitalisation urgente.",
+                preferred: [
+                  { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique PO", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+            {
+              id: "orl2_sinus_front_all_ben",
+              label: "Allergie pénicilline (sans CI céphalo)",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Sinusite frontale — allergie pénicilline sans CI céphalo",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Céfpodoxime-proxétil PO", dose: "200 mg × 2/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Céfuroxime-axétil PO", dose: "250 mg × 2/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+            {
+              id: "orl2_sinus_front_ci_bl",
+              label: "CI bêtalactamines ou sinusite grave",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Sinusite frontale — CI bêtalactamines ou forme grave",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Lévofloxacine PO", dose: "500 mg × 1/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Moxifloxacine PO", dose: "400 mg × 1/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+          ],
+        },
+        {
+          id: "orl2_sinus_ethmo_sphe",
+          label: "Sinusite ethmoïdale ou sphénoïdale",
+          subtitle: "⚠️ Signes de complications → hospitalisation urgente (syndrome méningé, exophtalmie, œdème palpébral, troubles oculomoteurs, douleurs insomniantes)",
+          question: "Allergie aux bêtalactamines ?",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          children: [
+            {
+              id: "orl2_sinus_eth_no_all",
+              label: "Pas d'allergie",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Sinusite ethmoïdale ou sphénoïdale — sans allergie",
+                indication: "Signes de complications → hospitalisation urgente.",
+                preferred: [
+                  { label: "1ère intention", drug: "Amoxicilline / Ac. clavulanique PO", dose: "1 g × 3/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+            {
+              id: "orl2_sinus_eth_all_ben",
+              label: "Allergie pénicilline (sans CI céphalo)",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Sinusite ethmoïdale/sphénoïdale — allergie pénicilline sans CI céphalo",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Céfpodoxime-proxétil PO", dose: "200 mg × 2/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Céfuroxime-axétil PO", dose: "250 mg × 2/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+            {
+              id: "orl2_sinus_eth_ci_bl",
+              label: "CI bêtalactamines ou sinusite grave",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Sinusite ethmoïdale/sphénoïdale — CI bêtalactamines ou forme grave",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Lévofloxacine PO", dose: "500 mg × 1/j", duration: "5 jours", notes: null },
+                  { label: "Option 2", drug: "Moxifloxacine PO", dose: "400 mg × 1/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF/SFORL",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+const Abg_DATA_IST = {
+  id: "root",
+  label: "Infections Sexuellement Transmissibles",
+  question: "Type d'IST ?",
+  children: [
+
+    // ── SYPHILIS ──────────────────────────────────────────────────────────────
+    {
+      id: "ist_syphilis",
+      label: "Syphilis",
+      subtitle: "Primaire, secondaire ou latente précoce",
+      question: "Contre-indication aux IM ou allergie pénicilline ?",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "Mesures associées — Syphilis",
+      infoItems: [
+        "Partenaires avec rapport < 3 mois avant le traitement : traitement immédiat OU surveillance sérologique J0 / S6 / M3 ± M6",
+        "Rapports protégés pendant 1 semaine après début du traitement ou jusqu'à cicatrisation du chancre",
+        "Dépistage des autres IST : VIH, hépatites B et Abg_C, gonocoque, Chlamydia",
+      ],
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "ist_syphilis_no_ci",
+          label: "Pas d'allergie pénicilline ni de CI aux IM",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Syphilis — sans allergie pénicilline",
+            indication: null,
+            preferred: [
+              { label: "Traitement de référence", drug: "Benzathine pénicilline G IM", dose: "2,4 M UI en IM", duration: "1 ou 2 injections", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Partenaires < 3 mois : traitement immédiat ou surveillance J0/S6/M3±M6. Rapports protégés 1 semaine ou jusqu'à cicatrisation chancre.",
+            source: "SPILF",
+          },
+        },
+        {
+          id: "ist_syphilis_allergie",
+          label: "Allergie à la pénicilline",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Syphilis — allergie à la pénicilline",
+            indication: null,
+            preferred: [
+              { label: "Traitement", drug: "Doxycycline PO", dose: "200 mg/j en 1 ou 2 prises", duration: "14 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Partenaires < 3 mois : traitement immédiat ou surveillance J0/S6/M3±M6.",
+            source: "SPILF",
+          },
+        },
+        {
+          id: "ist_syphilis_ci_im",
+          label: "Trouble de l'hémostase ou anticoagulant (CI aux IM)",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Syphilis — contre-indication aux IM (anticoagulant / trouble hémostase)",
+            indication: null,
+            preferred: [
+              { label: "Option 1", drug: "Doxycycline PO", dose: "200 mg/j en 1 ou 2 prises", duration: "14 jours", notes: null },
+              { label: "Option 2", drug: "Ceftriaxone IV", dose: "1 g/j", duration: "10 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Partenaires < 3 mois : traitement immédiat ou surveillance J0/S6/M3±M6.",
+            source: "SPILF",
+          },
+        },
+      ],
+    },
+
+    // ── TRICHOMONAS VAGINALIS ──────────────────────────────────────────────────
+    {
+      id: "ist_trichomonas",
+      label: "Trichomonas vaginalis",
+      subtitle: "Vaginite / urétrite — souvent asymptomatique",
+      question: "Observance thérapeutique attendue ?",
+      type: "info",
+      infoColor: "#7C3AED",
+      infoColorLight: "#EDE9FE",
+      infoTitle: "Diagnostic — Trichomonas vaginalis",
+      infoItems: [
+        "Femme : souvent asymptomatique. Si symptômes → vaginite (leucorrhées jaunes/verdâtres, mousseuses, nauséabondes). Prélèvement : écouvillonnage vaginal",
+        "Homme : souvent asymptomatique. Si symptômes → urétrite (suintement rare, prurit, méatite). Prélèvement : écouvillonnage urétral ou 1er jet urinaire",
+      ],
+      icon: "🟡",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "ist_tricho_bonne_obs",
+          label: "Bonne observance attendue",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Trichomonas vaginalis — bonne observance",
+            indication: null,
+            preferred: [
+              { label: "1ère ligne", drug: "Métronidazole PO", dose: "500 mg matin et soir", duration: "7 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Dépistage et traitement simultanés du/des partenaires même si prélèvement négatif. Rapports protégés jusqu'à fin du traitement. Dépistage autres IST.",
+            source: "SPILF",
+          },
+        },
+        {
+          id: "ist_tricho_mauvaise_obs",
+          label: "Observance médiocre attendue",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Trichomonas vaginalis — observance médiocre",
+            indication: null,
+            preferred: [
+              { label: "Option 1", drug: "Métronidazole PO", dose: "2 g", duration: "Dose unique", notes: null },
+              { label: "Option 2", drug: "Secnidazole PO", dose: "2 g", duration: "Dose unique", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Dépistage et traitement simultanés du/des partenaires même si prélèvement négatif. Rapports protégés jusqu'à fin du traitement. Dépistage autres IST.",
+            source: "SPILF",
+          },
+        },
+      ],
+    },
+
+    // ── CHLAMYDIA TRACHOMATIS ─────────────────────────────────────────────────
+    {
+      id: "ist_chlamydia",
+      label: "Chlamydia trachomatis",
+      subtitle: "Infection urogénitale, anorectale, oropharyngée, oculaire",
+      question: "Situation clinique ?",
+      type: "info",
+      infoColor: "#7C3AED",
+      infoColorLight: "#EDE9FE",
+      infoTitle: "Diagnostic — TAAN CT selon localisation",
+      infoItems: [
+        "Homme — infection urogénitale : prélèvement urinaire 1er jet ou pus urétral si écoulement",
+        "Femme — infection urogénitale : auto-prélèvement vaginal (préféré au prélèvement urinaire)",
+        "Infection anorectale : auto-prélèvement rectal",
+        "Infection oculaire : prélèvement conjonctival par le professionnel de santé",
+        "Infection oropharyngée : prélèvement pharyngé par le professionnel de santé",
+        "─────────────────────────────",
+        "Partenaires : signalement systématique sur 6 mois. TAAN CT. Si dernier rapport < 14 jours → traitement proposé même si TAAN négatif.",
+      ],
+      icon: "🟡",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "ist_chlam_std",
+          label: "Homme ou femme non enceinte",
+          question: "Contre-indication à la doxycycline ?",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          children: [
+            {
+              id: "ist_chlam_std_no_ci",
+              label: "Pas de contre-indication",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Chlamydia trachomatis — homme ou femme non enceinte",
+                indication: null,
+                preferred: [
+                  { label: "1ère intention (grade A)", drug: "Doxycycline PO", dose: "100 mg × 2/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [
+                  { label: "2ème intention — CI doxycycline (grade A)", items: ["Azithromycine PO 1 g — dose unique"] },
+                  { label: "3ème intention", items: [
+                    "Ofloxacine PO 200 mg × 2/j — 7 jours",
+                    "Lévofloxacine PO 500 mg × 1/j — 7 jours",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Signalement partenaires sur 6 mois. Si dernier rapport < 14 jours → traitement du partenaire même si TAAN négatif.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_chlam_std_ci_doxy",
+              label: "Contre-indication à la doxycycline",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Chlamydia — CI doxycycline (homme ou femme non enceinte)",
+                indication: null,
+                preferred: [
+                  { label: "2ème intention (grade A)", drug: "Azithromycine PO", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "3ème intention", items: [
+                    "Ofloxacine PO 200 mg × 2/j — 7 jours",
+                    "Lévofloxacine PO 500 mg × 1/j — 7 jours",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Signalement partenaires sur 6 mois.",
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+        {
+          id: "ist_chlam_grossesse",
+          label: "Femme enceinte",
+          question: "Trimestre de grossesse ?",
+          icon: "🤱",
+          color: "#7C3AED",
+          colorLight: "#EDE9FE",
+          children: [
+            {
+              id: "ist_chlam_gros_t1",
+              label: "1er trimestre",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Chlamydia — femme enceinte 1er trimestre",
+                indication: "Doxycycline autorisée au T1 : pas d'effet tératogène ni de toxicité osseuse/dentaire avant 14 SA. CI uniquement à partir du 4ème mois (ANSM 2015). Avis favorable du CRAT.",
+                preferred: [
+                  { label: "1ère intention (grade A)", drug: "Doxycycline PO", dose: "100 mg × 2/j", duration: "7 jours", notes: "Autorisée au 1er trimestre — avis CRAT favorable" },
+                ],
+                alternatives: [
+                  { label: "2ème intention — CI doxycycline (grade B)", items: ["Érythromycine PO 500 mg × 4/j — 7 jours"] },
+                  { label: "3ème intention", items: ["Avis spécialisé"] },
+                ],
+                notRecommended: ["Azithromycine dose unique — manque d'efficacité dans cette indication"],
+                followUp: "Signalement partenaires sur 6 mois.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_chlam_gros_t23",
+              label: "2ème ou 3ème trimestre",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Chlamydia — femme enceinte 2ème ou 3ème trimestre",
+                indication: "Doxycycline contre-indiquée à partir du 4ème mois.",
+                preferred: [
+                  { label: "1ère intention (grade A)", drug: "Azithromycine PO", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "2ème intention — CI azithromycine (grade B)", items: ["Érythromycine PO 500 mg × 4/j — 7 jours"] },
+                  { label: "3ème intention", items: ["Avis spécialisé"] },
+                ],
+                notRecommended: ["Doxycycline — contre-indiquée à partir du 4ème mois de grossesse"],
+                followUp: "Signalement partenaires sur 6 mois.",
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+        {
+          id: "ist_chlam_orchiepi",
+          label: "Orchi-épididymite à Chlamydia",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Orchi-épididymite à Chlamydia trachomatis",
+            indication: null,
+            preferred: [
+              { label: "1ère intention (AE)", drug: "Doxycycline PO", dose: "100 mg × 2/j", duration: "10 jours", notes: null },
+              { label: "2ème intention (AE)", drug: "Azithromycine PO", dose: "1 g à J1 et J7", duration: "2 prises", notes: null },
+            ],
+            alternatives: [
+              { label: "3ème intention", items: [
+                "Ofloxacine PO 200 mg × 2/j — 7 jours",
+                "Lévofloxacine PO 500 mg × 1/j — 7 jours",
+              ]},
+            ],
+            notRecommended: [],
+            followUp: "Signalement partenaires sur 6 mois. Si dernier rapport < 14 jours → traitement du partenaire même si TAAN négatif.",
+            source: "SPILF",
+          },
+        },
+      ],
+    },
+
+    // ── CO-INFECTION GONOCOQUE + CHLAMYDIA ───────────────────────────────────
+    {
+      id: "ist_coinfection",
+      label: "Co-infection Gonocoque + Chlamydia",
+      subtitle: "Traitement combiné simultané",
+      question: "Allergie aux C3G ou CI aux IM ?",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "Co-infection fréquente — traiter les deux simultanément",
+      infoItems: [
+        "Anti-gonocoque : Ceftriaxone 1g IM dose unique",
+        "Anti-Chlamydia : Doxycycline 100 mg × 2/j — 7 jours",
+        "Dépistage des autres IST : syphilis, VIH, hépatites",
+        "Rapports protégés ≥ 7 jours. Traitement simultané des partenaires.",
+      ],
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "ist_coinf_std",
+          label: "Pas d'allergie ni CI",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Co-infection Gonocoque + Chlamydia — traitement standard",
+            indication: null,
+            preferred: [
+              { label: "Anti-gonocoque", drug: "Ceftriaxone IM", dose: "1 g", duration: "Dose unique", notes: null },
+              { label: "Anti-Chlamydia (1ère intention)", drug: "Doxycycline PO", dose: "100 mg × 2/j", duration: "7 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Rapports protégés ≥ 7 jours. Traitement simultané des partenaires. Contrôle TAAN à J7.",
+            source: "SPILF",
+          },
+        },
+        {
+          id: "ist_coinf_ci_doxy",
+          label: "CI à la doxycycline (Chlamydia)",
+          question: "Allergie aux C3G ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "ist_coinf_ci_doxy_no_allerg",
+              label: "Pas d'allergie aux C3G",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Co-infection — CI doxycycline, pas d'allergie C3G",
+                indication: null,
+                preferred: [
+                  { label: "Anti-gonocoque", drug: "Ceftriaxone IM", dose: "1 g", duration: "Dose unique", notes: null },
+                  { label: "Anti-Chlamydia — 2ème intention", drug: "Azithromycine PO", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "Anti-Chlamydia — 3ème intention", items: [
+                    "Ofloxacine PO 200 mg × 2/j — 7 jours",
+                    "Lévofloxacine PO 500 mg × 1/j — 7 jours",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_coinf_ci_doxy_allerg_c3g",
+              label: "Allergie confirmée aux C3G",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Co-infection — CI doxycycline + allergie C3G",
+                indication: null,
+                preferred: [
+                  { label: "Anti-gonocoque — allergie C3G (grade Abg_C)", drug: "Gentamicine IM", dose: "240 mg", duration: "Dose unique", notes: "Traitement probabiliste" },
+                  { label: "Anti-Chlamydia — 2ème intention", drug: "Azithromycine PO", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "Anti-gonocoque alternatif si ATBgramme sensible", items: [
+                    "Ciprofloxacine PO 500 mg DU (si CMI < 0,06 mg/L)",
+                  ]},
+                  { label: "Anti-Chlamydia — 3ème intention", items: [
+                    "Ofloxacine PO 200 mg × 2/j — 7 jours",
+                    "Lévofloxacine PO 500 mg × 1/j — 7 jours",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+        {
+          id: "ist_coinf_ci_im",
+          label: "CI aux IM (anticoagulant / trouble hémostase)",
+          question: "CI à la doxycycline ?",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "ist_coinf_ci_im_no_ci_doxy",
+              label: "Pas de CI à la doxycycline",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Co-infection — CI aux IM, pas de CI doxycycline",
+                indication: null,
+                preferred: [
+                  { label: "Anti-gonocoque (grade A)", drug: "Ceftriaxone IV", dose: "1 g", duration: "Dose unique", notes: null },
+                  { label: "Anti-Chlamydia (1ère intention)", drug: "Doxycycline PO", dose: "100 mg × 2/j", duration: "7 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_coinf_ci_im_ci_doxy",
+              label: "CI à la doxycycline aussi",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Co-infection — CI aux IM + CI doxycycline",
+                indication: null,
+                preferred: [
+                  { label: "Anti-gonocoque (grade A)", drug: "Ceftriaxone IV", dose: "1 g", duration: "Dose unique", notes: null },
+                  { label: "Anti-Chlamydia — 2ème intention", drug: "Azithromycine PO", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "Anti-Chlamydia — 3ème intention", items: [
+                    "Ofloxacine PO 200 mg × 2/j — 7 jours",
+                    "Lévofloxacine PO 500 mg × 1/j — 7 jours",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── NEISSERIA GONORRHOEAE ─────────────────────────────────────────────────
+    {
+      id: "ist_gonorrhoeae",
+      label: "Neisseria gonorrhoeae",
+      subtitle: "Infection non compliquée",
+      question: "Localisation ?",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "Mesures associées — Gonocoque",
+      infoItems: [
+        "Rapports évités ou protégés (préservatif / digue dentaire) pendant ≥ 7 jours après traitement",
+        "Dépistage des partenaires : dans les 2 semaines si urétrite symptomatique chez l'homme, ou dans les 6 derniers mois",
+        "Partenaires symptomatiques : traitement antibiotique systématique",
+        "Partenaires asymptomatiques : si dernier rapport < 14 jours → traitement probabiliste ; si ≥ 14 jours → traitement probabiliste ou adapté au dépistage",
+        "ATB de 1ère ligne des partenaires : Ceftriaxone 1 g IM dose unique",
+        "Dépistage des autres IST : Chlamydia, syphilis, VIH, hépatites",
+      ],
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "ist_gono_uretre_col_rectum",
+          label: "Urètre, col, rectum",
+          question: "Allergie ceftriaxone ou CI aux IM ?",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          children: [
+            {
+              id: "ist_gono_uretro_no_ci",
+              label: "Pas d'allergie ni CI aux IM",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Gonocoque non compliqué — urètre, col, rectum",
+                indication: null,
+                preferred: [
+                  { label: "Référence", drug: "Ceftriaxone IM", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Dépistage et traitement des partenaires. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_gono_uretro_allergie",
+              label: "Allergie confirmée à la ceftriaxone",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Gonocoque — allergie confirmée à la ceftriaxone (urètre, col, rectum)",
+                indication: null,
+                preferred: [
+                  { label: "Option 1 (grade Abg_C)", drug: "Gentamicine IM", dose: "240 mg", duration: "Dose unique", notes: "Traitement probabiliste" },
+                  { label: "Option 2 (grade Abg_C — si ATBgramme sensible)", drug: "Ciprofloxacine PO", dose: "500 mg", duration: "Dose unique", notes: "Uniquement si CMI < 0,06 mg/L confirmée" },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_gono_uretro_ci_im",
+              label: "Trouble de l'hémostase / anticoagulant (CI aux IM)",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Gonocoque — CI aux IM (urètre, col, rectum)",
+                indication: null,
+                preferred: [
+                  { label: "Référence (grade A)", drug: "Ceftriaxone IV", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternatives si ATBgramme sensible", items: [
+                    "Ciprofloxacine PO 500 mg DU — formes urogénitales et rectales (si CMI < 0,06 mg/L) — grade Abg_C",
+                    "Céfixime PO 400 mg DU — formes urogénitales ou rectales (si CMI ≤ 0,125 mg/L) — grade Abg_C",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+        {
+          id: "ist_gono_oropharynx",
+          label: "Oropharynx",
+          question: "Allergie ceftriaxone ou CI aux IM ?",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          children: [
+            {
+              id: "ist_gono_oro_no_ci",
+              label: "Pas d'allergie ni CI aux IM",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Gonocoque non compliqué — oropharynx",
+                indication: null,
+                preferred: [
+                  { label: "Référence", drug: "Ceftriaxone IM", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours (préservatif ou digue dentaire). Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_gono_oro_allergie",
+              label: "Allergie confirmée à la ceftriaxone",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Gonocoque — allergie confirmée à la ceftriaxone (oropharynx)",
+                indication: null,
+                preferred: [
+                  { label: "Option 1 (grade Abg_C)", drug: "Gentamicine IM", dose: "240 mg", duration: "Dose unique", notes: "Traitement probabiliste" },
+                  { label: "Option 2 (grade Abg_C — si ATBgramme sensible)", drug: "Ciprofloxacine PO", dose: "500 mg", duration: "Dose unique", notes: "Uniquement si CMI < 0,06 mg/L confirmée" },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_gono_oro_ci_im",
+              label: "Trouble de l'hémostase / anticoagulant (CI aux IM)",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Gonocoque — CI aux IM (oropharynx)",
+                indication: null,
+                preferred: [
+                  { label: "Référence (grade A)", drug: "Ceftriaxone IV", dose: "1 g", duration: "Dose unique", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative si ATBgramme sensible", items: [
+                    "Ciprofloxacine PO 500 mg DU (si CMI < 0,06 mg/L) — grade Abg_C",
+                    "⚠️ Céfixime non recommandé pour les formes oropharyngées",
+                  ]},
+                ],
+                notRecommended: ["Céfixime — non recommandé dans les formes oropharyngées"],
+                followUp: "Rapports protégés ≥ 7 jours. Contrôle TAAN à J7.",
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+      ],
+    },
+
+    // ── HERPÈS GÉNITAL ────────────────────────────────────────────────────────
+    {
+      id: "ist_herpes",
+      label: "Herpès génital",
+      subtitle: "Primo-infection, récurrence, gingivostomatite",
+      question: "Situation clinique ?",
+      icon: "🟠",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "ist_herpes_gingivo",
+          label: "Gingivostomatite herpétique",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Gingivostomatite herpétique",
+            indication: "Hospitalisation si : complications, forme buvable impossible, déshydratation, AEG.",
+            preferred: [
+              { label: "Option 1", drug: "Aciclovir PO", dose: "200 mg × 5/j", duration: "7 jours", notes: null },
+              { label: "Option 2", drug: "Valaciclovir PO", dose: "500 mg × 2/j", duration: "7 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: null,
+            source: "SPILF",
+          },
+        },
+        {
+          id: "ist_herpes_primo",
+          label: "Primo-infection génitale",
+          question: "Terrain particulier ?",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "ist_herpes_primo_std",
+              label: "Patient standard (y compris grossesse et PVVIH non immunodéprimé)",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Primo-infection herpès génital — standard / grossesse / PVVIH",
+                indication: "Traitement identique et immédiat pendant la grossesse ou chez PVVIH.",
+                preferred: [
+                  { label: "1ère intention", drug: "Valaciclovir PO", dose: "500 mg × 2/j", duration: "5 jours", notes: null },
+                  { label: "2ème intention", drug: "Aciclovir PO", dose: "200 mg × 5/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Si grossesse avec antécédents d'herpès génital : traitement suppressif dès 36 SA (32 SA si gémellaire).",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_herpes_primo_immuno",
+              label: "Immunodéprimé ou PVVIH CD4 < 200/mm³",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Primo-infection herpès génital — immunodéprimé / PVVIH CD4 < 200",
+                indication: null,
+                preferred: [
+                  { label: "1ère intention", drug: "Valaciclovir PO", dose: "1 g × 2/j", duration: "10 jours", notes: null },
+                  { label: "2ème intention", drug: "Aciclovir PO", dose: "400 mg × 5/j", duration: "10 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+        {
+          id: "ist_herpes_recurrence",
+          label: "Récurrence génitale",
+          subtitle: "Traiter dès l'apparition des prodromes",
+          question: "Terrain particulier ?",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "ist_herpes_recur_std",
+              label: "Patient standard",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Récurrence herpès génital — patient standard",
+                indication: "Traiter dès l'apparition des prodromes.",
+                preferred: [
+                  { label: "1ère intention", drug: "Valaciclovir PO", dose: "2 000 mg × 2/j", duration: "1 jour", notes: null },
+                ],
+                alternatives: [
+                  { label: "2ème intention", items: [
+                    "Aciclovir PO 800 mg × 3/j — 2 jours",
+                    "Valaciclovir PO 500 mg × 2/j — 3 jours",
+                    "Famciclovir PO 1 g × 2/j — 1 jour",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_herpes_recur_grossesse",
+              label: "Grossesse",
+              icon: "🤱",
+              color: "#7C3AED",
+              colorLight: "#EDE9FE",
+              result: {
+                condition: "Récurrence herpès génital — grossesse",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Valaciclovir PO", dose: "500 mg × 2/j", duration: "3 jours", notes: null },
+                  { label: "Option 2", drug: "Aciclovir PO", dose: "200 mg × 5/j", duration: "5 jours", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Antécédents d'herpès récurrent : traitement suppressif dès 36 SA (32 SA si gémellaire) — Aciclovir 400 mg × 3/j ou Valaciclovir 500 mg × 2/j.",
+                source: "SPILF",
+              },
+            },
+            {
+              id: "ist_herpes_recur_immuno",
+              label: "Immunodéprimé ou PVVIH CD4 < 200/mm³",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Récurrence herpès génital — immunodéprimé / PVVIH CD4 < 200",
+                indication: null,
+                preferred: [
+                  { label: "1ère intention", drug: "Valaciclovir PO", dose: "1 g × 2/j", duration: "≥ 5 jours ou jusqu'à cicatrisation", notes: null },
+                ],
+                alternatives: [
+                  { label: "2ème intention", items: [
+                    "Aciclovir PO 400 mg × 5/j — ≥ 5 jours ou jusqu'à cicatrisation",
+                    "Famciclovir PO 500 mg × 2/j — ≥ 5 jours ou jusqu'à cicatrisation",
+                  ]},
+                ],
+                notRecommended: [],
+                followUp: null,
+                source: "SPILF",
+              },
+            },
+          ],
+        },
+        {
+          id: "ist_herpes_suppressif",
+          label: "Traitement suppressif — grossesse",
+          subtitle: "Antécédents d'herpès génital récurrent",
+          icon: "🤱",
+          color: "#7C3AED",
+          colorLight: "#EDE9FE",
+          result: {
+            condition: "Traitement suppressif herpès — grossesse",
+            indication: "Antécédents d'herpès génital récurrent. Débuter à 36 SA (32 SA si gémellaire) jusqu'à l'accouchement.",
+            preferred: [
+              { label: "Option 1", drug: "Aciclovir PO", dose: "400 mg × 3/j", duration: "De 36 SA jusqu'à accouchement", notes: "32 SA si grossesse gémellaire" },
+              { label: "Option 2", drug: "Valaciclovir PO", dose: "500 mg × 2/j", duration: "De 36 SA jusqu'à accouchement", notes: "32 SA si grossesse gémellaire" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: null,
+            source: "SPILF",
+          },
+        },
+      ],
+    },
+
+  ],
+};
+
+const Abg_DATA_SEPSIS = {
+  id: "root",
+  label: "Sepsis & Choc Septique",
+  question: "Niveau de gravité ?",
+  type: "info",
+  infoColor: "#E05260",
+  infoColorLight: "#FDF0F1",
+  infoTitle: "Définitions — Sepsis-3 / SSC 2026",
+  infoItems: [
+    "SEPSIS : dysfonction d'organe menaçant le pronostic vital secondaire à une réponse dérégulée à l'infection",
+    "qSOFA ≥ 2 : FR ≥ 22/min | Confusion | PAS ≤ 100 mmHg → suspecter sepsis",
+    "CHOC SEPTIQUE : sepsis + vasopresseurs nécessaires pour PAM ≥ 65 mmHg + lactates > 2 mmol/L malgré remplissage",
+    "⚠️ Urgence thérapeutique — initier traitement immédiatement après reconnaissance",
+  ],
+  children: [
+    {
+      id: "sepsis_bilan",
+      label: "Bilan initial — À faire IMMÉDIATEMENT",
+      subtitle: "Avant toute antibiothérapie",
+      icon: "🔬",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "Bilan initial sepsis / choc septique",
+        indication: "Réaliser simultanément bilan et premières mesures thérapeutiques — NE PAS RETARDER L'ATB.",
+        preferred: [
+          { label: "Hémocultures (AVANT ATB)", drug: "2 paires hémocultures périphériques", dose: "Aérobie + anaérobie", duration: "Délai max : 45 min avant ATB", notes: "Si KT central en place : + 1 paire sur KT" },
+          { label: "Bilan biologique", drug: "NFS — plaquettes — TP/TCA — fibrinogène — lactates — créatinine — urée — bilan hépatique — bilirubine — CRP — procalcitonine — gazométrie — glycémie capillaire", dose: "—", duration: "—", notes: null },
+          { label: "Imagerie", drug: "Radio thorax + échographie au lit (FAST étendu si choc)", dose: "—", duration: "—", notes: "TDM selon foyer suspecté" },
+          { label: "Prélèvements orientés selon foyer", drug: "ECBU, ECBC, LCR selon contexte clinique", dose: "—", duration: "—", notes: "Avant ATB autant que possible sans retarder le traitement" },
+        ],
+        alternatives: [],
+        notRecommended: ["Procalcitonine seule pour décider de débuter les ATB — évaluation clinique suffisante (SSC 2026)"],
+        followUp: "Contrôle lactates à 2h si initialement élevés (objectif clearance > 10% à 2h).",
+        source: "SSC 2026 — Sepsis-3",
+      },
+    },
+    {
+      id: "sepsis_reanimation",
+      label: "Réanimation hémodynamique",
+      subtitle: "À débuter dans les 30 premières minutes",
+      question: "Phase de réanimation ?",
+      icon: "💉",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "sepsis_remplissage",
+          label: "Remplissage vasculaire initial",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Remplissage vasculaire — sepsis / choc septique",
+            indication: "Débuter immédiatement si hypotension ou signes d'hypoperfusion.",
+            preferred: [
+              { label: "Soluté de référence", drug: "Cristalloïdes équilibrés (NaCl 0,9% ou Ringer Lactate)", dose: "30 mL/kg IV", duration: "Dans les 3 premières heures", notes: "Individualiser selon réponse hémodynamique. Volume débattu — adapter à la porte d'entrée et la fonction cardiaque (SSC 2026 : recommandation faible)" },
+            ],
+            alternatives: [
+              { label: "Évaluation de la réponse au remplissage", items: [
+                "Lever de jambes passif (LJP) : élévation PAM > 10% = répondeur",
+                "Variation du pouls/pression pulsée si ventilation mécanique",
+                "Échographie cardiaque au lit (POCUS) — recommandation conditionnelle SSC 2026",
+              ]},
+            ],
+            notRecommended: ["Colloïdes (hydroxyéthylamidon) — contre-indiqués en sepsis","Albumine non recommandée en 1ère intention"],
+            followUp: "Si pas de réponse au remplissage après 1L → introduire noradrénaline sans attendre.",
+            source: "SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_vasopresseur",
+          label: "Vasopresseurs — Noradrénaline",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Vasopresseurs — choc septique",
+            indication: "PAM < 65 mmHg malgré remplissage initial, ou d'emblée si choc profond. Initiation possible en périphérique (voie veineuse de bon calibre) sans attendre VVC (SSC 2026).",
+            preferred: [
+              { label: "1ère ligne — Noradrénaline", drug: "Noradrénaline IVSE", dose: "Dilution : 8 mg (1 ampoule) dans 40 mL = 0,2 mg/mL", duration: "Titration selon PAM", notes: "Démarrer à 0,1–0,2 µg/kg/min. Objectif PAM ≥ 65 mmHg (60–65 mmHg chez sujet âgé). Titrer par paliers de 0,05 µg/kg/min toutes les 5–10 min" },
+            ],
+            alternatives: [
+              { label: "Voie d'abord", items: [
+                "VVP de bon calibre acceptable en urgence pour initier rapidement",
+                "VVC dès que possible pour titration prolongée",
+              ]},
+            ],
+            notRecommended: [
+              "Vasopressine — pas en urgence préhospitalière ou initiale",
+              "Dopamine — non recommandée en 1ère ligne (risque arythmies)",
+            ],
+            followUp: "Monitoring : PA invasive (radiale) dès que possible si choc. Cible PAM ≥ 65 mmHg (60–65 mmHg chez sujet âgé selon SSC 2026).",
+            source: "SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_lactates",
+          label: "Monitoring des lactates",
+          icon: "📊",
+          color: "#2E7EAD",
+          colorLight: "#EBF4FA",
+          result: {
+            condition: "Suivi des lactates — sepsis / choc septique",
+            indication: null,
+            preferred: [
+              { label: "Mesure initiale", drug: "Lactates artériels ou veineux", dose: "À l'admission", duration: "—", notes: "Lactates > 2 mmol/L = critère de choc septique si hypotension associée" },
+              { label: "Contrôle à 2h", drug: "Lactatémie de contrôle", dose: "2 heures après début réanimation", duration: "—", notes: "Objectif : clearance des lactates > 10% à 2h (associée à meilleur pronostic)" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Si lactates persistants élevés malgré réanimation → réévaluer foyer, adéquation ATB, contrôle de source.",
+            source: "SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_cortico",
+          label: "Corticothérapie",
+          icon: "💊",
+          color: "#7C3AED",
+          colorLight: "#EDE9FE",
+          result: {
+            condition: "Corticothérapie — choc septique résistant",
+            indication: "Si vasopresseurs toujours nécessaires malgré remplissage adéquat (noradrénaline ≥ 0,25 µg/kg/min depuis > 4h).",
+            preferred: [
+              { label: "Traitement", drug: "Hydrocortisone IVSE", dose: "200 mg/j en continu (ou 50 mg × 4/j)", duration: "Jusqu'au sevrage des vasopresseurs", notes: "Recommandation conditionnelle SSC 2021/2026" },
+            ],
+            alternatives: [],
+            notRecommended: ["Dexaméthasone — pas d'indication dans le choc septique (sauf méningite)"],
+            followUp: "Arrêt progressif dès sevrage des vasopresseurs possible.",
+            source: "SSC 2021/2026",
+          },
+        },
+        {
+          id: "sepsis_glycemie",
+          label: "Contrôle glycémique",
+          icon: "🩸",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Contrôle glycémique — sepsis / choc septique",
+            indication: null,
+            preferred: [
+              { label: "Cible", drug: "Normoglycémie", dose: "Glycémie capillaire < 10 mmol/L (1,80 g/L)", duration: "En continu", notes: "Insuline IVSE si hyperglycémie persistante. Éviter hypoglycémie (mortalité accrue)" },
+            ],
+            alternatives: [],
+            notRecommended: ["Contrôle glycémique strict < 6 mmol/L — risque hypoglycémie (ACCORD/NICE-SUGAR)"],
+            followUp: "Contrôle glycémique capillaire toutes les heures en phase aiguë si insuline IVSE.",
+            source: "SSC 2026",
+          },
+        },
+      ],
+    },
+    {
+      id: "sepsis_atb",
+      label: "Antibiothérapie probabiliste",
+      subtitle: "Selon le foyer suspecté",
+      question: "Foyer infectieux suspecté ?",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "⚠️ Délais ATB — SSC 2026",
+      infoItems: [
+        "CHOC SEPTIQUE ou forte probabilité de sepsis → ATB IMMÉDIATEMENT, dans l'heure (recommandation forte)",
+        "SEPSIS POSSIBLE sans choc → évaluation rapide, ATB dans les 3h si diagnostic maintenu (recommandation faible)",
+        "SMUR : si délai prévu > 60 min avant évaluation hospitalière → débuter ATB en préhospitalier",
+        "Hémocultures AVANT ATB — délai max 45 min, ne pas retarder l'ATB pour les obtenir",
+        "Spectre large probabiliste — désescalade dès documentation microbiologique",
+      ],
+      icon: "💊",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "sepsis_atb_urinaire",
+          label: "Foyer urinaire",
+          subtitle: "Cf. module Infections Urinaires → PNA grave",
+          linkModule: "urinaire",
+          icon: "💦",
+          color: "#2E7EAD",
+          colorLight: "#EBF4FA",
+          result: {
+            condition: "Sepsis / choc septique — foyer urinaire",
+            indication: "Se référer au module Infections Urinaires — PNA grave.",
+            preferred: [
+              { label: "Sans FdR BLSE", drug: "C3G parentérale + Amikacine", dose: "Ceftriaxone ou Céfotaxime + Amikacine 15–30 mg/kg/j", duration: "10–14 jours", notes: null },
+              { label: "Avec FdR BLSE", drug: "Carbapénème + Amikacine", dose: "Imipénème ou Méropénème + Amikacine 15–30 mg/kg/j", duration: "10–14 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Désescalade dès antibiogramme. Drainage si obstacle.",
+            source: "Antibioguide CHEG 2022 — SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_atb_pulmo",
+          label: "Foyer pulmonaire",
+          subtitle: "Cf. module Infections Pulmonaires → PAC grave",
+          linkModule: "pulmonaire",
+          icon: "🫁",
+          color: "#0D9488",
+          colorLight: "#CCFBF1",
+          result: {
+            condition: "Sepsis / choc septique — foyer pulmonaire",
+            indication: "Se référer au module Infections Pulmonaires — PAC grave USI/Réa.",
+            preferred: [
+              { label: "Sans FdR Pseudomonas", drug: "Ceftriaxone + Érythromycine", dose: "Ceftriaxone 2 g + Érythromycine 1 g × 3/j", duration: "7–10 jours", notes: null },
+              { label: "Avec FdR Pseudomonas", drug: "Pip/Tazo + Tobramycine + Érythromycine", dose: "Pip/Tazo 4 g × 4/j + Tobramycine 7 mg/kg + Érythromycine 1 g × 3/j", duration: "14 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Hémocultures + prélèvements bronchiques + antigénurie légio/pneumo avant ATB.",
+            source: "Antibioguide CHEG 2022 — SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_atb_digestif",
+          label: "Foyer digestif",
+          subtitle: "Cf. module Infections Digestives → Péritonite",
+          linkModule: "digestif",
+          icon: "💩",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Sepsis / choc septique — foyer digestif",
+            indication: "Se référer au module Infections Digestives. Contrôle de source urgent (chirurgie ou drainage).",
+            preferred: [
+              { label: "Péritonite communautaire avec choc", drug: "Pip/Tazo + Amikacine", dose: "Pip/Tazo 4 g × 4/j + Amikacine 30 mg/kg/j", duration: "5 jours (Amikacine 2 j)", notes: null },
+              { label: "Péritonite nosocomiale", drug: "Pip/Tazo ou Méropénème + Amikacine", dose: "Pip/Tazo 4 g × 4/j ou Méropénème 1 g × 3/j + Amikacine 30 mg/kg/j", duration: "8 jours", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Contrôle de source chirurgical en urgence si foyer contrôlable.",
+            source: "Antibioguide CHEG 2022 — SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_atb_cutane",
+          label: "Foyer cutané / tissus mous",
+          subtitle: "Cf. module Peau & Tissus Mous",
+          linkModule: "peau",
+          icon: "🩹",
+          color: "#2E7EAD",
+          colorLight: "#EBF4FA",
+          result: {
+            condition: "Sepsis / choc septique — foyer cutané",
+            indication: "Se référer au module Peau & Tissus Mous. Urgence chirurgicale si fasciite ou gangrène.",
+            preferred: [
+              { label: "Sans suspicion SARM", drug: "Pip/Tazo + Clindamycine + Gentamicine", dose: "Pip/Tazo 4 g × 4/j + Clindamycine 600 mg × 3/j + Gentamicine 7 mg/kg/j", duration: "14 j — Genta arrêt J3", notes: "Si signes toxiniques (Toxine PVL, SGA) : Clindamycine obligatoire" },
+              { label: "Avec suspicion SARM", drug: "+ Vancomycine IVSE", dose: "Vancomycine 30 mg/kg/j en continu", duration: "Selon évolution", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Débridement chirurgical urgent si fasciite ou gangrène.",
+            source: "Antibioguide CHEG 2022 — SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_atb_neuro",
+          label: "Foyer neuro-méningé",
+          subtitle: "Cf. module Infections Neuro-Méningées",
+          linkModule: "neuro",
+          icon: "🧠",
+          color: "#7C3AED",
+          colorLight: "#EDE9FE",
+          result: {
+            condition: "Sepsis / choc septique — foyer neuro-méningé",
+            indication: "Se référer au module Infections Neuro-Méningées. ATB AVANT TDM si purpura ou instabilité.",
+            preferred: [
+              { label: "Méningite purulente", drug: "Céfotaxime IV + Dexaméthasone", dose: "Céfotaxime 300 mg/kg/j + Dexaméthasone 10 mg × 4/j 4 jours", duration: "Selon germe", notes: null },
+              { label: "Si argument Listéria", drug: "+ Amoxicilline IV + Gentamicine", dose: "Amoxicilline 200 mg/kg/j + Gentamicine 3–5 mg/kg/j", duration: "21 jours Amox — 7 j Genta", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Purpura fulminans → ATB AVANT ponction lombaire. Déclaration obligatoire si méningocoque.",
+            source: "Antibioguide CHEG 2022 — SSC 2026",
+          },
+        },
+        {
+          id: "sepsis_atb_inconnu",
+          label: "Porte d'entrée inconnue",
+          subtitle: "Sepsis sans foyer évident",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Sepsis / choc septique — porte d'entrée inconnue",
+            indication: "Spectre large couvrant BGN, cocci Gram +, anaérobies. Évaluer FdR SARM et BLSE.",
+            preferred: [
+              { label: "Sans FdR BMR", drug: "Pip/Tazo + Amikacine", dose: "Pip/Tazo 4 g × 4/j + Amikacine 30 mg/kg/j", duration: "Désescalade dès documentation", notes: null },
+              { label: "Avec FdR SARM (hospit récente, portage connu)", drug: "+ Vancomycine IVSE", dose: "Vancomycine 30 mg/kg/j en continu + dose de charge", duration: "Selon documentation", notes: null },
+              { label: "Avec FdR BLSE (hospit, ATB récente, voyage)", drug: "Méropénème + Amikacine", dose: "Méropénème 1 g × 3/j + Amikacine 30 mg/kg/j", duration: "Désescalade dès documentation", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Désescalade systématique à l'antibiogramme. Réévaluation à 48–72h.",
+            source: "Antibioguide CHEG 2022 — SSC 2026",
+          },
+        },
+      ],
+    },
+    {
+      id: "sepsis_controle_source",
+      label: "Contrôle du foyer infectieux",
+      subtitle: "Principe fondamental — SSC 2026",
+      icon: "🔪",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      result: {
+        condition: "Contrôle de source — sepsis / choc septique",
+        indication: "Évaluation urgente de tout foyer nécessitant un contrôle anatomique.",
+        preferred: [
+          { label: "Principes", drug: "Drainage / débridement / retrait du matériel infecté", dose: "Dès que possible après stabilisation initiale", duration: "—", notes: "Ne pas retarder le contrôle de source pour optimiser l'état hémodynamique" },
+        ],
+        alternatives: [
+          { label: "Situations nécessitant contrôle urgent", items: [
+            "Péritonite / abcès abdominal → chirurgie ou drainage",
+            "Fasciite nécrosante / gangrène gazeuse → débridement chirurgical en urgence",
+            "Empyème pleural → drainage",
+            "Cholécystite / angiocholite → drainage biliaire",
+            "PNA avec obstacle → drainage urologique",
+            "Endocardite avec complication mécanique → chirurgie cardiaque",
+            "Cathéter / matériel étranger infecté → retrait",
+          ]},
+        ],
+        notRecommended: [],
+        followUp: null,
+        source: "SSC 2026",
+      },
+    },
+    {
+      id: "sepsis_synthese",
+      label: "Synthèse — Bundle 1h / 3h",
+      subtitle: "Check-list de prise en charge",
+      icon: "✅",
+      color: "#2E9E6B",
+      colorLight: "#E8F7F1",
+      result: {
+        condition: "Bundle sepsis — actions à réaliser",
+        indication: null,
+        preferred: [
+          { label: "IMMÉDIATEMENT (T0)", drug: "Reconnaître, monitorer, O2, VVP de bon calibre", dose: "SpO2 cible ≥ 94%, PA, FC, FR, T°, diurèse", duration: "—", notes: null },
+          { label: "Dans les 30 min", drug: "Hémocultures + prélèvements orientés + lactates + bilan biologique complet", dose: "2 paires hémocultures avant ATB", duration: "—", notes: null },
+          { label: "Dans l'heure (choc septique)", drug: "ATB spectre large IV + remplissage cristalloïdes 30 mL/kg + noradrénaline si hypotension", duration: "—", dose: "—", notes: "Noradrénaline : 8 mg/40 mL = 0,2 mg/mL IVSE" },
+          { label: "Dans les 3h (sepsis sans choc)", drug: "ATB après évaluation clinique rapide du foyer", dose: "—", duration: "—", notes: null },
+          { label: "À 2h", drug: "Contrôle lactatémie (objectif clearance > 10%)", dose: "—", duration: "—", notes: null },
+          { label: "Si choc résistant aux vasopresseurs", drug: "Hydrocortisone IVSE 200 mg/j", dose: "200 mg/j en continu", duration: "Jusqu'au sevrage noradrénaline", notes: null },
+          { label: "En continu", drug: "Glycémie capillaire cible < 10 mmol/L (1,80 g/L)", dose: "Insuline IVSE si nécessaire", duration: "—", notes: null },
+        ],
+        alternatives: [],
+        notRecommended: [
+          "Antipyrétiques en routine pour améliorer le pronostic (SSC 2026)",
+          "Dopamine en 1ère ligne (arythmies)",
+          "Colloïdes / hydroxyéthylamidon",
+          "Contrôle glycémique strict < 6 mmol/L (risque hypoglycémie)",
+        ],
+        followUp: "Désescalade ATB systématique à 48–72h. Réévaluation foyer. Contrôle de source si nécessaire.",
+        source: "SSC 2026 — Antibioguide CHEG 2022",
+      },
+    },
+  ],
+};
+
+const Abg_DATA_EI = {
+  id: "root",
+  label: "Endocardite Infectieuse",
+  question: "Traitement probabiliste indiqué ?",
+  type: "info",
+  infoColor: "#E05260",
+  infoColorLight: "#FDF0F1",
+  infoTitle: "Indications du traitement probabiliste",
+  infoItems: [
+    "Apparition aiguë avec progression rapide des symptômes (< 1 semaine)",
+    "Végétation > 10 mm à l'échographie",
+    "Sepsis ou choc septique",
+    "Chirurgie indiquée en urgence",
+    "⚠️ Toutes les autres situations : différer l'ATB jusqu'aux hémocultures",
+    "Hémocultures : 3 paires sur 3 sites veineux différents AVANT ATB (sauf urgence)",
+  ],
+  children: [
+    {
+      id: "ei_native",
+      label: "EI valvulaire native OU prothétique tardive (> 1 an post-op)",
+      question: "Allergie aux bêtalactamines ?",
+      type: "info",
+      infoColor: "#2E7EAD",
+      infoColorLight: "#EBF4FA",
+      infoTitle: "Germes cibles",
+      infoItems: [
+        "Staphylocoque méti-S",
+        "Streptocoque",
+        "Entérocoque",
+      ],
+      icon: "🟡",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "ei_native_no_allergie",
+          label: "Pas d'allergie aux bêtalactamines",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "EI valvulaire native / prothétique tardive — sans allergie BL",
+            indication: "Avis cardiologique et infectiologique indispensable. Échocardiographie en urgence.",
+            preferred: [
+              { label: "Traitement de référence", drug: "Amoxicilline IV + Céfazoline IV", dose: "Amoxicilline 200 mg/kg/j + Céfazoline 100 mg/kg/j", duration: "Min 4–6 semaines selon germe", notes: "+ Gentamicine IV 5 mg/kg/j uniquement si sepsis associé" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Relais oral après ≥ 10j IV et ≥ 7j post-chirurgie valvulaire si patient stable. Désescalade dès hémocultures.",
+            source: "ESC 2023 — SPILF",
+          },
+        },
+        {
+          id: "ei_native_allergie",
+          label: "Allergie avec CI aux bêtalactamines",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "EI valvulaire native / prothétique tardive — CI bêtalactamines",
+            indication: "Avis cardiologique et infectiologique indispensable.",
+            preferred: [
+              { label: "Traitement", drug: "Vancomycine IV", dose: "30 mg/kg/j en perfusion continue après dose de charge", duration: "Min 4–6 semaines", notes: "Dose de charge : 25–30 mg/kg sur 1–2h" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Relais oral après ≥ 10j IV si patient stable.",
+            source: "ESC 2023 — SPILF",
+          },
+        },
+      ],
+    },
+    {
+      id: "ei_proth_precoce",
+      label: "EI valvulaire prothétique précoce (< 1 an post-op)",
+      question: "Allergie aux bêtalactamines ?",
+      type: "info",
+      infoColor: "#E05260",
+      infoColorLight: "#FDF0F1",
+      infoTitle: "Germes cibles — prothétique précoce",
+      infoItems: [
+        "Staphylocoque dont méti-R (SARM)",
+        "Entérocoque",
+        "Bacilles à Gram négatif (BGN)",
+      ],
+      icon: "🔴",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "ei_proth_no_allergie",
+          label: "Pas d'allergie aux bêtalactamines",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "EI prothétique précoce (< 1 an) — sans allergie BL",
+            indication: "Avis cardiologique et infectiologique indispensable. Spectre élargi obligatoire.",
+            preferred: [
+              { label: "Option 1", drug: "Daptomycine IV + Céfépime IV", dose: "Daptomycine 12 mg/kg/j + Céfépime 2 g × 3/j", duration: "Min 6 semaines", notes: "+ Gentamicine IV 5 mg/kg/j si sepsis associé" },
+              { label: "Option 2", drug: "Vancomycine IV + Céfépime IV", dose: "Vancomycine 30 mg/kg/j perfusion continue + Céfépime 2 g × 3/j", duration: "Min 6 semaines", notes: "+ Gentamicine IV 5 mg/kg/j si sepsis associé" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Relais oral après ≥ 10j IV et ≥ 7j post-chirurgie valvulaire si patient stable.",
+            source: "ESC 2023 — SPILF",
+          },
+        },
+        {
+          id: "ei_proth_allergie",
+          label: "Allergie avec CI aux bêtalactamines",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "EI prothétique précoce — CI bêtalactamines",
+            indication: "Avis cardiologique et infectiologique indispensable.",
+            preferred: [
+              { label: "Traitement", drug: "Daptomycine IV + Vancomycine IV", dose: "Daptomycine 12 mg/kg/j + Vancomycine 30 mg/kg/j perfusion continue", duration: "Min 6 semaines", notes: "+ Gentamicine IV 5 mg/kg/j si sepsis associé" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Relais oral après ≥ 10j IV si patient stable.",
+            source: "ESC 2023 — SPILF",
+          },
+        },
+      ],
+    },
+  ],
+};
+
+const Abg_DATA_ARTHRITE = {
+  id: "root",
+  label: "Arthrite Septique",
+  question: "Indication d'antibiothérapie ?",
+  type: "info",
+  infoColor: "#7C3AED",
+  infoColorLight: "#EDE9FE",
+  infoTitle: "Principes — Arthrite Septique",
+  infoItems: [
+    "Prélèvements avant ATB : ponction articulaire + hémocultures — fenêtre idéale 14j sans ATB si possible",
+    "Recherche EI systématique si arthrite à S. aureus, streptocoque ou entérocoque (même si hémocultures négatives)",
+    "ATB avec bonne diffusion ostéo-articulaire à posologie optimisée (PK/PD)",
+    "Lavage articulaire chirurgical ou arthroscopique à discuter",
+  ],
+  children: [
+    {
+      id: "arthrite_indic",
+      label: "Indications de début immédiat",
+      icon: "🟡",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      result: {
+        condition: "Arthrite septique — indications de l'antibiothérapie immédiate",
+        indication: null,
+        preferred: [
+          { label: "Indication 1", drug: "Liquide articulaire purulent", dose: "Examen direct négatif ou indisponible + anamnèse compatible", duration: "—", notes: null },
+          { label: "Indication 2", drug: "Examen direct positif", dose: "Et/ou culture liquide articulaire et/ou hémoculture positive", duration: "—", notes: null },
+          { label: "Indication 3", drug: "Sepsis ou choc septique", dose: "ATB immédiat sans attendre les cultures", duration: "—", notes: null },
+        ],
+        alternatives: [],
+        notRecommended: [],
+        followUp: "Désescalade dès résultats microbiologiques. Avis infectiologique recommandé.",
+        source: "SPILF 2023",
+      },
+    },
+    {
+      id: "arthrite_atb",
+      label: "Antibiothérapie probabiliste",
+      question: "Allergie aux bêtalactamines ?",
+      icon: "💊",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "arthrite_no_allergie",
+          label: "Pas d'allergie aux bêtalactamines",
+          question: "Sepsis ou choc septique associé ?",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          children: [
+            {
+              id: "arthrite_no_all_no_sepsis",
+              label: "Sans sepsis",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "Arthrite septique — sans allergie, sans sepsis",
+                indication: "Élargir le spectre si anamnèse suggestive (immunodépression, BGN, IST…).",
+                preferred: [
+                  { label: "Option 1", drug: "Céfazoline IV", dose: "100 mg/kg/j en 3–4 administrations", duration: "Min 4–6 semaines", notes: null },
+                  { label: "Option 2", drug: "Pénicilline M IV (Cloxacilline / Oxacilline)", dose: "100–150 mg/kg/j en 4–6 administrations", duration: "Min 4–6 semaines", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Relais oral précoce possible si germe sensible et bonne observance. Avis infectiologique recommandé.",
+                source: "SPILF 2023",
+              },
+            },
+            {
+              id: "arthrite_no_all_sepsis",
+              label: "Avec sepsis ou choc septique",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Arthrite septique — sans allergie, avec sepsis",
+                indication: "Amikacine systématique 24–48h.",
+                preferred: [
+                  { label: "Traitement", drug: "Céfazoline IV + Amikacine IV", dose: "Céfazoline 100 mg/kg/j + Amikacine 30 mg/kg/j", duration: "Céfazoline min 4–6 sem — Amikacine 24–48h", notes: null },
+                ],
+                alternatives: [
+                  { label: "Alternative", items: ["Pénicilline M IV + Amikacine 30 mg/kg/j — 24–48h"] },
+                ],
+                notRecommended: [],
+                followUp: "Désescalade dès documentation microbiologique.",
+                source: "SPILF 2023",
+              },
+            },
+          ],
+        },
+        {
+          id: "arthrite_allergie",
+          label: "Allergie grave aux bêtalactamines",
+          question: "Sepsis ou choc septique associé ?",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "arthrite_all_no_sepsis",
+              label: "Sans sepsis",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              result: {
+                condition: "Arthrite septique — allergie BL grave, sans sepsis",
+                indication: null,
+                preferred: [
+                  { label: "Option 1", drug: "Daptomycine IV", dose: "6–10 mg/kg/j", duration: "Min 4–6 semaines", notes: null },
+                  { label: "Option 2", drug: "Vancomycine IV ou Teicoplanine IV", dose: "Vanco 30 mg/kg/j perfusion continue / Teico : dose de charge puis 6–12 mg/kg/j", duration: "Min 4–6 semaines", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Avis infectiologique indispensable.",
+                source: "SPILF 2023",
+              },
+            },
+            {
+              id: "arthrite_all_sepsis",
+              label: "Avec sepsis ou choc septique",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              result: {
+                condition: "Arthrite septique — allergie BL grave + sepsis",
+                indication: "Amikacine systématique 24–48h.",
+                preferred: [
+                  { label: "Option 1", drug: "Daptomycine IV + Amikacine IV", dose: "Daptomycine 6–10 mg/kg/j + Amikacine 30 mg/kg/j", duration: "Dapto min 4–6 sem — Amikacine 24–48h", notes: null },
+                  { label: "Option 2", drug: "Vancomycine IV + Amikacine IV", dose: "Vanco 30 mg/kg/j perfusion continue + Amikacine 30 mg/kg/j", duration: "Vanco min 4–6 sem — Amikacine 24–48h", notes: null },
+                ],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Avis infectiologique indispensable. Désescalade dès documentation.",
+                source: "SPILF 2023",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+
+const Abg_DATA_GROSSESSE = {
+  id: "root",
+  label: "Antibiotiques & Grossesse",
+  question: "Situation clinique ?",
+  type: "info",
+  infoColor: "#7C3AED",
+  infoColorLight: "#EDE9FE",
+  infoTitle: "Principes généraux",
+  infoItems: [
+    "Toujours vérifier le trimestre avant toute prescription",
+    "En cas de doute : consulter le CRAT (www.lecrat.fr) ou appeler le 01 43 41 26 22",
+    "Privilégier la voie orale si possible — même biodisponibilité dans la plupart des cas",
+    "Allaitement : se référer au CRAT — la plupart des ATB sont compatibles",
+    "⚠️ Tout médicament dont le profil de sécurité est inconnu doit être évité",
+  ],
+  children: [
+    {
+      id: "gros_molec",
+      label: "Molécules par famille",
+      subtitle: "Classement par trimestre",
+      question: "Famille d'antibiotique ?",
+      icon: "💊",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "gros_penicillines",
+          label: "Pénicillines (Amoxicilline, Augmentin…)",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Pénicillines — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2 — T3", drug: "✅ Autorisées tous trimestres", dose: "—", duration: "—", notes: "Amoxicilline, Amox/Clav, Pipéracilline/Tazobactam — pas d'effet tératogène démontré" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Compatible allaitement.",
+            source: "CRAT — SPILF",
+          },
+        },
+        {
+          id: "gros_c3g",
+          label: "Céphalosporines (C1G, C2G, C3G, C4G)",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Céphalosporines — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2 — T3", drug: "✅ Autorisées tous trimestres", dose: "—", duration: "—", notes: "Céfazoline, Ceftriaxone, Céfotaxime, Céfépime — pas d'effet tératogène démontré" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Compatible allaitement.",
+            source: "CRAT — SPILF",
+          },
+        },
+        {
+          id: "gros_metro",
+          label: "Métronidazole (Flagyl)",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Métronidazole — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1", drug: "⚠️ Éviter si possible au T1", dose: "—", duration: "—", notes: "Données rassurantes mais utilisation préférable à partir du T2 par précaution" },
+              { label: "T2 — T3", drug: "✅ Autorisé", dose: "—", duration: "—", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: ["Dose unique 2g déconseillée au T1"],
+            followUp: "Compatible allaitement à doses thérapeutiques standards.",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_macrolides",
+          label: "Macrolides (Azithromycine, Clarithromycine, Érythromycine)",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Macrolides — grossesse",
+            indication: null,
+            preferred: [
+              { label: "Azithromycine", drug: "✅ T1-T2-T3", dose: "—", duration: "—", notes: "Possible, données rassurantes. ⚠️ Inefficace en dose unique pour Chlamydia au T1" },
+              { label: "Érythromycine", drug: "✅ T1-T2-T3", dose: "—", duration: "—", notes: "Macrolide de référence si CI doxycycline — éviter l'estolate (hépatotoxique)" },
+              { label: "Clarithromycine", drug: "⚠️ Déconseillée T1", dose: "—", duration: "—", notes: "Données suggérant un risque tératogène au T1 — à éviter, utiliser Érythromycine" },
+              { label: "Spiramycine", drug: "✅ T1-T2-T3", dose: "—", duration: "—", notes: "Utilisée en toxoplasmose gestationnelle — profil bien documenté" },
+            ],
+            alternatives: [],
+            notRecommended: ["Clarithromycine au T1"],
+            followUp: "Azithromycine et érythromycine compatibles allaitement.",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_doxy",
+          label: "Doxycycline (tétracyclines)",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Doxycycline — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1", drug: "✅ Autorisée avant 14 SA", dose: "—", duration: "—", notes: "Avis CRAT favorable. CI uniquement à partir du 4ème mois (ANSM 2015). Pas d'effet tératogène/toxicité osseuse avant 14 SA" },
+              { label: "T2 — T3", drug: "❌ Contre-indiquée à partir du 4ème mois", dose: "—", duration: "—", notes: "Risque de dyschromie dentaire et troubles osseux fœtaux à partir du 4ème mois" },
+            ],
+            alternatives: [
+              { label: "Alternative T2-T3", items: ["Azithromycine 1g DU", "Érythromycine 500 mg × 4/j — 7 jours"] },
+            ],
+            notRecommended: ["Doxycycline à partir du 4ème mois de grossesse"],
+            followUp: "Non recommandée pendant l'allaitement (risque dyschromie dentaire).",
+            source: "CRAT — ANSM 2015",
+          },
+        },
+        {
+          id: "gros_fq",
+          label: "Fluoroquinolones (Cipro, Lévo, Moxi, Ofloxacine)",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Fluoroquinolones — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2 — T3", drug: "⚠️ À éviter — utiliser en dernier recours", dose: "—", duration: "—", notes: "Arthropathies animales. Données humaines rassurantes mais insuffisantes. Utiliser uniquement si pas d'alternative" },
+            ],
+            alternatives: [],
+            notRecommended: ["Moxifloxacine — déconseillée (manque de données)"],
+            followUp: "Compatibles allaitement à faibles doses et durées courtes — consulter CRAT.",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_aminosides",
+          label: "Aminosides (Gentamicine, Amikacine, Tobramycine)",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Aminosides — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1", drug: "✅ Utilisables en dose unique si indication vitale", dose: "—", duration: "—", notes: null },
+              { label: "T2 — T3", drug: "⚠️ Risque ototoxicité fœtale — usage court et limité", dose: "—", duration: "—", notes: "Utiliser uniquement si bénéfice > risque (sepsis sévère). Dose unique journalière préférée. Durée 24–48h max si possible" },
+            ],
+            alternatives: [],
+            notRecommended: ["Traitement prolongé en T2-T3 — risque surdité fœtale"],
+            followUp: "Non recommandés pendant l'allaitement (manque de données — consulter CRAT).",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_nitrofurantoine",
+          label: "Nitrofurantoïne (Furadantine, Macrobid)",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Nitrofurantoïne — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2", drug: "✅ Utilisable", dose: "—", duration: "—", notes: "Données rassurantes au T1-T2" },
+              { label: "T3 (à partir de 36 SA)", drug: "❌ Contre-indiquée", dose: "—", duration: "—", notes: "Risque d'anémie hémolytique néonatale à partir de 36 SA — utiliser une alternative" },
+            ],
+            alternatives: [
+              { label: "Alternative T3", items: ["Amoxicilline (si sensible)", "Céfazoline IV"] },
+            ],
+            notRecommended: ["Nitrofurantoïne à partir de 36 SA"],
+            followUp: "Déconseillée pendant l'allaitement.",
+            source: "CRAT — HAS/SPILF 2024",
+          },
+        },
+        {
+          id: "gros_bactrim",
+          label: "Cotrimoxazole / Triméthoprime (Bactrim)",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Cotrimoxazole — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1", drug: "❌ Contre-indiqué", dose: "—", duration: "—", notes: "Antagoniste de l'acide folique — risque de malformations. Nécessite supplémentation folates si usage indispensable" },
+              { label: "T2", drug: "⚠️ Utiliser avec précaution", dose: "—", duration: "—", notes: "Possible si indispensable, avec supplément folates" },
+              { label: "T3 (à partir de 34 SA)", drug: "❌ Contre-indiqué", dose: "—", duration: "—", notes: "Risque d'ictère nucléaire néonatal" },
+            ],
+            alternatives: [],
+            notRecommended: ["Cotrimoxazole au T1 et à partir de 34 SA"],
+            followUp: "Compatible allaitement à doses standards (éviter si prématurité, ictère, G6PD).",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_vanco",
+          label: "Vancomycine / Teicoplanine (glycopeptides)",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Glycopeptides (Vancomycine, Teicoplanine) — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2 — T3", drug: "✅ Utilisables si indication — données rassurantes", dose: "—", duration: "—", notes: "Vancomycine : données les plus documentées. Monitoring sérique conseillé. Teicoplanine : moins de données mais utilisable" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Vancomycine : passage faible dans le lait — compatible allaitement avec surveillance. Consulter CRAT.",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_dapto",
+          label: "Daptomycine",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Daptomycine — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2 — T3", drug: "⚠️ Données limitées — usage possible si indispensable", dose: "—", duration: "—", notes: "Pas de signal tératogène chez l'animal. Données humaines insuffisantes. Réserver aux situations sans alternative" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Allaitement : données insuffisantes — déconseillé par précaution. Consulter CRAT.",
+            source: "CRAT",
+          },
+        },
+        {
+          id: "gros_clinda",
+          label: "Clindamycine",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Clindamycine — grossesse",
+            indication: null,
+            preferred: [
+              { label: "T1 — T2 — T3", drug: "✅ Autorisée tous trimestres", dose: "—", duration: "—", notes: "Pas d'effet tératogène démontré. Utilisée notamment dans les vaginoses bactériennes" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Compatible allaitement.",
+            source: "CRAT",
+          },
+        },
+      ],
+    },
+    {
+      id: "gros_situations",
+      label: "Par situation clinique",
+      subtitle: "Guide rapide — infections fréquentes chez la femme enceinte",
+      question: "Infection ?",
+      icon: "🤱",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "gros_cystite",
+          label: "Cystite gravidique",
+          icon: "💦",
+          color: "#2E7EAD",
+          colorLight: "#EBF4FA",
+          result: {
+            condition: "Cystite gravidique — antibiothérapie",
+            indication: "Traiter systématiquement toute bactériurie symptomatique pendant la grossesse.",
+            preferred: [
+              { label: "1ère intention (ECBU préalable)", drug: "Traitement adapté à l'antibiogramme", dose: "—", duration: "5–7 jours", notes: "Se référer au module Infections Urinaires — IU gravidique" },
+              { label: "Probabiliste", drug: "Amoxicilline / Fosfomycine / Pivmécillinam", dose: "Selon sensibilité locale", duration: "5–7 jours", notes: "⚠️ Nitrofurantoïne CI à partir de 36 SA — Cotrimoxazole CI T1 et ≥ 34 SA" },
+            ],
+            alternatives: [],
+            notRecommended: ["Nitrofurantoïne ≥ 36 SA","Cotrimoxazole T1 et ≥ 34 SA","Fluoroquinolones en 1ère ligne"],
+            followUp: "ECBU de contrôle à J5–J7. Dépistage bactériurie asymptomatique mensuel.",
+            source: "HAS/SPILF 2024 — CRAT",
+          },
+        },
+        {
+          id: "gros_chlamydia_gros",
+          label: "Chlamydia trachomatis",
+          icon: "🟡",
+          color: "#7C3AED",
+          colorLight: "#EDE9FE",
+          result: {
+            condition: "Chlamydia trachomatis — femme enceinte",
+            indication: null,
+            preferred: [
+              { label: "T1 (grade A)", drug: "Doxycycline PO", dose: "100 mg × 2/j", duration: "7 jours", notes: "Autorisée avant 14 SA — avis CRAT favorable. ⚠️ Azithromycine DU inefficace au T1" },
+              { label: "T2 — T3 (grade A)", drug: "Azithromycine PO", dose: "1 g", duration: "Dose unique", notes: null },
+              { label: "2ème intention (grade B)", drug: "Érythromycine PO", dose: "500 mg × 4/j", duration: "7 jours", notes: "Si CI doxycycline et azithromycine" },
+            ],
+            alternatives: [],
+            notRecommended: ["Doxycycline à partir du 4ème mois"],
+            followUp: "Se référer au module IST — Chlamydia pour le détail complet.",
+            source: "SPILF — CRAT",
+          },
+        },
+        {
+          id: "gros_herpes_gros",
+          label: "Herpès génital",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Herpès génital — femme enceinte",
+            indication: null,
+            preferred: [
+              { label: "Primo-infection (tout trimestre)", drug: "Valaciclovir PO", dose: "500 mg × 2/j", duration: "5 jours", notes: "Traitement immédiat identique à la femme non enceinte" },
+              { label: "Récurrence", drug: "Valaciclovir PO", dose: "500 mg × 2/j", duration: "3 jours", notes: null },
+              { label: "Traitement suppressif dès 36 SA (32 SA si gémellaire)", drug: "Valaciclovir PO ou Aciclovir PO", dose: "Valaciclovir 500 mg × 2/j ou Aciclovir 400 mg × 3/j", duration: "Jusqu'à l'accouchement", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Se référer au module IST — Herpès pour le détail complet.",
+            source: "SPILF — CRAT",
+          },
+        },
+        {
+          id: "gros_sepsis_gros",
+          label: "Sepsis / choc septique",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Sepsis / choc septique — femme enceinte",
+            indication: "Même prise en charge que chez la non-enceinte. Le bénéfice du traitement l'emporte toujours sur le risque de l'ATB.",
+            preferred: [
+              { label: "ATB probabiliste", drug: "C3G (Ceftriaxone) ± Aminosides courte durée si sepsis sévère", dose: "Ceftriaxone 2 g IV + Amikacine 30 mg/kg (24–48h max)", duration: "Selon foyer", notes: "⚠️ Aminosides : limiter à 24–48h — risque ototoxicité fœtale en traitement prolongé" },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Consultation obstétricale urgente en parallèle. Se référer au module Sepsis.",
+            linkModule: "sepsis",
+            source: "SSC 2026 — CRAT",
+          },
+        },
+      ],
+    },
+    {
+      id: "gros_crat",
+      label: "Ressources — CRAT",
+      subtitle: "Centre de référence sur les agents tératogènes",
+      icon: "📱",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "CRAT — Centre de référence agents tératogènes",
+        indication: null,
+        preferred: [
+          { label: "Site web", drug: "www.lecrat.fr", dose: "—", duration: "—", notes: "Base de données complète — gratuit et mis à jour. Appuyer pour ouvrir le site.", url: "https://www.lecrat.fr/" },
+          { label: "Téléphone", drug: "01 43 41 26 22", dose: "—", duration: "Lundi–Vendredi 9h–18h", notes: "Avis personnalisé pour situations complexes" },
+        ],
+        alternatives: [],
+        notRecommended: [],
+        followUp: null,
+        source: "CRAT APHP",
+      },
+    },
+  ],
+};
+
+const Abg_DATA_AES = {
+  id: "root",
+  label: "Accidents d'Exposition aux Liquides Biologiques",
+  question: "Type d'exposition ?",
+  type: "info",
+  infoColor: "#E05260",
+  infoColorLight: "#FDF0F1",
+  infoTitle: "⚠️ Urgence médicale — Agir dans les 4 premières heures",
+  infoItems: [
+    "Risques infectieux principaux : VIH, VHC, VHB",
+    "Faire le maximum pour connaître le statut sérologique de la personne source",
+    "Déclaration d'accident de travail obligatoire dans les 48h si contexte professionnel",
+    "TPE VIH : au mieux ≤ 4h, au plus tard 48h après l'exposition — inefficace au-delà",
+  ],
+  children: [
+
+    // ── ACCIDENT D'EXPOSITION AU SANG ─────────────────────────────────────────
+    {
+      id: "aes_sang",
+      label: "Accident d'Exposition au Sang (AES)",
+      subtitle: "Piqûre, coupure, projection sur plaie/muqueuse",
+      question: "Quelle étape ?",
+      icon: "🩸",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      children: [
+        {
+          id: "aes_sang_soins",
+          label: "1. Soins immédiats",
+          icon: "🧼",
+          color: "#2E7EAD",
+          colorLight: "#EBF4FA",
+          result: {
+            condition: "AES — Soins immédiats",
+            indication: "À réaliser IMMÉDIATEMENT avant toute autre démarche.",
+            preferred: [
+              { label: "Blessure ou piqûre", drug: "Ne PAS faire saigner — Nettoyer à l'eau courante et au savon (détersion) — Ne PAS utiliser un produit hydro-alcoolique", dose: "Rincer abondamment puis antisepsie", duration: "Contact ≥ 5 minutes", notes: "Antiseptique : Javel 2,5% diluée au 1/5 ou 1/10 · Solution de Dakin · Alcool 70° · Polyvidone iodée" },
+              { label: "Projection muqueuse (conjonctive…)", drug: "Rinçage immédiat abondant au sérum physiologique", dose: "—", duration: "≥ 5 minutes", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: ["Ne pas faire saigner (risque de brèche capillaire favorisant l'infection)", "Ne pas utiliser de produit hydro-alcoolique pour la plaie"],
+            followUp: "Déclarer l'accident de travail dans les 48h. Rédiger certificat médical initial.",
+            source: "PILLY 2021 — Item 366",
+          },
+        },
+        {
+          id: "aes_sang_serologies",
+          label: "2. Sérologies — Personne source",
+          icon: "🔬",
+          color: "#7C3AED",
+          colorLight: "#EDE9FE",
+          result: {
+            condition: "AES — Bilan sérologique de la personne source",
+            indication: "À effectuer dans tous les cas (hors refus exprès du patient) le plus rapidement possible.",
+            preferred: [
+              { label: "Sérologie VIH", drug: "Sérologie VIH", dose: "En urgence si statut inconnu — Test rapide (résultat < 1h)", duration: "Si positif : charge virale VIH en urgence + génotype résistance", notes: null },
+              { label: "Sérologie VHC", drug: "Sérologie VHC", dose: "—", duration: "Si positive : ARN VHC (réplication)", notes: null },
+              { label: "Sérologie VHB", drug: "Ag HBs (si victime non immunisée)", dose: "—", duration: "Si positif : ADN VHB (réplication)", notes: "Immunité post-vaccinale prouvée : Ac anti-HBs > 10 UI/L (présent ou passé)" },
+            ],
+            alternatives: [
+              { label: "Bilan chez la victime (dans les 7 jours)", items: [
+                "Sérologie VIH, VHC, VHB (attestant l'absence d'infection au moment de l'accident)",
+                "ALAT, Créatinine",
+                "Test de grossesse si indication de TPE",
+              ]},
+            ],
+            notRecommended: [],
+            followUp: "Si statut source inconnu et patient dans l'impossibilité de répondre : le médecin en charge peut prescrire les tests sous sa responsabilité.",
+            source: "PILLY 2021 — Item 366",
+          },
+        },
+        {
+          id: "aes_sang_vih",
+          label: "3. Risque VIH — Indication TPE",
+          question: "Niveau de risque de l'exposition ?",
+          type: "info",
+          infoColor: "#E05260",
+          infoColorLight: "#FDF0F1",
+          infoTitle: "TPE VIH — Délai : ≤ 4h (max 48h) — Durée : 28 jours",
+          infoItems: [
+            "Trithérapie de référence : Ténofovir + Emtricitabine + Rilpivirine",
+            "Kit 48h remis à la victime en attendant la consultation médecin référent VIH (à J2-J4)",
+            "Si source VIH+ connue : adapter selon charge virale, traitement en cours, génotype de résistance",
+            "Suivi sérologique VIH : à S6 et M3 (avec ou sans TPE)",
+            "Contraception mécanique : jusqu'à S6 sans TPE / jusqu'à S12 avec TPE",
+            "⚠️ Pas de TPE si charge virale VIH indétectable chez la source",
+          ],
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          children: [
+            {
+              id: "aes_vih_important",
+              label: "Risque IMPORTANT",
+              subtitle: "Piqûre profonde · Aiguille creuse intravasculaire (artérielle ou veineuse)",
+              question: "Statut de la personne source ?",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              children: [
+                {
+                  id: "aes_vih_imp_cv_det",
+                  label: "VIH+ — Charge virale DÉTECTABLE",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: {
+                    condition: "AES risque important — Source VIH+ CV détectable",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "Débuter dans les 4h, au plus tard 48h" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3. Consultation médecin référent VIH à J2-J4.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+                {
+                  id: "aes_vih_imp_cv_indet",
+                  label: "VIH+ — Charge virale INDÉTECTABLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "AES risque important — Source VIH+ CV indétectable",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: "Charge virale indétectable = risque de transmission nul" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+                {
+                  id: "aes_vih_imp_inconnu",
+                  label: "Sérologie VIH INCONNUE",
+                  icon: "🟠",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  result: {
+                    condition: "AES risque important — Statut source inconnu",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "Débuter dans les 4h, au plus tard 48h — réévaluer si sérologie revient négative" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3. Consultation médecin référent VIH à J2-J4.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+              ],
+            },
+            {
+              id: "aes_vih_intermediaire",
+              label: "Risque INTERMÉDIAIRE",
+              subtitle: "Coupure bistouri · Aiguille IM ou SC · Aiguille pleine · Exposition cutanéo-muqueuse > 15 min",
+              question: "Statut de la personne source ?",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              children: [
+                {
+                  id: "aes_vih_inter_cv_det",
+                  label: "VIH+ — Charge virale DÉTECTABLE",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: {
+                    condition: "AES risque intermédiaire — Source VIH+ CV détectable",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "Débuter dans les 4h, au plus tard 48h" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+                {
+                  id: "aes_vih_inter_cv_indet",
+                  label: "VIH+ — Charge virale INDÉTECTABLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "AES risque intermédiaire — Source VIH+ CV indétectable",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: "Charge virale indétectable = risque de transmission nul" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+                {
+                  id: "aes_vih_inter_inconnu",
+                  label: "Sérologie VIH INCONNUE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "AES risque intermédiaire — Statut source inconnu",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: "Risque insuffisant pour justifier un TPE si statut source inconnu" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+              ],
+            },
+            {
+              id: "aes_vih_faible",
+              label: "Risque FAIBLE",
+              subtitle: "Autres cas · Piqûres seringues abandonnées · Morsures, crachats, griffures",
+              question: "Statut de la personne source ?",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              children: [
+                {
+                  id: "aes_vih_faible_cv_det",
+                  label: "VIH+ — Charge virale DÉTECTABLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "AES risque faible — Source VIH+ CV détectable",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: "Risque trop faible pour justifier un TPE" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+                {
+                  id: "aes_vih_faible_cv_indet",
+                  label: "VIH+ — Charge virale INDÉTECTABLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "AES risque faible — Source VIH+ CV indétectable",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: null }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+                {
+                  id: "aes_vih_faible_inconnu",
+                  label: "Sérologie VIH INCONNUE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: {
+                    condition: "AES risque faible — Statut source inconnu",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: null }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Sérologie VIH à S6 et M3.",
+                    source: "PILLY 2021 — Tableau T-366-1",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "aes_sang_vhb",
+          label: "4. Risque VHB — Sérovaccination",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          question: "Statut vaccinal de la victime ?",
+          type: "info",
+          infoColor: "#E8A82E",
+          infoColorLight: "#FEF7E8",
+          infoTitle: "VHB — Taux de transmission percutanée jusqu'à 40% (source Ag HBe+)",
+          infoItems: [
+            "Immunité prouvée : Ac anti-HBs > 10 UI/L (présent ou passé) → aucun geste",
+            "Dose immunoglobulines anti-HBs : 500 UI IM — surveillance post-injection",
+            "Vaccination obligatoire pour tous les professionnels de santé",
+          ],
+          children: [
+            {
+              id: "aes_vhb_vaccine_repondeur",
+              label: "Vacciné répondeur (Ac anti-HBs > 10 mUI/mL ou > 100 mUI/mL dans les antécédents)",
+              icon: "🟢",
+              color: "#2E9E6B",
+              colorLight: "#E8F7F1",
+              result: {
+                condition: "AES VHB — Vacciné répondeur",
+                indication: null,
+                preferred: [{ label: "Statut source positif ou inconnu", drug: "✅ RIEN — Protégé", dose: "—", duration: "—", notes: "Immunité acquise — aucun geste nécessaire" }],
+                alternatives: [],
+                notRecommended: [],
+                followUp: "Pas de suivi VHB nécessaire.",
+                source: "PILLY 2021 — Tableau T-366-2",
+              },
+            },
+            {
+              id: "aes_vhb_vaccine_non_repondeur",
+              label: "Vacciné non répondeur (Ac anti-HBs < 10 mUI/mL sans antécédent > 100 mUI/mL)",
+              question: "Statut Ag HBs de la personne source ?",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              children: [
+                {
+                  id: "aes_vhb_nonrep_positif",
+                  label: "Source Ag HBs POSITIF",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: {
+                    condition: "AES VHB — Non répondeur, source Ag HBs positif",
+                    indication: null,
+                    preferred: [{ label: "Traitement", drug: "Immunoglobulines anti-HBs IM", dose: "500 UI", duration: "Dose unique", notes: "⚠️ Surveillance post-injection (risque hypersensibilité). Si TPE avec ténofovir : immunoglobulines non nécessaires si ADN VHB indétectable." }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Dosage transaminases et marqueurs VHB (Ag HBs, Ac HBc, Ac HBs) à 3 mois.",
+                    source: "PILLY 2021 — Tableau T-366-2",
+                  },
+                },
+                {
+                  id: "aes_vhb_nonrep_inconnu",
+                  label: "Source Ag HBs INCONNU",
+                  icon: "🟡",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  result: {
+                    condition: "AES VHB — Non répondeur, source inconnue",
+                    indication: null,
+                    preferred: [{ label: "Décision", drug: "✅ RIEN en règle générale", dose: "—", duration: "—", notes: "⚠️ Immunoglobulines légitimes si source originaire de zone haute/moyenne endémicité VHB (Afrique sub-saharienne, Asie, Outre-mer, Europe de l'Est, Afrique du Nord…) ou HSH ou usager drogues IV ou partenaires multiples — et si pas de ténofovir en TPE" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Dosage transaminases et marqueurs VHB à 3 mois.",
+                    source: "PILLY 2021 — Tableau T-366-2",
+                  },
+                },
+              ],
+            },
+            {
+              id: "aes_vhb_non_vaccine",
+              label: "Non vacciné",
+              question: "Statut Ag HBs de la personne source ?",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              children: [
+                {
+                  id: "aes_vhb_nonvax_positif",
+                  label: "Source Ag HBs POSITIF",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: {
+                    condition: "AES VHB — Non vacciné, source positif",
+                    indication: null,
+                    preferred: [{ label: "Traitement", drug: "Immunoglobulines anti-HBs IM + Vaccin VHB", dose: "Immunoglobulines 500 UI + 1ère dose vaccin", duration: "Immunoglobulines dose unique — Schéma vaccinal à compléter", notes: "Administrer dans deux sites différents" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Compléter le schéma vaccinal. Dosage marqueurs VHB à 3 mois.",
+                    source: "PILLY 2021 — Tableau T-366-2",
+                  },
+                },
+                {
+                  id: "aes_vhb_nonvax_inconnu",
+                  label: "Source Ag HBs INCONNU",
+                  icon: "🟠",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  result: {
+                    condition: "AES VHB — Non vacciné, source inconnue",
+                    indication: null,
+                    preferred: [{ label: "Traitement", drug: "Vaccin VHB", dose: "1ère dose immédiate", duration: "Schéma vaccinal à compléter", notes: "⚠️ Immunoglobulines légitimes si source originaire de zone haute/moyenne endémicité ou HSH ou usager drogues IV — et si pas de ténofovir en TPE" }],
+                    alternatives: [],
+                    notRecommended: [],
+                    followUp: "Compléter le schéma vaccinal. Dosage marqueurs VHB à 3 mois.",
+                    source: "PILLY 2021 — Tableau T-366-2",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "aes_sang_vhc",
+          label: "5. Risque VHC",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "AES — Risque VHC",
+            indication: "Taux de transmission après exposition percutanée < 3%. Pas de prophylaxie disponible.",
+            preferred: [
+              { label: "Si source VHC+ avec PCR positive", drug: "Surveillance clinique et biologique", dose: "—", duration: "—", notes: "Information sur signes d'hépatite aiguë" },
+              { label: "Bilan de suivi", drug: "ALAT + Sérologie VHC + PCR ARN VHC", dose: "—", duration: "À S6 de l'accident", notes: null },
+              { label: "Contrôle", drug: "Sérologie VHC", dose: "—", duration: "À M3 de l'accident", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: ["Aucune prophylaxie disponible contre le VHC"],
+            followUp: "Si séroconversion ou PCR ARN VHC positive : mise en route immédiate d'un traitement antiviral efficace.",
+            source: "PILLY 2021 — Item 366",
+          },
+        },
+      ],
+    },
+
+    // ── ACCIDENT D'EXPOSITION SEXUELLE ────────────────────────────────────────
+    {
+      id: "aes_sexuel",
+      label: "Accident d'Exposition Sexuelle",
+      subtitle: "Rapport sexuel à risque, viol",
+      question: "Type d'exposition sexuelle ?",
+      type: "info",
+      infoColor: "#7C3AED",
+      infoColorLight: "#EDE9FE",
+      infoTitle: "Accueil — Attitude non-stigmatisante",
+      infoItems: [
+        "Déterminer l'heure et la nature du rapport à risque",
+        "Rechercher les facteurs augmentant le risque : IST, lésion génitale, rapports anaux, saignement, partenaire à risque",
+        "Rechercher le statut VIH de la personne source + charge virale si possible",
+        "VIH : séroconversion ~1% après rapport anal réceptif / ~0,1% après rapport vaginal insertif",
+        "VHB : séroconversion ~50% — Même sérovaccination que pour les AES (Tableau T-366-2)",
+        "VHC : risque significatif uniquement en cas de rapport traumatique (viol, saignement)",
+      ],
+      icon: "💜",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "aes_sex_rapport",
+          label: "Rapport sexuel à risque",
+          question: "Nature du rapport ?",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          children: [
+            {
+              id: "aes_sex_anal",
+              label: "Rapport anal réceptif ou insertif",
+              question: "Statut de la personne source ?",
+              icon: "🔴",
+              color: "#E05260",
+              colorLight: "#FDF0F1",
+              children: [
+                {
+                  id: "aes_sex_anal_cv_det",
+                  label: "VIH+ — CV DÉTECTABLE",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: { condition: "Exposition sexuelle anale — Source VIH+ CV détectable", indication: null, preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "≤ 4h idéal, max 48h" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6 et M3.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+                {
+                  id: "aes_sex_anal_cv_indet",
+                  label: "VIH+ — CV INDÉTECTABLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: { condition: "Exposition sexuelle anale — Source VIH+ CV indétectable", indication: null, preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: "CV indétectable depuis > 6 mois = risque nul" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+                {
+                  id: "aes_sex_anal_haut",
+                  label: "Sérologie inconnue — Groupe à PRÉVALENCE ÉLEVÉE",
+                  subtitle: "HSH multipartenaires · Travailleuse du sexe · Originaire Afrique SS/Caraïbe/Asie/Amérique du Sud · Usager drogues IV",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: { condition: "Exposition sexuelle anale — Source inconnue, prévalence élevée", indication: null, preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "≤ 4h idéal, max 48h" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6 et M3.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+                {
+                  id: "aes_sex_anal_faible",
+                  label: "Sérologie inconnue — Groupe à PRÉVALENCE FAIBLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: { condition: "Exposition sexuelle anale — Source inconnue, prévalence faible", indication: null, preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: null }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+              ],
+            },
+            {
+              id: "aes_sex_vaginal",
+              label: "Rapport vaginal réceptif ou insertif",
+              question: "Statut de la personne source ?",
+              icon: "🟠",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              children: [
+                {
+                  id: "aes_sex_vag_cv_det",
+                  label: "VIH+ — CV DÉTECTABLE",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: { condition: "Exposition sexuelle vaginale — Source VIH+ CV détectable", indication: null, preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "≤ 4h idéal, max 48h" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6 et M3.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+                {
+                  id: "aes_sex_vag_cv_indet",
+                  label: "VIH+ — CV INDÉTECTABLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: { condition: "Exposition sexuelle vaginale — Source VIH+ CV indétectable", indication: null, preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: "CV indétectable depuis > 6 mois = risque nul" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+                {
+                  id: "aes_sex_vag_haut",
+                  label: "Sérologie inconnue — Groupe à PRÉVALENCE ÉLEVÉE",
+                  subtitle: "HSH multipartenaires · Travailleuse du sexe · Originaire Afrique SS/Caraïbe/Asie · Usager drogues IV",
+                  icon: "🔴",
+                  color: "#E05260",
+                  colorLight: "#FDF0F1",
+                  result: { condition: "Exposition sexuelle vaginale — Source inconnue, prévalence élevée", indication: null, preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "≤ 4h idéal, max 48h" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6 et M3.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+                {
+                  id: "aes_sex_vag_faible",
+                  label: "Sérologie inconnue — Groupe à PRÉVALENCE FAIBLE",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: { condition: "Exposition sexuelle vaginale — Source inconnue, prévalence faible", indication: null, preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: null }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+              ],
+            },
+            {
+              id: "aes_sex_fellation",
+              label: "Fellation",
+              question: "Type de fellation ?",
+              icon: "🟡",
+              color: "#E8A82E",
+              colorLight: "#FEF7E8",
+              children: [
+                {
+                  id: "aes_sex_fell_recep_ejac",
+                  label: "Réceptive AVEC éjaculation",
+                  question: "Statut de la personne source ?",
+                  icon: "🟠",
+                  color: "#E8A82E",
+                  colorLight: "#FEF7E8",
+                  children: [
+                    {
+                      id: "aes_sex_fell_re_cv_det",
+                      label: "VIH+ — CV DÉTECTABLE",
+                      icon: "🔴",
+                      color: "#E05260",
+                      colorLight: "#FDF0F1",
+                      result: { condition: "Fellation réceptive avec éjaculation — Source VIH+ CV détectable", indication: null, preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "≤ 4h idéal, max 48h" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6 et M3.", source: "PILLY 2021 — Tableau T-366-3" },
+                    },
+                    {
+                      id: "aes_sex_fell_re_indet",
+                      label: "VIH+ — CV INDÉTECTABLE ou source inconnue",
+                      icon: "🟢",
+                      color: "#2E9E6B",
+                      colorLight: "#E8F7F1",
+                      result: { condition: "Fellation réceptive avec éjaculation — CV indétectable ou source inconnue", indication: null, preferred: [{ label: "Décision", drug: "❌ PAS DE TPE", dose: "—", duration: "—", notes: null }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6.", source: "PILLY 2021 — Tableau T-366-3" },
+                    },
+                    {
+                      id: "aes_sex_fell_re_haut",
+                      label: "Sérologie inconnue — Prévalence ÉLEVÉE",
+                      icon: "🔴",
+                      color: "#E05260",
+                      colorLight: "#FDF0F1",
+                      result: { condition: "Fellation réceptive avec éjaculation — Source inconnue, prévalence élevée", indication: null, preferred: [{ label: "Décision", drug: "✅ TPE INDIQUÉ", dose: "Ténofovir + Emtricitabine + Rilpivirine", duration: "28 jours", notes: "≤ 4h idéal, max 48h" }], alternatives: [], notRecommended: [], followUp: "Sérologie VIH à S6 et M3.", source: "PILLY 2021 — Tableau T-366-3" },
+                    },
+                  ],
+                },
+                {
+                  id: "aes_sex_fell_sans_ejac",
+                  label: "Réceptive SANS éjaculation ou insertive",
+                  icon: "🟢",
+                  color: "#2E9E6B",
+                  colorLight: "#E8F7F1",
+                  result: { condition: "Fellation réceptive sans éjaculation ou insertive — Tout statut source", indication: null, preferred: [{ label: "Décision", drug: "❌ PAS DE TPE — Tous statuts confondus", dose: "—", duration: "—", notes: "Risque de transmission VIH non significatif" }], alternatives: [], notRecommended: [], followUp: "Pas de suivi VIH spécifique requis.", source: "PILLY 2021 — Tableau T-366-3" },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "aes_sex_viol",
+          label: "Viol / Exposition sexuelle traumatique",
+          subtitle: "Urgence médico-légale — Deux évaluations simultanées",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Viol — Prise en charge aux urgences",
+            indication: "Deux évaluations en urgence simultanées chez la victime.",
+            preferred: [
+              { label: "1. Évaluation médico-légale", drug: "Examen médico-légal avec prélèvements pour identifier l'agresseur", dose: "Par médecin légiste si possible, sur réquisition de justice après dépôt de plainte", duration: "—", notes: null },
+              { label: "2. Évaluation infectieuse (urgentiste + médecin référent VIH)", drug: "Bilan sérologique initial victime", dose: "VIH · VDRL/TPHA · VHB · VHC", duration: "—", notes: null },
+              { label: "Contraception d'urgence (femme)", drug: "Lévonorgestrel PO", dose: "1 comprimé", duration: "Le plus tôt possible (< 72h)", notes: null },
+              { label: "TPE VIH si indiqué (Tableau T-366-3)", drug: "Ténofovir + Emtricitabine + Rilpivirine", dose: "—", duration: "28 jours", notes: "Viol = risque élevé → TPE systématiquement discuté. Rapport anal = TPE indiqué" },
+              { label: "Sérovaccination VHB si nécessaire", drug: "Selon Tableau T-366-2 (cf. risque VHB)", dose: "—", duration: "—", notes: null },
+            ],
+            alternatives: [],
+            notRecommended: [],
+            followUp: "Risque VHC à prendre en compte (exposition traumatique). Surveillance clinique et biologique selon protocole AES sexuel. Organiser suivi sérologique et psychologique.",
+            source: "PILLY 2021 — Item 366",
+          },
+        },
+      ],
+    },
+  ],
+};
+
+const Abg_DATA_TB = {
+  id: "root",
+  label: "Tuberculose",
+  question: "Étape de prise en charge ?",
+  type: "info",
+  infoColor: "#E05260",
+  infoColorLight: "#FDF0F1",
+  infoTitle: "⚠️ Mesures immédiates dès suspicion",
+  infoItems: [
+    "ISOLEMENT RESPIRATOIRE immédiat — chambre seule, pression négative si disponible",
+    "Masque FFP2 pour tout le personnel entrant dans la chambre",
+    "Masque chirurgical (ou FFP2) pour le patient lors de tout déplacement hors chambre",
+    "Déclaration Obligatoire (DO) — tuberculose = maladie à DO",
+    "NE PAS débuter le traitement aux urgences sans avis infectiologique/pneumologique",
+  ],
+  children: [
+    {
+      id: "tb_diagnostic",
+      label: "Diagnostic — Suspicion clinique",
+      subtitle: "Toux > 3 semaines, fièvre, sueurs nocturnes, amaigrissement",
+      icon: "🔬",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      result: {
+        condition: "Tuberculose — Bilan diagnostique initial aux urgences",
+            isolement: "air",
+        indication: "Évoquer devant : toux chronique + fièvre + amaigrissement + sueurs nocturnes + terrain à risque (immunodépression, origine zone endémique, précarité, contacts).",
+        preferred: [
+          { label: "Imagerie", drug: "Radio thoracique + Scanner thoracique non injecté", dose: "—", duration: "—", notes: "Nodules, excavations, infiltrats apicaux, épanchement pleural, adénopathies médiastinales" },
+          { label: "Microbiologie — BAAR", drug: "Expectoration × 2 prélèvements le même jour", dose: "≥ 3 mL, non salivaire", duration: "—", notes: "Examen microscopique direct (BAAR) + culture. 1er prélèvement : matin à jeun ou non" },
+          { label: "Si expectoration impossible", drug: "Tubage gastrique ou fibroscopie bronchique + LBA", dose: "—", duration: "—", notes: "Sur prescription spécialisée" },
+          { label: "Biologie", drug: "NFS, CRP, VS, bilan hépatique, créatinine, ALAT/ASAT (baseline avant traitement)", dose: "—", duration: "—", notes: null },
+          { label: "Sérologie VIH", drug: "Proposer systématiquement", dose: "—", duration: "—", notes: "Co-infection TB-VIH : modification du traitement" },
+        ],
+        alternatives: [
+          { label: "Tests immunologiques (si suspicion ITL)", items: [
+            "IGRA (test de libération d'interféron-gamma) — recommandé chez les > 5 ans",
+            "IDR (intradermoréaction) — alternative si IGRA indisponible",
+          ]},
+        ],
+        notRecommended: ["Antibiothérapie probabiliste aux urgences sans avis spécialisé"],
+        followUp: "Avis infectiologie ou pneumologie AVANT toute initiation du traitement. Enquête autour du cas (CLAT).",
+        source: "SPILF/SPLF 2025 — PILLY",
+      },
+    },
+    {
+      id: "tb_isolement",
+      label: "Précautions d'isolement",
+      subtitle: "Niveaux selon contagiosité",
+      icon: "😷",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      result: {
+        condition: "Tuberculose — Précautions respiratoires (SPILF/SPLF 2025)",
+            isolement: "air",
+        indication: null,
+        preferred: [
+          { label: "Précautions SIMPLES", drug: "Masque chirurgical patient + Masque FFP2 soignant", dose: "—", duration: "Jusqu'à évaluation à J14", notes: "Chambre individuelle, ventilation adaptée" },
+          { label: "Précautions RENFORCÉES", drug: "Masque FFP2 patient hors chambre + FFP2 soignant", dose: "—", duration: "Formes excavées ou forte charge bacillaire : ≥ 30 jours", notes: "Ventilation de la chambre essentielle" },
+          { label: "Précautions MAXIMALES (XDR)", drug: "Sorties de chambre interdites", dose: "—", duration: "Jusqu'à 3 cultures négatives sur 3 jours distincts", notes: "⚠️ Tuberculose ultra-résistante (XDR)" },
+        ],
+        alternatives: [],
+        notRecommended: [],
+        followUp: "Évaluation pour lever les précautions respiratoires à J14 d'hospitalisation.",
+        source: "SPILF/SPLF 2025 — SF2H 2024",
+      },
+    },
+    {
+      id: "tb_traitement",
+      label: "Traitement — Quadrithérapie standard",
+      subtitle: "À titre informatif — initiation après avis spécialisé obligatoire",
+      question: "Phase de traitement ?",
+      type: "info",
+      infoColor: "#E8A82E",
+      infoColorLight: "#FEF7E8",
+      infoTitle: "⚠️ Ne pas initier sans avis infectiologique/pneumologique",
+      infoItems: [
+        "Bilan hépatique (ALAT/ASAT) AVANT traitement — référence pour surveillance",
+        "Proposer test VIH avant initiation",
+        "Déclarer la tuberculose (Déclaration Obligatoire — imprimé CERFA)",
+        "Contacter le CLAT (Centre de Lutte Anti-Tuberculeuse) pour enquête autour du cas",
+        "Observance = clé de l'efficacité — jamais de monothérapie (sélection de résistances)",
+      ],
+      icon: "💊",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "tb_phase1",
+          label: "Phase initiale — 2 premiers mois (QUADRITHÉRAPIE)",
+          icon: "🟠",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Tuberculose sensible — phase initiale (2 mois)",
+            isolement: "air",
+            indication: "À initier en milieu spécialisé après confirmation diagnostique ou forte suspicion avec avis spécialisé.",
+            preferred: [
+              { label: "Isoniazide (INH)", drug: "Isoniazide PO", dose: "3–5 mg/kg/j (max 300 mg/j)", duration: "2 mois", notes: "+ Pyridoxine (Vit B6) 10 mg/j chez sujets à risque (alcool, dénutrition, grossesse, IRC)" },
+              { label: "Rifampicine (RMP)", drug: "Rifampicine PO", dose: "10 mg/kg/j (max 600 mg/j)", duration: "2 mois", notes: "⚠️ Nombreuses interactions médicamenteuses (inducteur enzymatique puissant) — contraceptifs oraux inefficaces" },
+              { label: "Pyrazinamide (PZA)", drug: "Pyrazinamide PO", dose: "30 mg/kg/j (max 2 g/j)", duration: "2 mois", notes: "CI si insuffisance hépatique sévère ou goutte" },
+              { label: "Éthambutol (EMB)", drug: "Éthambutol PO", dose: "20 mg/kg/j", duration: "2 mois (arrêt avant M2 si sensibilité INH+RMP confirmée)", notes: "⚠️ Surveillance ophtalmologique — névrite optique rétrobulbaire" },
+            ],
+            alternatives: [
+              { label: "Si CI pyrazinamide", items: ["Trithérapie : INH + RMP + EMB — durée totale 9 mois (phase consolidation 7 mois)"] },
+              { label: "Formes combinées disponibles", items: [
+                "Rimifon® (INH seul)",
+                "Rimactan® (RMP seul)",
+                "Rifater® (INH + RMP + PZA)",
+                "Rifinah® (INH + RMP)",
+              ]},
+            ],
+            notRecommended: ["Monothérapie — sélection immédiate de résistances","Initiation sans avis spécialisé"],
+            followUp: "Surveillance ALAT/ASAT à M1 et M2. Contrôle des expectorations à M2.",
+            source: "SPILF/SPLF 2025 — VIDAL",
+          },
+        },
+        {
+          id: "tb_phase2",
+          label: "Phase de consolidation — 4 mois suivants (BITHÉRAPIE)",
+          icon: "🟢",
+          color: "#2E9E6B",
+          colorLight: "#E8F7F1",
+          result: {
+            condition: "Tuberculose sensible — phase de consolidation (4 mois)",
+            isolement: "air",
+            indication: "Si cultures négatives à M2 et bonne tolérance. Durée totale : 6 mois.",
+            preferred: [
+              { label: "Bithérapie de référence", drug: "Isoniazide + Rifampicine PO", dose: "INH 3–5 mg/kg/j + RMP 10 mg/kg/j", duration: "4 mois", notes: "Durée totale du traitement : 6 mois" },
+            ],
+            alternatives: [
+              { label: "Formes particulières", items: [
+                "Tuberculose neuroméningée : durée totale 12 mois",
+                "Tuberculose osseuse : durée totale 9–12 mois",
+                "Tuberculose VIH+ : durée selon CD4 — avis spécialisé",
+                "Multirésistance (MDR/XDR) : schéma adapté, avis centre référent",
+              ]},
+            ],
+            notRecommended: [],
+            followUp: "⚠️ Interruption > 2 semaines pendant phase initiale OU > 2 mois entre M3 et M6 → reprendre le traitement à ZÉRO. Cultures à M2 et M5. Bilan hépatique mensuel.",
+            source: "SPILF/SPLF 2025 — VIDAL",
+          },
+        },
+        {
+          id: "tb_resistances",
+          label: "Tuberculose résistante (MDR / XDR)",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Tuberculose multirésistante (MDR) ou ultra-résistante (XDR)",
+            isolement: "air",
+            indication: "MDR : résistance à INH + RMP. XDR (définition 2022) : résistance à RMP + fluoroquinolone + bédaquiline et/ou linézolide.",
+            preferred: [
+              { label: "Conduite à tenir", drug: "Avis immédiat centre référent tuberculose", dose: "—", duration: "Schéma individualisé (18–24 mois)", notes: "Molécules récentes : Bédaquiline, Linézolide, Prétomanide, Délamanid" },
+            ],
+            alternatives: [],
+            notRecommended: ["Traitement standard en cas de suspicion de résistance"],
+            followUp: "Isolement renforcé. Enquête résistance génotypique rapide (GeneXpert, ligne-probe assay).",
+            source: "SPILF/SPLF 2025 — OMS 2022",
+          },
+        },
+      ],
+    },
+    {
+      id: "tb_do",
+      label: "Déclaration Obligatoire + CLAT",
+      icon: "📋",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "Tuberculose — obligations légales et suivi",
+        indication: "Tuberculose maladie = maladie à déclaration obligatoire (DO). Enquête autour du cas obligatoire.",
+        preferred: [
+          { label: "Déclaration Obligatoire", drug: "Formulaire CERFA n°12218 (ARS)", dose: "—", duration: "Dans les 24–48h", notes: "À transmettre à l'ARS" },
+          { label: "CLAT", drug: "Centre de Lutte Anti-Tuberculeuse", dose: "—", duration: "—", notes: "Enquête autour du cas, dépistage contacts, supervision du traitement ambulatoire" },
+          { label: "Isolement hospitalier", drug: "Maintenu jusqu'à absence de BAAR sur frottis", dose: "—", duration: "En moyenne 2–3 semaines de traitement si BAAR positif initialement", notes: "Poursuite traitement en ambulatoire possible ensuite si pas de risque de transmission" },
+        ],
+        alternatives: [],
+        notRecommended: [],
+        followUp: null,
+        source: "SPILF/SPLF 2025 — Santé Publique France",
+      },
+    },
+  ],
+};
+
+
+const Abg_DATA_VOYAGE = {
+  id: "root",
+  label: "Fièvre au Retour de Voyage",
+  question: "Étape diagnostique ?",
+  type: "info",
+  infoColor: "#E05260",
+  infoColorLight: "#FDF0F1",
+  infoTitle: "⚠️ Règle absolue — HCSP 2024 / SPILF 2020",
+  infoItems: [
+    "Toute fièvre dans les 3 mois suivant le retour d'une zone d'endémie = PALUDISME jusqu'à preuve du contraire",
+    "Quels que soient les symptômes associés ET même si un autre foyer infectieux est identifié",
+    "Toute fièvre doit faire rechercher un antécédent de séjour en zone d'endémie",
+    "Urgence diagnostique : résultat attendu dans les 2 heures",
+    "Délai min incubation P. falciparum : 7 jours / max 2 mois · Autres Plasmodium : jusqu'à plusieurs années",
+  ],
+  children: [
+    {
+      id: "voyage_bilan",
+      label: "Bilan initial systématique",
+      subtitle: "À réaliser en urgence dès l'arrivée",
+      icon: "🔬",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "Fièvre au retour de voyage — bilan initial aux urgences",
+        indication: "Interrogatoire clé : zone(s) visitée(s), durée du séjour, délai depuis le retour, chimioprophylaxie palustre prise, vaccinations, type d'hébergement, activités (eau douce, animaux…)",
+        preferred: [
+          { label: "Paludisme — URGENCE", drug: "Frottis sanguin + Goutte épaisse + TDR paludisme (antigénique)", dose: "—", duration: "Résultat dans les 2 heures", notes: "Si TDR négatif avec forte suspicion → répéter à H12–H24" },
+          { label: "Biologie standard", drug: "NFS — plaquettes — CRP — ASAT/ALAT — LDH — bilirubine — créatinine — glycémie", dose: "—", duration: "—", notes: "Thrombopénie + hémolyse → orienter vers paludisme ou dengue. Hyperéosinophilie → parasitose (helminthiase, schistosomose)" },
+          { label: "Dengue (si zone Asie/Amérique/Caraïbes)", drug: "Sérologie dengue (NS1 Ag + IgM/IgG)", dose: "—", duration: "—", notes: "NS1 positif en phase aiguë (J1–J5). ⚠️ AINS contre-indiqués si dengue" },
+          { label: "Hémocultures", drug: "2 paires avant tout ATB", dose: "—", duration: "—", notes: "Si fièvre > 38,5°Abg_C ou sepsis" },
+          { label: "Sérologies selon orientation", drug: "Rickettsiose (sérologie Rickettsia), Leptospirose, Typhoïde (sérodiagnostic de Widal ou hémocultures)", dose: "—", duration: "—", notes: "Selon zone géographique et clinique" },
+        ],
+        alternatives: [
+          { label: "Selon clinique", items: [
+            "Escarre d'inoculation → Rickettsiose",
+            "Ictère + hémolyse → Paludisme, leptospirose",
+            "Rash cutané + arthralgies → Dengue, Chikungunya, Zika",
+            "Diarrhée profuse → Typhoïde, diarrhée du voyageur",
+            "Hyperéosinophilie → Helminthiase (schistosomose, filariose, toxocarose…)",
+          ]},
+        ],
+        notRecommended: [],
+        followUp: "Avis infectiologue ou médecin des maladies tropicales si doute diagnostique.",
+        source: "HCSP 2024 — SPILF 2020 — CMIT 2021",
+      },
+    },
+    {
+      id: "voyage_paludisme",
+      label: "Paludisme confirmé",
+      subtitle: "→ Se référer au module Accès Palustre",
+      linkModule: "paludisme",
+      icon: "🦟",
+      color: "#E05260",
+      colorLight: "#FDF0F1",
+      result: {
+        condition: "Paludisme confirmé — orientation",
+        indication: "Paludisme = urgence diagnostique et thérapeutique. Hospitalisation si signes de gravité, intolérance orale, ou doute.",
+        preferred: [
+          { label: "Conduite à tenir", drug: "→ Se référer au module Accès Palustre pour le traitement complet", dose: "—", duration: "—", notes: "P. falciparum grave → Artésunate IV. P. falciparum non grave → traitement oral selon vomissements" },
+        ],
+        alternatives: [],
+        notRecommended: [],
+        followUp: "Critères d'hospitalisation : P. falciparum + tout signe de gravité / vomissements / parasitémie > 2% / doute diagnostique.",
+        source: "SPILF 2020 — Antibioguide CHEG 2022",
+      },
+    },
+    {
+      id: "voyage_dengue",
+      label: "Dengue",
+      subtitle: "Arbovirose — Aedes albopictus/aegypti",
+      icon: "🦟",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      result: {
+        condition: "Dengue — prise en charge",
+            isolement: "standard_moustique",
+        indication: "2ème cause de fièvre d'importation en France. 4 sérotypes (DENV-1 à 4). Incubation 3–14 jours.",
+        preferred: [
+          { label: "Traitement symptomatique", drug: "Paracétamol PO", dose: "1 g × 4/j", duration: "Durée de la fièvre (phase aiguë ~7 jours)", notes: "Seul antipyrétique autorisé" },
+          { label: "Hydratation", drug: "Hydratation orale ++ ou IV si intolérance", dose: "—", duration: "—", notes: null },
+        ],
+        alternatives: [],
+        notRecommended: [
+          "AINS — contre-indiqués (risque hémorragique)",
+          "Aspirine — contre-indiquée (risque hémorragique)",
+          "Antibiotiques — aucune indication (arbovirose virale)",
+        ],
+        followUp: "Formes graves : dengue hémorragique, dengue sévère (choc, défaillance viscérale) → hospitalisation urgente. Signalement ARS si cas en métropole (présence Aedes albopictus). Surveillance plaquettes si thrombopénie.",
+        source: "SFMU 2024 — HCSP 2024",
+      },
+    },
+    {
+      id: "voyage_typhoide",
+      label: "Fièvre typhoïde",
+      subtitle: "Salmonella typhi / paratyphi",
+      question: "Gravité de la forme ?",
+      icon: "🌡️",
+      color: "#7C3AED",
+      colorLight: "#EDE9FE",
+      children: [
+        {
+          id: "voyage_typhoide_non_grave",
+          label: "Forme non grave — possible ambulatoire",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Fièvre typhoïde — forme non grave",
+            isolement: "contact",
+            indication: "Hémocultures avant ATB. Hospitalisation nécessaire dans la plupart des cas. Incubation 7–14 jours. Clinique : fièvre en plateau 40°Abg_C, céphalées, insomnie, troubles digestifs, splénomégalie.",
+            preferred: [
+              { label: "1ère intention", drug: "Azithromycine PO", dose: "500 mg × 1/j", duration: "7 jours", notes: "Si souche sensible et forme non compliquée" },
+              { label: "Alternative", drug: "Ceftriaxone IV", dose: "2 g × 1/j", duration: "10–14 jours", notes: "Si vomissements ou forme grave" },
+            ],
+            alternatives: [
+              { label: "Alternative (fluoroquinolone si sensible)", items: ["Ciprofloxacine PO 500 mg × 2/j — 7 jours (si sensibilité confirmée sur antibiogramme — résistances croissantes)"] },
+            ],
+            notRecommended: ["Fluoroquinolones en probabiliste — résistances croissantes (Asie du Sud)"],
+            followUp: "Déclaration obligatoire. Contrôle hémocultures à J5–J7. Risque de rechute à 2–3 semaines.",
+            source: "SPILF — HCSP 2024",
+          },
+        },
+        {
+          id: "voyage_typhoide_grave",
+          label: "Forme grave (troubles conscience, choc, perforation)",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Fièvre typhoïde — forme grave / complications",
+            isolement: "contact",
+            indication: "Hospitalisation obligatoire. Complications : perforation intestinale, hémorragie digestive, encéphalite, myocardite.",
+            preferred: [
+              { label: "Traitement de référence", drug: "Ceftriaxone IV", dose: "2–4 g × 1/j", duration: "10–14 jours", notes: null },
+            ],
+            alternatives: [
+              { label: "Encéphalite typhique grave", items: ["Ceftriaxone + Dexaméthasone 3 mg/kg/j × 3 jours"] },
+            ],
+            notRecommended: [],
+            followUp: "Déclaration obligatoire. Chirurgie si perforation intestinale. Surveillance hémocultures.",
+            source: "SPILF — HCSP 2024",
+          },
+        },
+      ],
+    },
+    {
+      id: "voyage_rickettsiose",
+      label: "Rickettsiose",
+      subtitle: "R. africae (Afrique sub-saharienne) — R. conorii (bassin méditerranéen)",
+      icon: "🐛",
+      color: "#0D9488",
+      colorLight: "#CCFBF1",
+      result: {
+        condition: "Rickettsiose — fièvre boutonneuse / typhus à tiques",
+        indication: "Évoquer si : escarre d'inoculation (tâche noire) + fièvre + rash maculo-papuleux + retour d'Afrique ou zone méditerranéenne. Incubation 4–10 jours.",
+        preferred: [
+          { label: "Traitement de référence", drug: "Doxycycline PO", dose: "200 mg/j en 1 ou 2 prises", duration: "7 jours (5 jours si R. africae non compliquée)", notes: null },
+        ],
+        alternatives: [
+          { label: "CI doxycycline ou allergie", items: ["Azithromycine PO 500 mg × 1/j — 5 jours"] },
+        ],
+        notRecommended: ["Bêtalactamines — inefficaces sur Rickettsia (bactérie intracellulaire)"],
+        followUp: "Réponse spectaculaire à la doxycycline en 24–48h (test thérapeutique diagnostique). Pas de déclaration obligatoire en France.",
+        source: "SPILF — HCSP 2024",
+      },
+    },
+    {
+      id: "voyage_chikungunya_zika",
+      label: "Chikungunya / Zika / Autres arboviroses",
+      subtitle: "Traitement symptomatique uniquement",
+      icon: "🦟",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "Arboviroses (Chikungunya, Zika, Fièvre jaune…)",
+            isolement: "standard_moustique",
+        indication: "Pas d'antiviral spécifique disponible. Chikungunya : arthralgies invalidantes dominantes. Zika : risque tératogène (microcéphalie) si grossesse.",
+        preferred: [
+          { label: "Traitement symptomatique", drug: "Paracétamol PO", dose: "1 g × 4/j", duration: "Durée des symptômes", notes: null },
+        ],
+        alternatives: [],
+        notRecommended: [
+          "AINS — contre-indiqués jusqu'à élimination dengue (co-circulation possible)",
+          "Aspirine — contre-indiquée",
+        ],
+        followUp: "Zika + femme enceinte ou en âge de procréer → avis spécialisé urgent (risque tératogène). Signalement ARS. Chikungunya : arthralgies peuvent durer plusieurs mois.",
+        source: "HCSP 2024 — SFMU",
+      },
+    },
+    {
+      id: "voyage_diarrhee",
+      label: "Diarrhée du voyageur",
+      subtitle: "Gastro-entérite bactérienne ou parasitaire",
+      question: "Gravité ?",
+      icon: "💩",
+      color: "#E8A82E",
+      colorLight: "#FEF7E8",
+      children: [
+        {
+          id: "voyage_diarrhee_legere",
+          label: "Forme légère à modérée",
+          icon: "🟡",
+          color: "#E8A82E",
+          colorLight: "#FEF7E8",
+          result: {
+            condition: "Diarrhée du voyageur — forme légère à modérée",
+            indication: null,
+            preferred: [
+              { label: "Traitement", drug: "Réhydratation orale ++ — pas d'ATB systématique", dose: "—", duration: "—", notes: "ATB préventif non indiqué" },
+            ],
+            alternatives: [],
+            notRecommended: ["Antibiotique préventif — non indiqué"],
+            followUp: "ATB curatif uniquement si : syndrome dysentérique, diarrhée grave, fièvre élevée, immunodépression.",
+            source: "HCSP 2024",
+          },
+        },
+        {
+          id: "voyage_diarrhee_grave",
+          label: "Forme grave / syndrome dysentérique",
+          icon: "🔴",
+          color: "#E05260",
+          colorLight: "#FDF0F1",
+          result: {
+            condition: "Diarrhée du voyageur — forme grave ou syndrome dysentérique",
+            indication: "Syndrome dysentérique (selles glairo-sanglantes), diarrhées graves, retour d'Asie, fièvre élevée.",
+            preferred: [
+              { label: "1ère intention — curatif", drug: "Azithromycine PO", dose: "500 mg × 1/j", duration: "3 jours", notes: "Traitement de choix en Asie (résistances aux fluoroquinolones)" },
+            ],
+            alternatives: [
+              { label: "Hors Asie (si souche sensible)", items: ["Ciprofloxacine PO 500 mg × 2/j — 3 jours"] },
+            ],
+            notRecommended: ["Fluoroquinolones si retour d'Asie — résistances fréquentes"],
+            followUp: "Coprocultures avant ATB si possible. Évoquer amibiase si symptômes prolongés.",
+            source: "HCSP 2024",
+          },
+        },
+      ],
+    },
+    {
+      id: "voyage_incubations",
+      label: "Récap — Délais d'incubation",
+      subtitle: "Guide rapide pour orientation diagnostique",
+      icon: "⏱️",
+      color: "#2E7EAD",
+      colorLight: "#EBF4FA",
+      result: {
+        condition: "Délais d'incubation — principales pathologies du voyageur",
+        indication: "Un délai incohérent avec la pathologie suspectée doit faire reconsidérer le diagnostic.",
+        preferred: [
+          { label: "P. falciparum", drug: "7 jours (min) → 2 mois (max)", dose: "—", duration: "—", notes: "Fièvre dans les 3 mois = paludisme jusqu'à preuve du contraire" },
+          { label: "Autres Plasmodium (vivax, ovale, malariae)", drug: "10–15 jours → plusieurs années", dose: "—", duration: "—", notes: "P. malariae : jusqu'à > 10 ans" },
+          { label: "Dengue", drug: "3–14 jours", dose: "—", duration: "—", notes: null },
+          { label: "Chikungunya / Zika", drug: "2–12 jours", dose: "—", duration: "—", notes: null },
+          { label: "Fièvre typhoïde", drug: "7–21 jours", dose: "—", duration: "—", notes: null },
+          { label: "Rickettsiose", drug: "4–10 jours", dose: "—", duration: "—", notes: "Escarre d'inoculation pathognomonique" },
+          { label: "Leptospirose", drug: "2–30 jours", dose: "—", duration: "—", notes: "Contact eau douce / animaux" },
+          { label: "Hépatite A", drug: "15–50 jours", dose: "—", duration: "—", notes: null },
+          { label: "Schistosomose (fièvre de Katayama)", drug: "4–8 semaines", dose: "—", duration: "—", notes: "Hyperéosinophilie" },
+        ],
+        alternatives: [],
+        notRecommended: [],
+        followUp: null,
+        source: "HCSP 2024 — CMIT 2021",
+      },
+    },
+  ],
+};
+
+const Abg_MODULE_DATA = {
+  grossesse:   { data: Abg_DATA_GROSSESSE, icon: "🤰", title: "Antibiotiques & Grossesse",  iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  ei:          { data: Abg_DATA_EI,       icon: "🫀", title: "Endocardite Infectieuse",          iconBg: "rgba(224,82,96,.25)",   iconBorder: "#E05260" },
+  tb:          { data: Abg_DATA_TB,       icon: "🫁", title: "Tuberculose",                   iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  voyage:      { data: Abg_DATA_VOYAGE,    icon: "🌍", title: "Fièvre au Retour de Voyage",   iconBg: "rgba(232,168,46,.25)",  iconBorder: "#E8A82E" },
+  aes:         { data: Abg_DATA_AES,      icon: "🩸", title: "AES — Liquides Biologiques",     iconBg: "rgba(224,82,96,.25)",   iconBorder: "#E05260" },
+  arthrite:    { data: Abg_DATA_ARTHRITE, icon: "🦴", title: "Arthrite Septique",               iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  sepsis:      { data: Abg_DATA_SEPSIS,  icon: "🚨", title: "Sepsis & Choc Septique",     iconBg: "rgba(224,82,96,.25)",   iconBorder: "#E05260" },
+  urinaire:    { data: Abg_DATA_IU,       icon: "🔺", title: "Infections Urinaires",       iconBg: "rgba(46,126,173,.25)",  iconBorder: "#2E7EAD" },
+  pulmonaire:  { data: Abg_DATA_PULMO,    icon: "🫁", title: "Infections Pulmonaires",     iconBg: "rgba(13,148,136,.25)",  iconBorder: "#0D9488" },
+  digestif:    { data: Abg_DATA_DIGESTIF, icon: "🍽️", title: "Infections Digestives",      iconBg: "rgba(232,168,46,.25)",  iconBorder: "#E8A82E" },
+  neuro:       { data: Abg_DATA_NEURO,    icon: "🧠", title: "Infections Neuro-Méningées", iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  paludisme:   { data: Abg_DATA_PALU,     icon: "🦟", title: "Accès Palustre",             iconBg: "rgba(232,168,46,.25)",  iconBorder: "#E8A82E" },
+  neutropenie: { data: Abg_DATA_NEUTRO,   icon: "🩸", title: "Neutropénie Fébrile",        iconBg: "rgba(224,82,96,.25)",   iconBorder: "#E05260" },
+  peau:        { data: Abg_DATA_PEAU,     icon: "🩹", title: "Peau & Tissus Mous",         iconBg: "rgba(46,126,173,.25)",  iconBorder: "#2E7EAD" },
+  ist:         { data: Abg_DATA_IST,     icon: "👩‍❤️‍👨", title: "IST",                        iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  orl2:        { data: Abg_DATA_ORL2,    icon: "👂", title: "Infections ORL",                iconBg: "rgba(46,126,173,.25)",  iconBorder: "#2E7EAD" },
+  igh:         { data: Abg_DATA_IGH,     icon: "👩", title: "Infections Génitales Hautes",   iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  orl:         { data: Abg_DATA_ORL,     icon: "🫦", title: "Infections Cervicales Profondes", iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+  pied:        { data: Abg_DATA_PIED,     icon: "🦶", title: "Pied du Diabétique",         iconBg: "rgba(124,58,237,.25)",  iconBorder: "#7C3AED" },
+};
+
+
+
+
+// ─── BADGE ISOLEMENT ──────────────────────────────────────────────────────────
+const Abg_ISOLEMENT_CONFIG = {
+  air: {
+    label: "ISOLEMENT AIR",
+    detail: "Chambre individuelle — Masque FFP2 soignant — Masque FFP2 patient hors chambre",
+    color: "#E05260",
+    bg: "#FDF0F1",
+    border: "#E05260",
+    icon: "🔴",
+  },
+  gouttelettes: {
+    label: "ISOLEMENT GOUTTELETTES",
+    detail: "Masque chirurgical soignant — Chambre individuelle recommandée",
+    color: "#E8A82E",
+    bg: "#FEF7E8",
+    border: "#E8A82E",
+    icon: "🟠",
+  },
+  contact: {
+    label: "ISOLEMENT CONTACT",
+    detail: "Gants + Surblouse dès l'entrée — SHA INEFFICACE si Abg_C. difficile → eau + savon obligatoire",
+    color: "#7C3AED",
+    bg: "#EDE9FE",
+    border: "#7C3AED",
+    icon: "🟣",
+  },
+  protecteur: {
+    label: "ISOLEMENT PROTECTEUR",
+    detail: "Patient immunodéprimé — Chambre individuelle — Masque FFP2 soignant — Flux laminaire si disponible",
+    color: "#2E7EAD",
+    bg: "#EBF4FA",
+    border: "#2E7EAD",
+    icon: "🔵",
+  },
+  contact_cdifficile: {
+    label: "ISOLEMENT CONTACT — Abg_C. DIFFICILE",
+    detail: "Gants + Surblouse — ⚠️ SHA INEFFICACE sur spores → lavage mains eau + savon obligatoire",
+    color: "#7C3AED",
+    bg: "#EDE9FE",
+    border: "#7C3AED",
+    icon: "🟣",
+  },
+  standard_moustique: {
+    label: "PRÉCAUTIONS STANDARD + Anti-moustiques",
+    detail: "Non contagieux interhumain — ⚠️ Protection anti-moustiques si Aedes présent (France métropolitaine) — signalement ARS",
+    color: "#0D9488",
+    bg: "#CCFBF1",
+    border: "#0D9488",
+    icon: "🟢",
+  },
+};
+
+function Abg_IsolementBadge({ type }) {
+  const cfg = Abg_ISOLEMENT_CONFIG[type];
+  if (!cfg) return null;
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: 10,
+      background: cfg.bg, border: `2px solid ${cfg.border}`,
+      borderRadius: 12, padding: "10px 14px",
+      marginBottom: 12, boxSizing: "border-box", width: "100%",
+    }}>
+      <span style={{ fontSize: 20, flexShrink: 0, marginTop: 1 }}>{cfg.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ color: cfg.color, fontWeight: 900, fontSize: 13, letterSpacing: "0.04em" }}>
+          {cfg.label}
+        </div>
+        <div style={{ color: cfg.color, fontSize: 11, marginTop: 3, lineHeight: 1.5, opacity: 0.9 }}>
+          {cfg.detail}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── INDICATEUR DE MISE À JOUR ───────────────────────────────────────────────
+const Abg_SOURCE_DATES = {
+  "SSC 2026":                      { date: "2026",      color: "#2E9E6B", label: "À jour" },
+  "SSC 2026 — Sepsis-3":           { date: "2026",      color: "#2E9E6B", label: "À jour" },
+  "SSC 2026 — Antibioguide CHEG 2022": { date: "2026",  color: "#2E9E6B", label: "À jour" },
+  "SSC 2026 — CRAT":               { date: "2026",      color: "#2E9E6B", label: "À jour" },
+  "SSC 2021/2026":                  { date: "2026",     color: "#2E9E6B", label: "À jour" },
+  "SPILF/SPLF 2025":               { date: "2025",      color: "#2E9E6B", label: "À jour" },
+  "SPILF/SFORL 2024":              { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "HAS/SPILF 2024 — CRAT":         { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "CRAT — HAS/SPILF 2024":         { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "CRAT — ANSM 2015":              { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "CRAT":                          { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "CRAT APHP":                     { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "CRAT — SPILF":                  { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "ESC 2023 — SPILF":              { date: "2023",      color: "#2E9E6B", label: "À jour" },
+  "SPILF 2023":                    { date: "2023",      color: "#2E9E6B", label: "À jour" },
+  "SPILF/CNGOF 2020":              { date: "2020",      color: "#E8A82E", label: "Reco 2020" },
+  "PILLY 2021 — Item 366":         { date: "2021",      color: "#E8A82E", label: "Reco 2021" },
+  "PILLY 2021 — Tableau T-366-1":  { date: "2021",      color: "#E8A82E", label: "Reco 2021" },
+  "PILLY 2021 — Tableau T-366-2":  { date: "2021",      color: "#E8A82E", label: "Reco 2021" },
+  "PILLY 2021 — Tableau T-366-3":  { date: "2021",      color: "#E8A82E", label: "Reco 2021" },
+  "SPILF/SFORL":                   { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "SPILF":                         { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "SPILF — CRAT":                  { date: "2024",      color: "#2E9E6B", label: "À jour" },
+  "SPILF — Antibioguide CHEG 2022":{ date: "2022",      color: "#E8A82E", label: "Reco 2022" },
+  "Antibioguide CHEG 2022 — SSC 2026": { date: "2026",  color: "#2E9E6B", label: "À jour" },
+  "Antibioguide CHEG 2022 — SPILF":{ date: "2022",      color: "#E8A82E", label: "Reco 2022" },
+  "Antibioguide CHEG 2022 — SPILF 2015": { date: "2022", color: "#E8A82E", label: "Reco 2022" },
+  "Antibioguide CHEG 2022 — SPILF 2017": { date: "2022", color: "#E8A82E", label: "Reco 2022" },
+  "Antibioguide CHEG 2022 — Dr Allemand-Sourrieu 2018": { date: "2022", color: "#E8A82E", label: "Reco 2022" },
+  "Antibioguide CHEG 2022 — AFSSAPS/SPILF/SPLF 2010": { date: "2022",  color: "#E8A82E", label: "Reco 2022" },
+  "Antibioguide CHEG 2022":        { date: "2022",      color: "#E8A82E", label: "Reco 2022" },
+};
+
+function Abg_getSourceInfo(source) {
+  if (!source) return null;
+  // Cherche une correspondance exacte puis partielle
+  if (Abg_SOURCE_DATES[source]) return Abg_SOURCE_DATES[source];
+  for (const [key, val] of Object.entries(Abg_SOURCE_DATES)) {
+    if (source.includes(key)) return val;
+  }
+  return null;
+}
+
+// Badge mis à jour affiché dans Abg_ResultCard
+function Abg_UpdateBadge({ source }) {
+  const info = Abg_getSourceInfo(source);
+  if (!info) return null;
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "center", gap: 5,
+      background: info.color + "18",
+      border: `1px solid ${info.color}55`,
+      borderRadius: 6, padding: "3px 8px",
+      fontSize: 10, fontWeight: 800,
+      color: info.color,
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: "50%",
+        background: info.color, display: "inline-block", flexShrink: 0,
+      }} />
+      {info.label} — {source}
+    </div>
+  );
+}
+
+// ─── CALCULATEUR qSOFA INLINE ────────────────────────────────────────────────
+function Abg_QsofaInline() {
+  const [scores, setScores] = useState({ fr: false, confusion: false, tas: false });
+  const toggle = (k) => setScores(s => ({ ...s, [k]: !s[k] }));
+  const total = Object.values(scores).filter(Boolean).length;
+  const color = total >= 2 ? "#E05260" : total === 1 ? "#E8A82E" : "#2E9E6B";
+  const label = total >= 2 ? "⚠️ Sepsis probable — évaluation urgente" : total === 1 ? "Surveiller — réévaluer" : "Faible probabilité de sepsis";
+  return (
+    <div style={{ background: "#FDF0F1", border: "1.5px solid #E05260", borderRadius: 12, padding: "12px 14px", marginBottom: 14, boxSizing: "border-box", width: "100%" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#E05260", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>🧮 qSOFA — Score rapide</div>
+      {[
+        { key: "fr", label: "FR ≥ 22/min" },
+        { key: "confusion", label: "Confusion / Altération conscience" },
+        { key: "tas", label: "PAS ≤ 100 mmHg" },
+      ].map(item => (
+        <button key={item.key} onClick={() => toggle(item.key)} style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%", boxSizing: "border-box",
+          background: scores[item.key] ? "#E05260" : "#fff",
+          border: `1px solid ${scores[item.key] ? "#E05260" : "#DCE8F0"}`,
+          borderRadius: 8, padding: "7px 10px", marginBottom: 5, cursor: "pointer", textAlign: "left",
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>{scores[item.key] ? "☑️" : "⬜"}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: scores[item.key] ? "#fff" : "#1A3A5C", flex: 1 }}>{item.label}</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: scores[item.key] ? "#fff" : "#5A7184", flexShrink: 0 }}>+1</span>
+        </button>
+      ))}
+      <div style={{ marginTop: 8, padding: "8px 10px", background: color + "22", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 22, fontWeight: 900, color, flexShrink: 0 }}>{total}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color }}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── CALCULATEUR CRB65 INLINE ─────────────────────────────────────────────────
+function Abg_Crb65Inline() {
+  const [scores, setScores] = useState({ confusion: false, fr: false, bp: false, age: false });
+  const toggle = (k) => setScores(s => ({ ...s, [k]: !s[k] }));
+  const total = Object.values(scores).filter(Boolean).length;
+  const color = total >= 3 ? "#E05260" : total >= 1 ? "#E8A82E" : "#0D9488";
+  const label = total === 0 ? "Mortalité < 1% — Ambulatoire envisageable" : total <= 2 ? "Mortalité 1–10% — Hospitalisation à discuter" : "Mortalité > 20% — Hospitalisation urgente";
+  return (
+    <div style={{ background: "#CCFBF1", border: "1.5px solid #0D9488", borderRadius: 12, padding: "12px 14px", marginBottom: 14, boxSizing: "border-box", width: "100%" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#0D9488", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 }}>🧮 CRB-65 — Sévérité PAC</div>
+      {[
+        { key: "confusion", label: "Confusion" },
+        { key: "fr", label: "FR ≥ 30/min" },
+        { key: "bp", label: "PAS < 90 mmHg ou PAD ≤ 60 mmHg" },
+        { key: "age", label: "Âge ≥ 65 ans" },
+      ].map(item => (
+        <button key={item.key} onClick={() => toggle(item.key)} style={{
+          display: "flex", alignItems: "center", gap: 8, width: "100%", boxSizing: "border-box",
+          background: scores[item.key] ? "#0D9488" : "#fff",
+          border: `1px solid ${scores[item.key] ? "#0D9488" : "#DCE8F0"}`,
+          borderRadius: 8, padding: "7px 10px", marginBottom: 5, cursor: "pointer", textAlign: "left",
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>{scores[item.key] ? "☑️" : "⬜"}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: scores[item.key] ? "#fff" : "#1A3A5C", flex: 1 }}>{item.label}</span>
+          <span style={{ fontSize: 12, fontWeight: 800, color: scores[item.key] ? "#fff" : "#5A7184", flexShrink: 0 }}>+1</span>
+        </button>
+      ))}
+      <div style={{ marginTop: 8, padding: "8px 10px", background: color + "22", borderRadius: 8, display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 22, fontWeight: 900, color, flexShrink: 0 }}>{total}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color }}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+
+// ─── BOUTON LIEN INTER-MODULE ─────────────────────────────────────────────────
+function Abg_ModuleLinkButton({ moduleId, label, onNavigate }) {
+  const cfg = Abg_MODULE_DATA[moduleId];
+  if (!cfg) return null;
+  return (
+    <button
+      onClick={() => onNavigate(moduleId)}
+      style={{
+        display: "flex", alignItems: "center", gap: 10,
+        width: "100%", textAlign: "left", marginTop: 12,
+        background: `linear-gradient(135deg, #1A3A5C 0%, #2A4E7A 100%)`,
+        border: "none", borderRadius: 12, padding: "12px 16px",
+        cursor: "pointer", boxSizing: "border-box",
+        boxShadow: "0 2px 8px rgba(26,58,92,.2)",
+      }}
+    >
+      <span style={{ fontSize: 22, flexShrink: 0 }}>{cfg.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+          Ouvrir le module
+        </div>
+        <div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>{label || cfg.title}</div>
+      </div>
+      <span style={{ color: "rgba(255,255,255,.6)", fontSize: 20, flexShrink: 0 }}>→</span>
+    </button>
+  );
+}
+
+function Abg_InfoBox({ node }) {
+  const bg = node.infoColorLight || Abg_C.amberLight;
+  const border = node.infoColor || Abg_C.amber;
+  return (
+    <div style={{ background: bg, border: `1.5px solid ${border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16, width: "100%" }}>
+      <div style={{ color: border, fontWeight: 800, fontSize: 13, marginBottom: 8 }}>ℹ️ {node.infoTitle}</div>
+      {node.infoItems.map((item, i) => (
+        <div key={i} style={{ color: Abg_C.text, fontSize: 13, marginBottom: 3, paddingLeft: 8 }}>• {item}</div>
+      ))}
+    </div>
+  );
+}
+
+
+// ─── DÉTECTEUR DE VOIE D'ADMINISTRATION ──────────────────────────────────────
+function Abg_getRoute(drug = "", dose = "") {
+  const text = (drug + " " + dose).toUpperCase();
+  if (/\bIVSE\b|IVSE|PERFUSION CONTINUE|INFUSION CONTINUE/.test(text)) return { label: "IVSE", color: "#7C3AED", bg: "#EDE9FE" };
+  if (/\bIV\b| IV |INTRAVEINEUX|INTRAVEINEUSE|PERFUSION|INJECTION IV/.test(text)) return { label: "IV", color: "#E05260", bg: "#FDF0F1" };
+  if (/\bIM\b| IM |INTRAMUSCULAIRE/.test(text)) return { label: "IM", color: "#E8A82E", bg: "#FEF7E8" };
+  if (/\bSC\b| SC |SOUS-CUTAN/.test(text)) return { label: "SC", color: "#0D9488", bg: "#CCFBF1" };
+  if (/\bPO\b| PO |PER OS|ORALE|ORAL|COMPRIM|GÉLULE|SIROP/.test(text)) return { label: "PO", color: "#2E9E6B", bg: "#E8F7F1" };
+  if (/DOSE UNIQUE|MONODOSE/.test(text) && !/\bIV\b| IV |\bIM\b| IM /.test(text)) return { label: "PO", color: "#2E9E6B", bg: "#E8F7F1" };
+  return null;
+}
+
+function Abg_DrugRow({ item, isFirst }) {
+  const hasAlert = (item.notes || "").includes("⚠️");
+  const route = Abg_getRoute(item.drug, item.dose);
+  return (
+    <div style={{ background: isFirst ? Abg_C.greenLight : "#F8FBFE", border: `1.5px solid ${isFirst ? Abg_C.green : Abg_C.border}`, borderRadius: 10, padding: "11px 14px", marginBottom: 6, boxSizing: "border-box", width: "100%", overflow: "hidden" }}>
+      {item.label && (
+        <div style={{ color: isFirst ? Abg_C.green : Abg_C.sub, fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{item.label}</div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+        <div style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 14, flex: 1, wordBreak: "break-word" }}>{item.drug}</div>
+        {route && (
+          <span style={{ background: route.bg, color: route.color, border: `1px solid ${route.color}55`, borderRadius: 6, padding: "2px 7px", fontSize: 10, fontWeight: 900, letterSpacing: "0.05em", flexShrink: 0 }}>
+            {route.label}
+          </span>
+        )}
+      </div>
+      {item.dose && item.dose !== "—" && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          <span style={{ fontFamily: "monospace", background: Abg_C.blueLight, color: Abg_C.blue, borderRadius: 6, padding: "2px 8px", fontSize: 12, fontWeight: 700 }}>{item.dose}</span>
+          {item.duration && item.duration !== "—" && (
+            <span style={{ background: Abg_C.amberLight, color: Abg_C.amber, borderRadius: 6, padding: "2px 8px", fontSize: 12, fontWeight: 700 }}>⏱ {item.duration}</span>
+          )}
+        </div>
+      )}
+      {item.notes && (
+        <div style={{ color: hasAlert ? Abg_C.amber : Abg_C.sub, fontSize: 12, marginTop: 5, fontStyle: "italic" }}>{item.notes}</div>
+      )}
+      {item.url && (
+        <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 8, background: Abg_C.blue, color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+          🌐 Ouvrir le site
+        </a>
+      )}
+    </div>
+  );
+}
+
+function Abg_ResultCard({ result, moduleId, nodeId, moduleLabel }) {
+  const favoriItem = {
+    type: "antibio",
+    id: `${moduleId}_${nodeId}`,
+    title: result.condition,
+    icon: Abg_MODULE_DATA[moduleId]?.icon || "🦠",
+    color: "#2E9E6B",
+    nav: "antibio",
+    moduleId,
+    nodeId,
+    moduleLabel,
+  };
+
+  // Lecture/écriture favoris via localStorage directement (standalone)
+  const [isFav, setIsFav] = React.useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("favoris") || "[]");
+      return saved.some(f => f.id === favoriItem.id && f.type === "antibio");
+    } catch { return false; }
+  });
+
+  const toggleFav = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("favoris") || "[]");
+      const key = `antibio_${favoriItem.id}`;
+      const exists = saved.some(f => f.key === key);
+      const updated = exists
+        ? saved.filter(f => f.key !== key)
+        : [...saved, { ...favoriItem, key }];
+      localStorage.setItem("favoris", JSON.stringify(updated));
+      // Notifier App.jsx si window._fav est disponible
+      if (window._fav) {
+        window._fav.cache = updated;
+        window._fav.listeners.forEach(fn => fn(updated));
+      }
+      setIsFav(!exists);
+    } catch {}
+  };
+
+  return (
+    <div style={{ background: Abg_C.card, border: `2px solid ${Abg_C.green}`, borderRadius: 16, overflow: "hidden", width: "100%", boxSizing: "border-box", boxShadow: "0 2px 16px rgba(46,158,107,.10)" }}>
+      <div style={{ background: Abg_C.navy, padding: "14px 18px" }}>
+        {/* Badge mise à jour en haut à droite */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <Abg_UpdateBadge source={result.source} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 4, height: 32, background: Abg_C.green, borderRadius: 2, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: "rgba(255,255,255,.6)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Recommandation thérapeutique</div>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 15 }}>{result.condition}</div>
+          </div>
+          <button onClick={toggleFav} style={{
+            background: isFav ? "#F59E0B22" : "rgba(255,255,255,.1)",
+            border: `1.5px solid ${isFav ? "#F59E0B" : "rgba(255,255,255,.25)"}`,
+            borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center",
+            justifyContent: "center", cursor: "pointer", fontSize: 18, flexShrink: 0,
+            transition: "all .15s",
+          }} title={isFav ? "Retirer des favoris" : "Ajouter aux favoris"}>
+            {isFav ? "★" : "☆"}
+          </button>
+        </div>
+      </div>
+      <div style={{ padding: "16px 18px" }}>
+        {result.isolement && <Abg_IsolementBadge type={result.isolement} />}
+        {result.indication && (
+          <div style={{ background: Abg_C.blueLight, border: `1px solid ${Abg_C.blue}`, borderRadius: 10, padding: "10px 14px", marginBottom: 16, color: Abg_C.navy, fontSize: 13, fontWeight: 600 }}>
+            <span style={{ color: Abg_C.blue, fontWeight: 800 }}>Indication : </span>{result.indication}
+          </div>
+        )}
+        {result.preferred.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ color: Abg_C.green, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: Abg_C.green, display: "inline-block" }} />
+              Traitement préférentiel
+            </div>
+            {result.preferred.map((item, i) => <Abg_DrugRow key={i} item={item} isFirst={i === 0} />)}
+          </div>
+        )}
+        {result.alternatives?.map((alt, i) => (
+          <div key={i} style={{ marginBottom: 14 }}>
+            <div style={{ color: Abg_C.amber, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: Abg_C.amber, display: "inline-block" }} />
+              {alt.label}
+            </div>
+            {alt.items.map((item, j) => (
+              <div key={j} style={{ background: Abg_C.amberLight, border: `1px solid ${Abg_C.amber}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 4, color: Abg_C.text, fontSize: 13 }}>→ {item}</div>
+            ))}
+          </div>
+        ))}
+        {result.notRecommended?.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ color: Abg_C.red, fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: Abg_C.red, display: "inline-block" }} />
+              Non recommandé
+            </div>
+            {result.notRecommended.map((item, i) => (
+              <div key={i} style={{ background: Abg_C.redLight, border: `1px solid ${Abg_C.red}44`, borderRadius: 8, padding: "7px 12px", marginBottom: 4, color: Abg_C.red, fontSize: 13, fontWeight: 600 }}>✕ {item}</div>
+            ))}
+          </div>
+        )}
+        {result.followUp && (
+          <div style={{ background: "#F8FBFE", border: `1px solid ${Abg_C.border}`, borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 12, color: Abg_C.sub }}>
+            <span style={{ color: Abg_C.navy, fontWeight: 800 }}>Suivi : </span>{result.followUp}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Abg_ChoiceButton({ node, onClick }) {
+  const color = node.color || Abg_C.blue;
+  const colorLight = node.colorLight || Abg_C.blueLight;
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ display: "flex", alignItems: "center", gap: 14, background: hovered ? colorLight : Abg_C.card, border: `1.5px solid ${hovered ? color : Abg_C.border}`, borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", width: "100%", transition: "all .15s", boxShadow: hovered ? `0 2px 12px ${color}22` : "0 1px 4px rgba(26,58,92,.06)" }}>
+      <div style={{ width: 44, height: 44, borderRadius: 12, background: colorLight, border: `1.5px solid ${color}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{node.icon || "→"}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ color: Abg_C.navy, fontWeight: 700, fontSize: 14 }}>{node.label}</div>
+        {node.subtitle && <div style={{ color: Abg_C.sub, fontSize: 12, marginTop: 2 }}>{node.subtitle}</div>}
+      </div>
+      <span style={{ color: Abg_C.sub, fontSize: 20, flexShrink: 0 }}>›</span>
+    </button>
+  );
+}
+
+function Abg_Breadcrumb({ path, onNavigate }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, marginBottom: 16, padding: "8px 12px", background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 10 }}>
+      {path.map((node, i) => (
+        <span key={node.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {i > 0 && <span style={{ color: Abg_C.border, fontSize: 14 }}>›</span>}
+          <button onClick={() => onNavigate(i)} style={{ background: "none", border: "none", cursor: i < path.length - 1 ? "pointer" : "default", color: i < path.length - 1 ? Abg_C.blue : Abg_C.navy, fontSize: 12, fontWeight: i === path.length - 1 ? 800 : 500, padding: "2px 4px", borderRadius: 4 }}>
+            {i === 0 ? "🏠" : node.label}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
+  const cfg = Abg_MODULE_DATA[moduleId];
+  const [path, setPath] = useState(() => {
+    if (directNode) {
+      // Reconstruire le chemin complet depuis la racine jusqu'au nœud cible
+      const fullPath = Abg_findNodePath(cfg.data, directNode.id);
+      return fullPath || [cfg.data, directNode];
+    }
+    return [cfg.data];
+  });
+  const current = path[path.length - 1];
+  const navigate = (node) => { setPath(prev => [...prev, node]); setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 50); };
+  const navigateTo = (index) => setPath(prev => prev.slice(0, index + 1));
+
+  // Scores inline selon moduleId
+  const showQsofa = moduleId === "sepsis" && path.length === 1;
+  const showCrb65 = moduleId === "pulmonaire" && current.id === "pac";
+
+  const renderCurrent = (node) => {
+    if (node.result && !node.children) return (
+      <div style={{ width: "100%" }}>
+        <Abg_ResultCard result={node.result} moduleId={moduleId} nodeId={node.id} moduleLabel={cfg.title} />
+        {node.linkModule && onSelectModule && (
+          <Abg_ModuleLinkButton moduleId={node.linkModule} onNavigate={onSelectModule} />
+        )}
+      </div>
+    );
+    const hasInfo = node.type === "info";
+    const children = node.children || [];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
+        {showQsofa && <Abg_QsofaInline />}
+        {showCrb65 && <Abg_Crb65Inline />}
+        {hasInfo && <Abg_InfoBox node={node} />}
+        {node.linkModule && onSelectModule && (
+          <Abg_ModuleLinkButton moduleId={node.linkModule} onNavigate={onSelectModule} />
+        )}
+        <div style={{ color: Abg_C.sub, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{node.question || "Sélectionner une situation"}</div>
+        {children.map(child => <Abg_ChoiceButton key={child.id} node={child} onClick={() => navigate(child)} />)}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 40px", overflowX: "hidden", width: "100%" }}>
+      <div style={{ background: Abg_C.navy, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 8px rgba(26,58,92,.18)" }}>
+        <button onClick={onBack} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, color: "#fff", padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>← Retour</button>
+        <div style={{ background: cfg.iconBg, border: `1.5px solid ${cfg.iconBorder}`, borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
+        <div style={{ color: "#fff", fontSize: 15, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{cfg.title}</div>
+      </div>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 14px 0", boxSizing: "border-box", width: "100%" }}>
+        {path.length > 1 && <Abg_Breadcrumb path={path} onNavigate={navigateTo} />}
+        {path.length > 1 && (
+          <button onClick={() => setPath(prev => prev.slice(0, -1))} style={{ marginBottom: 14, background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 10, color: Abg_C.sub, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            ← Étape précédente
+          </button>
+        )}
+        {path.length > 1 && (
+          <div style={{ marginBottom: 14, maxWidth: "100%", overflow: "hidden" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: Abg_C.card, border: `1.5px solid ${current.color || Abg_C.border}`, borderRadius: 12, padding: "8px 14px", marginBottom: current.subtitle ? 6 : 0, maxWidth: "100%", boxSizing: "border-box" }}>
+              {current.icon && <span style={{ fontSize: 20, flexShrink: 0 }}>{current.icon}</span>}
+              <span style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{current.label}</span>
+            </div>
+            {current.subtitle && <div style={{ color: Abg_C.sub, fontSize: 12, marginLeft: 4, wordBreak: "break-word" }}>{current.subtitle}</div>}
+          </div>
+        )}
+        <div style={{ width: "100%", boxSizing: "border-box" }}>
+          {renderCurrent(current)}
+        </div>
+        <div style={{ marginTop: 28, padding: "10px 14px", background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 10, color: Abg_C.sub, fontSize: 11 }}>
+          ⚕️ Outil d'aide à la décision — Antibioguide CHEG, Aubagne (2022). Ne remplace pas le jugement clinique.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Abg_ModuleCard({ module, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ background: hovered ? module.colorLight : Abg_C.card, border: `1.5px solid ${hovered ? module.color : Abg_C.border}`, borderRadius: 16, padding: "16px", cursor: "pointer", textAlign: "left", width: "100%", transition: "all .18s", boxShadow: hovered ? `0 4px 20px ${module.color}28` : "0 1px 6px rgba(26,58,92,.07)", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 14, background: module.colorLight, border: `1.5px solid ${module.color}55`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, flexShrink: 0, transition: "transform .18s", transform: hovered ? "scale(1.08)" : "scale(1)" }}>
+          {Abg_ICONS[module.id]}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 14, lineHeight: 1.3, marginBottom: 3 }}>{module.label}</div>
+          <div style={{ color: Abg_C.sub, fontSize: 12, lineHeight: 1.4 }}>{module.subtitle}</div>
+        </div>
+        <span style={{ color: hovered ? module.color : Abg_C.sub, fontSize: 18, flexShrink: 0, marginTop: 2, transition: "color .18s" }}>›</span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {module.tags.map(tag => (
+          <span key={tag} style={{ background: hovered ? Abg_C.card : module.colorLight, color: module.color, border: `1px solid ${module.color}33`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{tag}</span>
+        ))}
+      </div>
+    </button>
+  );
+}
+
+
+// ─── RECHERCHE PLEIN TEXTE CROSS-Abg_MODULES ─────────────────────────────────────
+function Abg_searchInTree(node, query, moduleId, moduleLabel, modulePath = []) {
+  if (!node) return [];
+  const q = query ? query.toLowerCase() : null;
+  const results = [];
+  const path = [...modulePath, node.label || ""].filter(Boolean);
+
+  // Chercher dans tous les champs textuels du nœud
+  const searchable = [
+    node.label, node.subtitle, node.question,
+    node.infoTitle, ...(node.infoItems || []),
+    node.result?.condition, node.result?.indication, node.result?.followUp,
+    ...(node.result?.preferred || []).flatMap(p => [p.drug, p.dose, p.label, p.notes]),
+    ...(node.result?.alternatives || []).flatMap(a => [a.label, ...(a.items || [])]),
+    ...(node.result?.notRecommended || []),
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  const matches = q ? searchable.includes(q) : true;
+  if (matches && node.result) {
+    results.push({ moduleId, moduleLabel, node, path: path.slice(0, -1) });
+  }
+
+  for (const child of node.children || []) {
+    results.push(...Abg_searchInTree(child, query, moduleId, moduleLabel, path));
+  }
+  return results;
+}
+
+// Trouver un nœud par son id et reconstruire le chemin complet depuis la racine
+function Abg_findNodePath(root, targetId, currentPath = []) {
+  const path = [...currentPath, root];
+  if (root.id === targetId) return path;
+  for (const child of root.children || []) {
+    const found = Abg_findNodePath(child, targetId, path);
+    if (found) return found;
+  }
+  return null;
+}
+
+function Abg_GlobalSearch({ onSelectModule, onSelectResult }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+
+  const SEARCH_MODULES = Object.entries(Abg_MODULE_DATA).map(([id, cfg]) => ({
+    id, label: cfg.title, data: cfg.data, icon: cfg.icon
+  }));
+
+  const handleSearch = (q) => {
+    setQuery(q);
+    if (q.trim().length < 2) { setResults([]); return; }
+    const found = [];
+    for (const mod of SEARCH_MODULES) {
+      found.push(...Abg_searchInTree(mod.data, q.trim(), mod.id, mod.label));
+    }
+    setResults(found.slice(0, 20));
+  };
+
+  if (!query) return null;
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {results.length === 0 && query.length >= 2 && (
+        <div style={{ textAlign: "center", padding: "24px 0", color: Abg_C.sub, fontSize: 13 }}>
+          <div style={{ fontSize: 28, marginBottom: 6 }}>🔍</div>
+          Aucun résultat pour « {query} »
+        </div>
+      )}
+      {results.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ color: Abg_C.sub, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+            {results.length} résultat{results.length > 1 ? "s" : ""}{results.length === 20 ? " (premiers)" : ""}
+          </div>
+          {results.map((r, i) => {
+            const cfg = Abg_MODULE_DATA[r.moduleId];
+            return (
+              <button key={i} onClick={() => onSelectResult(r)} style={{
+                width: "100%", textAlign: "left", background: Abg_C.card,
+                border: `1.5px solid ${Abg_C.border}`, borderRadius: 12,
+                padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+                display: "flex", alignItems: "flex-start", gap: 10,
+                boxShadow: "0 1px 4px rgba(26,58,92,.06)",
+              }}>
+                <span style={{ fontSize: 20, flexShrink: 0, marginTop: 1 }}>{cfg?.icon || "🦠"}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: Abg_C.sub, fontWeight: 700, marginBottom: 2 }}>
+                    {cfg?.title}
+                    {r.path.length > 0 && (
+                      <span style={{ color: Abg_C.border }}> › {r.path.join(" › ")}</span>
+                    )}
+                  </div>
+                  <div style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 13 }}>{r.node.label}</div>
+                  {r.node.subtitle && (
+                    <div style={{ color: Abg_C.sub, fontSize: 11, marginTop: 2 }}>{r.node.subtitle}</div>
+                  )}
+                </div>
+                <span style={{ color: Abg_C.sub, fontSize: 18, flexShrink: 0 }}>›</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Abg_HomeScreen({ onSelect, onBackApp }) {
+  const [search, setSearch] = useState("");
+  const [globalResults, setGlobalResults] = useState([]);
+
+  const filtered = Abg_MODULES.filter(m => {
+    const q = search.toLowerCase();
+    return m.label.toLowerCase().includes(q) || m.subtitle.toLowerCase().includes(q) || m.tags.some(t => t.toLowerCase().includes(q));
+  });
+
+  const handleSearch = (q) => {
+    setSearch(q);
+    if (q.trim().length < 2) { setGlobalResults([]); return; }
+    const SEARCH_MODULES = Object.entries(Abg_MODULE_DATA).map(([id, cfg]) => ({ id, label: cfg.title, data: cfg.data, icon: cfg.icon }));
+    const found = [];
+    for (const mod of SEARCH_MODULES) {
+      found.push(...Abg_searchInTree(mod.data, q.trim(), mod.id, mod.label));
+    }
+    setGlobalResults(found.slice(0, 20));
+  };
+  return (
+    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 48px", overflowX: "hidden", width: "100%" }}>
+      <div style={{ background: `linear-gradient(135deg, ${Abg_C.navy} 0%, ${Abg_C.navyLight} 100%)`, padding: "20px 18px 20px", boxShadow: "0 2px 12px rgba(26,58,92,.2)" }}>
+        {onBackApp && (
+          <button onClick={onBackApp} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,.12)", border: "none", borderRadius: 8, color: "rgba(255,255,255,.9)", fontSize: 12, fontWeight: 700, padding: "5px 10px", marginBottom: 12, cursor: "pointer", WebkitTapHighlightColor: "transparent" }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Accueil
+          </button>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
+          <div style={{ background: "rgba(46,158,107,.22)", border: "1.5px solid rgba(46,158,107,.6)", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
+            {Abg_ICONS.portail}
+          </div>
+          <div>
+            <div style={{ color: "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em" }}>SAU / SMUR Aubagne · CHEG</div>
+            <div style={{ color: Abg_C.white, fontSize: 22, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Antibioguide</div>
+          </div>
+        </div>
+        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginLeft: 56 }}>Antibioguide du CH Edmond Garcin · Recommandations SPILF</div>
+      </div>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 14px 0" }}>
+        <div style={{ position: "relative", marginBottom: 20 }}>
+          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16, pointerEvents: "none" }}>🔍</span>
+          <input type="text" placeholder="Rechercher… (cystite, méningite, fasciite…)" value={search} onChange={e => handleSearch(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px 12px 42px", borderRadius: 12, border: `1.5px solid ${Abg_C.border}`, background: Abg_C.card, fontSize: 14, color: Abg_C.text, outline: "none", fontFamily: "inherit" }} />
+          {search && <button onClick={() => { setSearch(""); setGlobalResults([]); }} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: Abg_C.sub, fontSize: 20, padding: 0 }}>×</button>}
+        </div>
+        {search.trim().length >= 2 && globalResults.length > 0 ? (
+          // Résultats plein-texte cross-modules
+          <div>
+            <div style={{ color: Abg_C.sub, fontSize: 11, fontWeight: 700, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {globalResults.length} résultat{globalResults.length > 1 ? "s" : ""} dans les fiches{globalResults.length === 20 ? " (premiers)" : ""}
+            </div>
+            {globalResults.map((r, i) => {
+              const cfg = Abg_MODULE_DATA[r.moduleId];
+              return (
+                <button key={i} onClick={() => onSelect(r.moduleId, r.node)} style={{
+                  width: "100%", textAlign: "left", background: Abg_C.card,
+                  border: `1.5px solid ${Abg_C.border}`, borderRadius: 12,
+                  padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  boxShadow: "0 1px 4px rgba(26,58,92,.06)",
+                }}>
+                  <span style={{ fontSize: 20, flexShrink: 0, marginTop: 1 }}>{cfg?.icon || "💊"}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, color: Abg_C.blue, fontWeight: 700, marginBottom: 2 }}>
+                      {cfg?.title}
+                      {r.path.length > 0 && <span style={{ color: Abg_C.sub }}> › {r.path.join(" › ")}</span>}
+                    </div>
+                    <div style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 13 }}>{r.node.label}</div>
+                    {r.node.result?.condition && (
+                      <div style={{ color: Abg_C.sub, fontSize: 11, marginTop: 2 }}>{r.node.result.condition}</div>
+                    )}
+                  </div>
+                  <span style={{ color: Abg_C.sub, fontSize: 18, flexShrink: 0 }}>›</span>
+                </button>
+              );
+            })}
+            {filtered.length > 0 && (
+              <div style={{ color: Abg_C.sub, fontSize: 11, fontWeight: 700, marginBottom: 8, marginTop: 12, textTransform: "uppercase", letterSpacing: "0.06em" }}>Modules correspondants</div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+              {filtered.map(module => <Abg_ModuleCard key={module.id} module={module} onClick={() => onSelect(module.id)} />)}
+            </div>
+          </div>
+        ) : search && filtered.length === 0 && globalResults.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 20px", color: Abg_C.sub, fontSize: 14 }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+            Aucun résultat pour « {search} »
+          </div>
+        ) : (
+          <>
+            {search && <div style={{ color: Abg_C.sub, fontSize: 12, marginBottom: 12, fontWeight: 600 }}>{filtered.length} résultat{filtered.length > 1 ? "s" : ""} pour « {search} »</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+              {filtered.map(module => <Abg_ModuleCard key={module.id} module={module} onClick={() => onSelect(module.id)} />)}
+            </div>
+          </>
+        )}
+        {!search && (
+          <div style={{ marginTop: 24, padding: "12px 16px", background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 12, display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <span style={{ fontSize: 18, flexShrink: 0 }}>⚕️</span>
+            <div style={{ color: Abg_C.sub, fontSize: 11, lineHeight: 1.6 }}>
+              <strong style={{ color: Abg_C.navy }}>Antibioguide CHEG — v2022.</strong> Outil d'aide à la décision. Ne remplace pas le jugement clinique. Désescalade systématique à l'antibiogramme. Politique d'épargne des fluoroquinolones en vigueur.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Wrapper d'intégration : connecte l'antibioguide à la navigation de l'app principale
+function AntibioguideScreen({ deepLinkData, onBack }) {
+  const moduleId = deepLinkData && typeof deepLinkData === "object" ? deepLinkData.moduleId : null;
+  const nodeId = deepLinkData && typeof deepLinkData === "object" ? deepLinkData.nodeId : null;
+  return <AntibioguideApp deepLinkModuleId={moduleId} deepLinkNodeId={nodeId} onBackApp={onBack} />;
+}
+
+function AntibioguideApp({ deepLinkModuleId, deepLinkNodeId, onBackApp } = {}) {
+  // Synchronise la palette de l'antibioguide avec le thème jour/nuit de l'app
+  const _appTheme = useC();
+  const _isDark = _appTheme && _appTheme.bg === "#0F172A";
+  Abg_applyTheme(_isDark);
+
+  const [activeModule, setActiveModule] = useState(deepLinkModuleId || null);
+  const [directNode, setDirectNode] = useState(() => {
+    if (deepLinkModuleId && deepLinkNodeId) {
+      const cfg = Abg_MODULE_DATA[deepLinkModuleId];
+      if (cfg) {
+        // Trouver le nœud par son id
+        const path = Abg_findNodePath(cfg.data, deepLinkNodeId);
+        return path ? path[path.length - 1] : null;
+      }
+    }
+    return null;
+  });
+
+  const handleSelect = (moduleId, node = null) => {
+    setActiveModule(moduleId);
+    setDirectNode(node || null);
+  };
+
+  if (activeModule) return <Abg_ModuleView moduleId={activeModule} directNode={directNode} onBack={() => { setActiveModule(null); setDirectNode(null); }} onSelectModule={(id) => { setActiveModule(id); setDirectNode(null); }} />;
+  return <Abg_HomeScreen onSelect={handleSelect} onBackApp={onBackApp} />;
+}
+
+// ███ FIN MODULE ANTIBIOGUIDE ███
+
 function ScoresScreen({ deepLinkId, onBack }) {
   const C = useC();
   const [selectedCat, setSelectedCat] = useState("all");
@@ -16044,6 +24779,9 @@ function ScoresScreen({ deepLinkId, onBack }) {
   // Routing vers le calculateur sélectionné
   if (selected) {
     if (selected.id === "glasgow") return <GlasgowCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "asa") return <AsaCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "mass") return <MassCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "mpadss") return <MpadssCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "asia") return <AsiaFiche onBack={() => setSelected(null)}/>;
     if (selected.id === "shock-index") return <ShockIndexCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "apgar") return <ApgarCalculator onBack={() => setSelected(null)}/>;
@@ -19134,6 +27872,18 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#DC2626",
   },
   {
+    id:"dobutamine", cat:"cardio", groupe:"Cardio-vasculaire",
+    nom:"Dobutamine (Dobutrex)", amp:"Flacon 250 mg / 20 mL",
+    voie:"PSE — voie dédiée",
+    isPSETable:true,
+    concentrationUgMl:5000, // 250 mg dans 50 mL = 5 mg/mL = 5000 µg/mL
+    dosePaliers:[5, 7.5, 10, 12.5, 15, 20],
+    posologieLabel:"5 à 20 µg/kg/min",
+    preparation:"Seringue de 50 mL : prélever 1 flacon de 250 mg (20 mL) et compléter à 50 mL avec du SG5%. → 5 mg/mL.",
+    remarques:"Catécholamine inotrope +. Indication : syndrome de bas débit. CI : cardiomyopathie obstructive, RA serré, hypersensibilité. Voie dédiée de bon calibre, ne pas arrêter brutalement, prévoir relais entre seringues. Veinotoxicité +++.",
+    color:"#DC2626",
+  },
+  {
     id:"hnf", cat:"cardio", groupe:"Anticoagulation",
     nom:"HNF (Héparine non fractionnée)", amp:"Variable", concentration:null, unite:"UI",
     doseMin:500, doseMax:500,
@@ -19184,10 +27934,76 @@ const CALC_ADULTE_CATS = [
   { key:"antiepileptique",  label:"Antiépileptiques",          icon:"🧠", color:"#CA8A04", bg:"#FEF9C3" },
 ];
 
+// ── Carte spéciale : médicament en PSE, tableau de vitesses (mL/h) ──
+function CalcAdultePSECard({ medic, poids, color }) {
+  const C = useC();
+  // concentration en µg/mL ; doses = liste des paliers µg/kg/min
+  // vitesse (mL/h) = dose × poids × 60 / concentration
+  const conc = medic.concentrationUgMl; // µg/mL
+  const doses = medic.dosePaliers; // ex: [5, 7.5, 10, 12.5, 15, 20]
+
+  const vitesse = (dose) => Math.round((dose * poids * 60 / conc) * 10) / 10;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      {/* En-tête */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {/* Préparation */}
+      {medic.preparation && (
+        <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+          🧪 {medic.preparation}
+        </div>
+      )}
+
+      {/* Posologie */}
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        POSOLOGIE : {medic.posologieLabel} — Vitesse PSE pour <span style={{color, fontWeight:900}}>{poids} kg</span>
+      </div>
+
+      {/* Tableau des vitesses */}
+      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
+        <div style={{display:"flex", background:color+"15", padding:"8px 12px", fontSize:11, fontWeight:800, color}}>
+          <div style={{flex:1}}>Dose</div>
+          <div style={{flexShrink:0, textAlign:"right"}}>Vitesse PSE</div>
+        </div>
+        {doses.map((d, i) => (
+          <div key={i} style={{display:"flex", alignItems:"center", padding:"9px 12px",
+            background: i%2 ? C.bg : C.white, borderTop:`1px solid ${C.border}`}}>
+            <div style={{flex:1, fontSize:13, fontWeight:700, color:C.text}}>{d} µg/kg/min</div>
+            <div style={{flexShrink:0, fontSize:15, fontWeight:900, color}}>
+              {vitesse(d)} <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL/h</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Remarque */}
+      {medic.remarques && (
+        <div style={{marginTop:10, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Composant carte médicament ──
 function CalcAdulteCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+
+  // Cas spécial : médicament en PSE avec tableau de vitesses (mL/h) selon dose et poids
+  if (medic.isPSETable) {
+    return <CalcAdultePSECard medic={medic} poids={poids} color={color}/>;
+  }
 
   // Calcul dose de base
   // isFixedDose : dose en valeur absolue (mg/µg), NON multipliée par le poids
@@ -22539,7 +31355,7 @@ function AppInner() {
           // Swipe horizontal > 80px et plus horizontal que vertical → goBack
           // Désactivé sur ECG (gêne le défilement/zoom des tracés)
           if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-            if (dx > 0 && screen !== "home" && screen !== "ecg") goBack(); // swipe droite = retour
+            if (dx > 0 && screen !== "home" && screen !== "ecg" && screen !== "antibioguide") goBack(); // swipe droite = retour
           }
         }}
       >
@@ -22553,6 +31369,7 @@ function AppInner() {
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="antibioguide" && <AntibioguideScreen key={"antibioguide-"+navVersion} deepLinkData={deepLink} onBack={goBack}/>}
         {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
