@@ -24446,13 +24446,15 @@ function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
   };
 
   return (
-    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 40px", overflowX: "hidden", width: "calc(100% + 32px)", margin: "-16px -16px 0", boxSizing: "border-box" }}>
-      <div style={{ background: Abg_C.navy, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 2px 8px rgba(26,58,92,.18)" }}>
-        <button onClick={onBack} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, color: "#fff", padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>← Retour</button>
-        <div style={{ background: cfg.iconBg, border: `1.5px solid ${cfg.iconBorder}`, borderRadius: 10, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{cfg.icon}</div>
-        <div style={{ color: "#fff", fontSize: 15, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{cfg.title}</div>
-      </div>
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 14px 0", boxSizing: "border-box", width: "100%" }}>
+    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 40px", overflowX: "hidden", width: "100%", boxSizing: "border-box" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0", boxSizing: "border-box", width: "100%" }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: Abg_C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 14, padding: 0, WebkitTapHighlightColor: "transparent" }}>
+          « Retour
+        </button>
+        <h2 style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>{cfg.icon}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{cfg.title}</span>
+        </h2>
         {path.length > 1 && <Abg_Breadcrumb path={path} onNavigate={navigateTo} />}
         {path.length > 1 && (
           <button onClick={() => setPath(prev => prev.slice(0, -1))} style={{ marginBottom: 14, background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 10, color: Abg_C.sub, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
@@ -24629,26 +24631,19 @@ function Abg_HomeScreen({ onSelect, onBackApp }) {
     setGlobalResults(found.slice(0, 20));
   };
   return (
-    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 48px", overflowX: "hidden", width: "calc(100% + 32px)", margin: "-16px -16px 0", boxSizing: "border-box" }}>
-      <div style={{ background: `linear-gradient(135deg, ${Abg_C.navy} 0%, ${Abg_C.navyLight} 100%)`, padding: "20px 18px 20px", boxShadow: "0 2px 12px rgba(26,58,92,.2)" }}>
+    <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 48px", overflowX: "hidden", width: "100%", boxSizing: "border-box" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0" }}>
         {onBackApp && (
-          <button onClick={onBackApp} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(255,255,255,.12)", border: "none", borderRadius: 8, color: "rgba(255,255,255,.9)", fontSize: 12, fontWeight: 700, padding: "5px 10px", marginBottom: 12, cursor: "pointer", WebkitTapHighlightColor: "transparent" }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Accueil
+          <button onClick={onBackApp} style={{ background: "none", border: "none", color: Abg_C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 16, padding: 0, WebkitTapHighlightColor: "transparent" }}>
+            « Retour
           </button>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-          <div style={{ background: "rgba(46,158,107,.22)", border: "1.5px solid rgba(46,158,107,.6)", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
-            {Abg_ICONS.portail}
-          </div>
-          <div>
-            <div style={{ color: "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em" }}>SAU / SMUR Aubagne · CHEG</div>
-            <div style={{ color: Abg_C.white, fontSize: 22, fontWeight: 900, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Antibioguide</div>
-          </div>
-        </div>
-        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginLeft: 56 }}>Antibioguide du CH Edmond Garcin · Recommandations SPILF</div>
+        <h2 style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 18, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>{Abg_ICONS.portail}</span> Antibioguide
+        </h2>
+        <div style={{ color: Abg_C.sub, fontSize: 12, marginBottom: 16 }}>CH Edmond Garcin · Recommandations SPILF</div>
       </div>
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 14px 0" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "0" }}>
         <div style={{ position: "relative", marginBottom: 20 }}>
           <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16, pointerEvents: "none" }}>🔍</span>
           <input type="text" placeholder="Rechercher… (cystite, méningite, fasciite…)" value={search} onChange={e => handleSearch(e.target.value)}
