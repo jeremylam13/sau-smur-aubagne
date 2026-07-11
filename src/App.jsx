@@ -767,6 +767,27 @@ function BackBtn({onClick}) {
   );
 }
 
+// En-tête standard de module (style C) : retour + icône colorée + titre + sous-titre
+function ScreenHeader({ icon, title, subtitle, color, onBack }) {
+  const C = useC();
+  const accent = color || C.navy;
+  return (
+    <div style={{marginBottom:18}}>
+      {onBack && <BackBtn onClick={onBack}/>}
+      <div style={{display:"flex", alignItems:"center", gap:12}}>
+        {icon && (
+          <div style={{background:accent+"22", borderRadius:12, width:44, height:44, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{icon}</div>
+        )}
+        <div style={{flex:1, minWidth:0}}>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy, lineHeight:1.2}}>{title}</div>
+          {subtitle && <div style={{fontSize:12, color:C.sub, marginTop:2}}>{subtitle}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Notifications hook ────────────────────────────────────────────────────────
 const NOTIF_KEY = "app_notifications";
 
@@ -1506,24 +1527,28 @@ function HomeScreen({onNav}) {
   },[]);
 
   const shortcuts = [
-    {id:"retex",      icon:"🔬", label:"RETEX/cas",         color:C.green,   bg:C.greenLight},
+    // ── Ligne 1 : action immédiate ──
+    {id:"calcAdulte",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
+    {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
+    {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
+    {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
+    // ── Ligne 2 ──
+    {id:"antibioguide", icon:"🦠", label:"Antibioguide",    color:"#16A34A", bg:"#DCFCE7"},
+    {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
+    {id:"echo",       icon:"SONDE", label:"Échographie",       color:"#0E7490", bg:"#CFFAFE"},
+    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
+    // ── Ligne 3 ──
     {id:"ecg",        icon:"❤️", label:"ECG",               color:C.red,     bg:C.redLight},
     {id:"imagerie",   icon:"🖼️", label:"Imagerie",          color:"#9B59B6", bg:"#F3E8FF"},
-    {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
-    {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
-    {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
+    {id:"retex",      icon:"🔬", label:"RETEX/cas",         color:C.green,   bg:C.greenLight},
     {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
-    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
-    {id:"antibioguide", icon:"🦠", label:"Antibioguide",    color:"#16A34A", bg:"#DCFCE7"},
-    {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
-    {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
-    {id:"calcAdulte",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
-    {id:"echo",       icon:"SONDE", label:"Échographie",       color:"#0E7490", bg:"#CFFAFE"},
+    // ── Ligne 4 ──
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
+    {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
-    
-    {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
+    // ── Ligne 5 ──
+    {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9"},
   ];
 
@@ -1769,9 +1794,13 @@ function FavorisScreen({ onNav }) {
     <div style={{animation:"fadeIn .2s ease"}}>
       {/* Header */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20}}>
-        <div>
-          <h2 style={{color:C.navy, fontWeight:900, fontSize:18, margin:0}}>⭐ Mes favoris</h2>
-          <div style={{fontSize:11, color:C.sub, marginTop:2}}>{favoris.length} élément{favoris.length>1?"s":""} sauvegardé{favoris.length>1?"s":""}</div>
+        <div style={{display:"flex", alignItems:"center", gap:12}}>
+          <div style={{background:"#F59E0B"+"22", borderRadius:12, width:44, height:44, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>⭐</div>
+          <div>
+            <h2 style={{color:C.navy, fontWeight:800, fontSize:18, margin:0, lineHeight:1.2}}>Mes favoris</h2>
+            <div style={{fontSize:11, color:C.sub, marginTop:2}}>{favoris.length} élément{favoris.length>1?"s":""} sauvegardé{favoris.length>1?"s":""}</div>
+          </div>
         </div>
       </div>
 
@@ -2377,9 +2406,13 @@ function RetexScreen({ deepLinkId, onBack }) {
       {/* Header */}
       <div style={{marginBottom:16}}>
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12}}>
-          <div>
-            <h2 style={{color:C.navy, fontWeight:900, fontSize:18, margin:0}}>🔬 RETEX / Cas cliniques</h2>
-            <div style={{fontSize:11, color:C.sub, marginTop:2}}>{items.length} publication{items.length>1?"s":""}</div>
+          <div style={{display:"flex", alignItems:"center", gap:12, flex:1, minWidth:0}}>
+            <div style={{background:"#0EA5E9"+"22", borderRadius:12, width:44, height:44, flexShrink:0,
+              display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>🔬</div>
+            <div style={{minWidth:0}}>
+              <h2 style={{color:C.navy, fontWeight:800, fontSize:18, margin:0, lineHeight:1.2}}>RETEX / Cas</h2>
+              <div style={{fontSize:11, color:C.sub, marginTop:2}}>{items.length} publication{items.length>1?"s":""}</div>
+            </div>
           </div>
           <button onClick={()=>setShowForm(true)} style={{background:C.green, border:"none", borderRadius:10, padding:"10px 16px", fontSize:12, fontWeight:800, color:"#fff", cursor:"pointer"}}>+ Ajouter</button>
         </div>
@@ -2411,15 +2444,20 @@ function RetexScreen({ deepLinkId, onBack }) {
 
       {/* Liste vide */}
       {filtered.length===0 && (
-        <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
-          <div style={{fontSize:48, marginBottom:12}}>🔬</div>
-          <div style={{fontSize:14, fontWeight:700, color:C.navy, marginBottom:8}}>
-            {items.length===0?"Aucune publication pour l'instant":"Aucun résultat"}
+        <div style={{textAlign:"center", padding:"40px 24px", color:C.sub}}>
+          <div style={{fontSize:52, marginBottom:12}}>💬</div>
+          <div style={{fontSize:15, fontWeight:800, color:C.navy, marginBottom:6}}>
+            {items.length===0?"Partagez votre premier cas":"Aucun résultat"}
           </div>
           {items.length===0 && (
-            <button onClick={()=>setShowForm(true)} style={{background:C.green, border:"none", borderRadius:10, padding:"12px 24px", fontSize:13, fontWeight:800, color:"#fff", cursor:"pointer"}}>
-              📝 Ajouter un RETEX
-            </button>
+            <>
+              <div style={{fontSize:12.5, lineHeight:1.6, marginBottom:16, maxWidth:280, margin:"0 auto 16px"}}>
+                Un cas marquant, une difficulté rencontrée, une belle prise en charge… Chaque retour fait progresser l'équipe.
+              </div>
+              <button onClick={()=>setShowForm(true)} style={{background:C.green, border:"none", borderRadius:12, padding:"13px 28px", fontSize:14, fontWeight:800, color:"#fff", cursor:"pointer", boxShadow:"0 4px 16px rgba(46,158,107,.28)"}}>
+                📝 Créer le premier RETEX
+              </button>
+            </>
           )}
         </div>
       )}
@@ -2430,34 +2468,53 @@ function RetexScreen({ deepLinkId, onBack }) {
           const col = typeColors[c.type]||C.green;
           const totalR = Object.values(c.reactions||{}).reduce((s,v)=>s+v,0);
           const totalC = (c.comments||[]).length;
+          const topReactions = Object.entries(c.reactions||{}).sort((a,b)=>b[1]-a[1]).slice(0,3);
+          const isRecent = c.ts && (Date.now() - c.ts) < 7*24*60*60*1000;
+          const extrait = c.contexte||c.situation||c.bien||c.recit||"";
           return (
             <div key={c.id} onClick={()=>setSelected(c)} style={{
-              background:C.white, borderRadius:14, border:`1px solid ${C.border}`,
+              background:C.white, borderRadius:16, border:`1px solid ${C.border}`,
               overflow:"hidden", cursor:"pointer",
-              boxShadow:"0 2px 10px rgba(26,58,92,.06)", animation:"fadeIn .2s ease",
+              boxShadow:"0 2px 12px rgba(26,58,92,.07)", animation:"fadeIn .2s ease",
             }}>
-              <div style={{height:3, background:`linear-gradient(90deg, ${col}, ${col}66)`}}/>
-              <div style={{padding:"12px 14px"}}>
-                <div style={{display:"flex", alignItems:"center", gap:5, marginBottom:8, flexWrap:"wrap"}}>
-                  <span style={{background:col+"18", color:col, borderRadius:20, padding:"2px 8px", fontSize:10, fontWeight:700}}>
-                    {typeIcons[c.type]||"🔬"} {typeLabels[c.type]||"RETEX"}
-                  </span>
-                  {c.categorie && <span style={{background:C.blueLight, color:C.blue, borderRadius:20, padding:"2px 8px", fontSize:10, fontWeight:600}}>{c.categorie}</span>}
-                  {c.gravite==="critique" && <span style={{fontSize:10, fontWeight:700, color:"#E05260"}}>🔴 Critique</span>}
+              {/* Bandeau coloré avec grande icône */}
+              <div style={{background:`linear-gradient(135deg, ${col} 0%, ${col}CC 100%)`, padding:"12px 14px",
+                display:"flex", alignItems:"center", gap:10, position:"relative", overflow:"hidden"}}>
+                <div style={{position:"absolute", right:-8, bottom:-14, fontSize:64, opacity:.16, lineHeight:1, pointerEvents:"none"}}>
+                  {typeIcons[c.type]||"🔬"}
                 </div>
-                <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:5, lineHeight:1.3}}>{c.title}</div>
-                {(c.contexte||c.recit||c.situation) && (
-                  <div style={{fontSize:12, color:C.sub, lineHeight:1.4, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical"}}>
-                    {c.contexte||c.recit||c.situation}
+                <div style={{background:"rgba(255,255,255,.25)", borderRadius:12, width:42, height:42, flexShrink:0,
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>
+                  {typeIcons[c.type]||"🔬"}
+                </div>
+                <div style={{flex:1, minWidth:0, position:"relative", zIndex:1}}>
+                  <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
+                    <span style={{color:"#fff", fontSize:11, fontWeight:800, letterSpacing:.3}}>{typeLabels[c.type]||"RETEX"}</span>
+                    {isRecent && <span style={{background:"rgba(255,255,255,.28)", color:"#fff", borderRadius:10, padding:"1px 7px", fontSize:9, fontWeight:800}}>NOUVEAU</span>}
+                    {c.gravite==="critique" && <span style={{background:"rgba(255,255,255,.9)", color:"#DC2626", borderRadius:10, padding:"1px 7px", fontSize:9, fontWeight:800}}>🔴 CRITIQUE</span>}
+                  </div>
+                  {c.categorie && <div style={{color:"rgba(255,255,255,.85)", fontSize:11, fontWeight:600, marginTop:2}}>{c.categorie}</div>}
+                </div>
+              </div>
+
+              {/* Corps */}
+              <div style={{padding:"12px 14px"}}>
+                <div style={{fontSize:15, fontWeight:800, color:C.text, marginBottom:6, lineHeight:1.3}}>{c.title}</div>
+                {extrait && (
+                  <div style={{fontSize:12.5, color:C.sub, lineHeight:1.5, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", marginBottom:10}}>
+                    {extrait}
                   </div>
                 )}
-                <div style={{display:"flex", gap:8, marginTop:8, alignItems:"center", flexWrap:"wrap"}}>
-                  {c.author && <span style={{fontSize:10, color:C.sub}}>👤 {c.author}</span>}
-                  {c.date   && <span style={{fontSize:10, color:C.sub}}>📅 {c.date}</span>}
+                <div style={{display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", paddingTop:8, borderTop:`1px solid ${C.border}`}}>
+                  {c.author && <span style={{fontSize:11, color:C.sub, fontWeight:600}}>👤 {c.author}</span>}
+                  {c.date   && <span style={{fontSize:11, color:C.sub}}>📅 {c.date}</span>}
                   <div style={{flex:1}}/>
-                  {totalR>0 && <span style={{fontSize:10, color:"#E8A82E", fontWeight:700}}>💡 ×{totalR}</span>}
-                  {totalC>0 && <span style={{fontSize:10, color:C.blue, fontWeight:700}}>💬 {totalC}</span>}
-                  <span style={{color:C.sub, fontSize:16}}>›</span>
+                  {topReactions.length>0 && (
+                    <span style={{fontSize:13}}>{topReactions.map(([e])=>e).join("")}</span>
+                  )}
+                  {totalR>0 && <span style={{fontSize:11, color:"#E8A82E", fontWeight:800}}>{totalR}</span>}
+                  {totalC>0 && <span style={{fontSize:11, color:C.blue, fontWeight:700}}>💬 {totalC}</span>}
+                  <span style={{color:col, fontSize:18, fontWeight:700}}>›</span>
                 </div>
               </div>
             </div>
@@ -2762,7 +2819,7 @@ function ECGScreen({ deepLinkId, onBack }) {
           Accueil
         </button>
       )}
-      <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"❤️"} ECG</h2>
+      <ScreenHeader icon="❤️" title="ECG" subtitle={`${ecgs.length} tracé${ecgs.length>1?"s":""}`} color="#E05260"/>
 
       {/* Encart entraînement à la lecture d'ECG */}
       {ecgs.filter(e => e.imageData || e.imageUrl).length >= 3 && (
@@ -2802,14 +2859,14 @@ function ECGScreen({ deepLinkId, onBack }) {
         {ecgs.map(e => (
           <Card key={e.id} onClick={()=>setSelected(e)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
-              <div style={{background:C.redLight, borderRadius:12, padding:8, minWidth:56, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
+              <div style={{background:C.redLight, borderRadius:10, padding:4, minWidth:88, width:88, height:64, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden"}}>
                 {(e.imageData||e.imageUrl)
-                  ? <img src={e.imageData||e.imageUrl} alt="ECG" style={{width:56, height:40, objectFit:"cover", borderRadius:6}}/>
-                  : <svg viewBox="0 0 60 30" style={{width:56, height:30}}><polyline points="0,15 8,15 12,5 16,25 20,15 28,15 32,8 36,22 40,15 48,15 52,10 56,20 60,15" fill="none" stroke={e.color||C.red} strokeWidth="1.5"/></svg>
+                  ? <img src={e.imageData||e.imageUrl} alt="ECG" style={{width:"100%", height:"100%", objectFit:"cover", borderRadius:6}}/>
+                  : <svg viewBox="0 0 90 50" style={{width:80, height:46}}><polyline points="0,25 12,25 18,8 24,42 30,25 42,25 48,13 54,37 60,25 72,25 78,16 84,34 90,25" fill="none" stroke={e.color||C.red} strokeWidth="2"/></svg>
                 }
               </div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{e.title}</div>
+                <div style={{fontSize:14, fontWeight:700, color:C.text, marginBottom:4}}>{e.title}</div>
                 {isVu(e.id)
                   ? <span style={{display:"inline-flex", alignItems:"center", gap:4, fontSize:11, fontWeight:700, color:"#16A34A", background:"#DCFCE7", borderRadius:20, padding:"2px 9px"}}>
                       <span style={{width:8, height:8, borderRadius:"50%", background:"#16A34A", display:"inline-block"}}/> Vu
@@ -2936,7 +2993,7 @@ function IconoScreen({ deepLinkId, onBack }) {
           Accueil
         </button>
       )}
-      <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"🖼️"} Imagerie</h2>
+      <ScreenHeader icon="🖼️" title="Imagerie" subtitle={`${allCases.length} cas`} color="#9B59B6"/>
       {allCases.length===0 && (
         <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
           <div style={{fontSize:48, marginBottom:12}}>{"🩻"}</div>
@@ -2948,11 +3005,11 @@ function IconoScreen({ deepLinkId, onBack }) {
         {allCases.map(c => (
           <Card key={c.id} onClick={()=>setSelected(c)}>
             <div style={{display:"flex", gap:12, alignItems:"center"}}>
-              <div style={{background:(c.color||C.blue)+"22", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>
-                {(c.imageData||c.imageUrl) ? <img src={c.imageData||c.imageUrl} style={{width:44, height:44, borderRadius:12, objectFit:"cover"}}/> : (c.emoji||"🩻")}
+              <div style={{background:(c.color||C.blue)+"22", borderRadius:10, minWidth:88, width:88, height:64, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:30, overflow:"hidden"}}>
+                {(c.imageData||c.imageUrl) ? <img src={c.imageData||c.imageUrl} style={{width:"100%", height:"100%", borderRadius:8, objectFit:"cover"}}/> : (c.emoji||"🩻")}
               </div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13, fontWeight:700, color:C.text, marginBottom:4}}>{c.title}</div>
+                <div style={{fontSize:14, fontWeight:700, color:C.text, marginBottom:4}}>{c.title}</div>
                 <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
                   <Tag label={c.type} color={c.color}/>
                   {isVu(c.id) && (
@@ -3196,7 +3253,7 @@ function AgendaScreen({ deepLinkId, onBack }) {
           Accueil
         </button>
       )}
-      <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"📅"} Agenda</h2>
+      <ScreenHeader icon="📅" title="Agenda" color="#0891B2"/>
 
       {allEvents.length===0 ? (
         <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
@@ -3475,7 +3532,7 @@ function GestesScreen({ deepLinkId, onBack }) {
         <div style={{background:C.redLight, borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"✂️"}</div>
         <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Gestes techniques</div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Gestes techniques</div>
           <div style={{fontSize:12, color:C.sub}}>{allGestes.length} fiches disponibles</div>
         </div>
       </div>
@@ -3878,7 +3935,7 @@ function DiversScreen({ deepLinkId, onBack }) {
           Accueil
         </button>
       )}
-      <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"⚡"} Base de connaissances</h2>
+      <ScreenHeader icon="⚡" title="Base de connaissances" color="#0EA5E9"/>
       <div style={{display:"flex", alignItems:"center", gap:10, background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:"10px 14px", marginBottom:16}}>
         <span style={{fontSize:14, opacity:.5}}>{"🔍"}</span>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher ou #hashtag..."
@@ -3990,7 +4047,7 @@ function AnnuaireScreen({ deepLinkId, onBack }) {
 
   return (
     <div>
-      <h2 style={{color:C.navy, fontWeight:800, fontSize:18, marginBottom:16}}>{"📒"} Contacts</h2>
+      <ScreenHeader icon="📒" title="Contacts" color="#475569"/>
 
       {/* Barre recherche */}
       <div style={{display:"flex", alignItems:"center", gap:10, background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:"10px 14px", marginBottom:12}}>
@@ -4210,12 +4267,12 @@ function DilutionScreen({ deepLinkId, onBack }) {
       )}
       {/* Header */}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
-        <div style={{background:C.redLight, borderRadius:14, width:48, height:48,
-          display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, flexShrink:0}}>
+        <div style={{background:"#DC2626"+"22", borderRadius:12, width:44, height:44,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0}}>
           {"💉"}
         </div>
         <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Dilutions</div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Dilutions</div>
           <div style={{fontSize:12, color:C.sub}}>{allDilutions.length} fiche{allDilutions.length>1?"s":""} disponible{allDilutions.length>1?"s":""}</div>
         </div>
       </div>
@@ -10463,7 +10520,7 @@ function SurfaceBruleeCalculator({ onBack }) {
         <div style={{background:"#FEF3C7", borderRadius:14, width:48, height:48,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:26}}>🔥</div>
         <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Surface Brûlée</div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Surface Brûlée</div>
           <div style={{fontSize:12, color:C.sub}}>Règle des 9 — cliquer les zones brûlées</div>
         </div>
       </div>
@@ -14913,7 +14970,7 @@ function YearsEpCalculator({ onBack }) {
         <div style={{background:"#E0F7FA", borderRadius:14, width:48, height:48,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:26}}>🫁</div>
         <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Score YEARS</div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Score YEARS</div>
           <div style={{fontSize:12, color:C.sub}}>Algorithme EP — D-dimères à seuil adapté</div>
         </div>
       </div>
@@ -15110,7 +15167,7 @@ function SpesiCalculator({ onBack }) {
         <div style={{background:"#FFE4E6", borderRadius:14, width:48, height:48,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:26}}>🫀</div>
         <div>
-          <div style={{fontSize:18, fontWeight:800, color:C.text}}>Score sPESI</div>
+          <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Score sPESI</div>
           <div style={{fontSize:12, color:C.sub}}>Stratification du risque — Embolie Pulmonaire</div>
         </div>
       </div>
@@ -24376,28 +24433,40 @@ function Abg_ChoiceButton({ node, onClick }) {
   const [hovered, setHovered] = useState(false);
   return (
     <button onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      style={{ display: "flex", alignItems: "center", gap: 14, background: hovered ? colorLight : Abg_C.card, border: `1.5px solid ${hovered ? color : Abg_C.border}`, borderRadius: 14, padding: "14px 16px", cursor: "pointer", textAlign: "left", width: "100%", transition: "all .15s", boxShadow: hovered ? `0 2px 12px ${color}22` : "0 1px 4px rgba(26,58,92,.06)" }}>
+      style={{ display: "flex", alignItems: "center", gap: 13, background: hovered ? colorLight : Abg_C.card, border: `1.5px solid ${hovered ? color : Abg_C.border}`, borderLeft: `4px solid ${color}`, borderRadius: 14, padding: "14px 14px", cursor: "pointer", textAlign: "left", width: "100%", transition: "all .15s", boxShadow: hovered ? `0 2px 12px ${color}22` : "0 1px 4px rgba(26,58,92,.06)", WebkitTapHighlightColor: "transparent" }}>
       <div style={{ width: 44, height: 44, borderRadius: 12, background: colorLight, border: `1.5px solid ${color}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{node.icon || "→"}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ color: Abg_C.navy, fontWeight: 700, fontSize: 14 }}>{node.label}</div>
-        {node.subtitle && <div style={{ color: Abg_C.sub, fontSize: 12, marginTop: 2 }}>{node.subtitle}</div>}
+        <div style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 14.5, lineHeight: 1.3 }}>{node.label}</div>
+        {node.subtitle && <div style={{ color: Abg_C.sub, fontSize: 12, marginTop: 3, lineHeight: 1.4 }}>{node.subtitle}</div>}
       </div>
-      <span style={{ color: Abg_C.sub, fontSize: 20, flexShrink: 0 }}>›</span>
+      <span style={{ color: color, fontSize: 22, flexShrink: 0, fontWeight: 700 }}>›</span>
     </button>
   );
 }
 
 function Abg_Breadcrumb({ path, onNavigate }) {
+  const current = path[path.length - 1];
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 4, marginBottom: 16, padding: "8px 12px", background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 10 }}>
-      {path.map((node, i) => (
-        <span key={node.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {i > 0 && <span style={{ color: Abg_C.border, fontSize: 14 }}>›</span>}
-          <button onClick={() => onNavigate(i)} style={{ background: "none", border: "none", cursor: i < path.length - 1 ? "pointer" : "default", color: i < path.length - 1 ? Abg_C.blue : Abg_C.navy, fontSize: 12, fontWeight: i === path.length - 1 ? 800 : 500, padding: "2px 4px", borderRadius: 4 }}>
-            {i === 0 ? "🏠" : node.label}
-          </button>
-        </span>
-      ))}
+    <div style={{ marginBottom: 12 }}>
+      {/* Chemin cliquable */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 3, marginBottom: 8 }}>
+        {path.map((node, i) => (
+          <span key={node.id} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+            {i > 0 && <span style={{ color: Abg_C.border, fontSize: 12 }}>›</span>}
+            <button onClick={() => onNavigate(i)} style={{ background: i === path.length - 1 ? Abg_C.blue + "15" : "none", border: "none", cursor: i < path.length - 1 ? "pointer" : "default", color: i < path.length - 1 ? Abg_C.blue : Abg_C.navy, fontSize: 11, fontWeight: i === path.length - 1 ? 800 : 600, padding: "3px 8px", borderRadius: 6 }}>
+              {i === 0 ? "🏠 Départ" : node.label}
+            </button>
+          </span>
+        ))}
+      </div>
+      {/* Étape courante mise en valeur */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: `${current.color || Abg_C.blue}12`, border: `1.5px solid ${current.color || Abg_C.blue}44`, borderRadius: 12, padding: "10px 14px" }}>
+        {current.icon && <span style={{ fontSize: 22, flexShrink: 0 }}>{current.icon}</span>}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 15, lineHeight: 1.25 }}>{current.label}</div>
+          {current.subtitle && <div style={{ color: Abg_C.sub, fontSize: 12, marginTop: 2, lineHeight: 1.4 }}>{current.subtitle}</div>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -24439,7 +24508,11 @@ function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
         {node.linkModule && onSelectModule && (
           <Abg_ModuleLinkButton moduleId={node.linkModule} onNavigate={onSelectModule} />
         )}
-        <div style={{ color: Abg_C.sub, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{node.question || "Sélectionner une situation"}</div>
+        {/* Question mise en valeur */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: Abg_C.blueLight, border: `1px solid ${Abg_C.blue}33`, borderRadius: 12, padding: "12px 14px", marginBottom: 6 }}>
+          <span style={{ fontSize: 18, flexShrink: 0, lineHeight: 1.2 }}>❓</span>
+          <div style={{ color: Abg_C.navy, fontSize: 14, fontWeight: 700, lineHeight: 1.4 }}>{node.question || "Sélectionner une situation"}</div>
+        </div>
         {children.map(child => <Abg_ChoiceButton key={child.id} node={child} onClick={() => navigate(child)} />)}
       </div>
     );
@@ -24460,15 +24533,6 @@ function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
           <button onClick={() => setPath(prev => prev.slice(0, -1))} style={{ marginBottom: 14, background: Abg_C.card, border: `1px solid ${Abg_C.border}`, borderRadius: 10, color: Abg_C.sub, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
             ← Étape précédente
           </button>
-        )}
-        {path.length > 1 && (
-          <div style={{ marginBottom: 14, maxWidth: "100%", overflow: "hidden" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: Abg_C.card, border: `1.5px solid ${current.color || Abg_C.border}`, borderRadius: 12, padding: "8px 14px", marginBottom: current.subtitle ? 6 : 0, maxWidth: "100%", boxSizing: "border-box" }}>
-              {current.icon && <span style={{ fontSize: 20, flexShrink: 0 }}>{current.icon}</span>}
-              <span style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{current.label}</span>
-            </div>
-            {current.subtitle && <div style={{ color: Abg_C.sub, fontSize: 12, marginLeft: 4, wordBreak: "break-word" }}>{current.subtitle}</div>}
-          </div>
         )}
         <div style={{ width: "100%", boxSizing: "border-box" }}>
           {renderCurrent(current)}
@@ -24766,9 +24830,12 @@ function ScoresScreen({ deepLinkId, onBack }) {
     }
   }, [deepLinkId]);
 
-  const filtered = (selectedCat === "all"
-    ? SCORES_LIST
-    : SCORES_LIST.filter(s => s.category === selectedCat)
+  const filtered = (
+    selectedCat === "favoris"
+      ? SCORES_LIST.filter(s => isFavori("score", s.id))
+      : selectedCat === "all"
+        ? SCORES_LIST
+        : SCORES_LIST.filter(s => s.category === selectedCat)
   ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   // Routing vers le calculateur sélectionné
@@ -24842,6 +24909,23 @@ function ScoresScreen({ deepLinkId, onBack }) {
 
       {/* Filtres catégories — ligne compacte sans scroll */}
       <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:4, marginBottom:12}}>
+        {(() => {
+          const favCount = SCORES_LIST.filter(s => isFavori("score", s.id)).length;
+          const active = selectedCat === "favoris";
+          return (
+            <button onClick={() => setSelectedCat(active ? "all" : "favoris")} style={{
+              border: `1.5px solid ${active ? "#F59E0B" : C.border}`,
+              borderRadius: 8, padding: "5px 2px", cursor: "pointer",
+              background: active ? "#F59E0B" : C.white,
+              color: active ? "#fff" : (favCount ? "#F59E0B" : C.sub),
+              fontWeight: 700, fontSize: 9, display: "flex", flexDirection: "column",
+              alignItems: "center", gap: 1, transition: "all .15s", lineHeight: 1.2,
+            }}>
+              <span style={{fontSize:13}}>⭐</span>
+              <span style={{fontSize:9}}>Favoris</span>
+            </button>
+          );
+        })()}
         {SCORES_CATEGORIES.map(cat => {
           const count = cat.id === "all" ? SCORES_LIST.length : SCORES_LIST.filter(s => s.category === cat.id).length;
           if (cat.id !== "all" && count === 0) return null;
@@ -24911,12 +24995,14 @@ function ScoresScreen({ deepLinkId, onBack }) {
 
         {filtered.length === 0 && (
           <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
-            <div style={{fontSize:48, marginBottom:12}}>🧮</div>
+            <div style={{fontSize:48, marginBottom:12}}>{selectedCat === "favoris" ? "⭐" : "🧮"}</div>
             <div style={{fontSize:14, fontWeight:700, color:C.navy, marginBottom:6}}>
-              Aucun score pour le moment
+              {selectedCat === "favoris" ? "Aucun score favori" : "Aucun score pour le moment"}
             </div>
             <div style={{fontSize:12, lineHeight:1.5}}>
-              Les calculateurs (Glasgow, GBS, Wells, qSOFA…) seront ajoutés un par un dans cette section.
+              {selectedCat === "favoris"
+                ? "Appuie sur l'étoile d'un score pour l'ajouter à tes favoris et le retrouver ici rapidement."
+                : "Les calculateurs (Glasgow, GBS, Wells, qSOFA…) seront ajoutés un par un dans cette section."}
             </div>
           </div>
         )}
@@ -28183,9 +28269,10 @@ function CalcAdulteScreen({ onBack }) {
   return (
     <div style={{maxWidth:"100%", overflowX:"hidden"}}>
       {/* Header */}
+      <BackBtn onClick={onBack}/>
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:14}}>
-        <button onClick={onBack} style={{background:"none", border:"none", cursor:"pointer",
-          fontSize:22, padding:"4px 8px", color:C.text, flexShrink:0}}>←</button>
+        <div style={{background:"#DC2626"+"22", borderRadius:12, width:44, height:44, flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>💊</div>
         <div>
           <div style={{fontSize:18, fontWeight:800, color:C.navy}}>Calculateur adulte</div>
           <div style={{fontSize:12, color:C.sub}}>ISR · Analgésie · Sédation</div>
