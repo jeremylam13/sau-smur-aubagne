@@ -4421,7 +4421,7 @@ function AdminScreen({ onNewItem, onBack }) {
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
   const [dForm, setDForm] = useState({ title:"", categorie:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
-  const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
+  const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
@@ -4565,12 +4565,12 @@ function AdminScreen({ onNewItem, onBack }) {
     if(editingDil !== null) {
       const item = {...dilForm, id:editingDil, tags, color:dilForm.color||"#E05260"};
       await updateItem("dilutions","admin_dilutions",item,["schema","photo"]);
-      setEditingDil(null); setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      setEditingDil(null); setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution modifiée !");
     } else {
       const item = {...dilForm, id:Date.now(), tags, color:dilForm.color||"#E05260"};
       await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
-      setDilForm({title:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
@@ -5224,22 +5224,6 @@ function AdminScreen({ onNewItem, onBack }) {
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingD ? "✏️ Modifier la fiche" : "+ Nouvelle fiche"}</div>
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Dilution Ketamine" value={dForm.title} onChange={e=>setDForm({...dForm,title:e.target.value})}/>
-            <label style={lbl}>Catégorie</label>
-            <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:14}}>
-              {DILUTION_CATS.map(cat => {
-                const active = dForm.categorie === cat.key;
-                return (
-                  <button key={cat.key} type="button" onClick={()=>setDForm({...dForm, categorie: active ? "" : cat.key})} style={{
-                    border:`1.5px solid ${active?cat.color:C.border}`, borderRadius:20,
-                    padding:"6px 13px", cursor:"pointer", fontSize:12, fontWeight:700,
-                    background:active?cat.color:C.white, color:active?"#fff":cat.color,
-                    display:"flex", alignItems:"center", gap:5,
-                  }}>
-                    <span>{cat.icon}</span> {cat.label}
-                  </button>
-                );
-              })}
-            </div>
             <label style={lbl}>{"Tags (separes par virgule ou espace)"}</label>
             <input style={inp} placeholder="ketamine, dilution, SMUR" value={dForm.tags} onChange={e=>setDForm({...dForm,tags:e.target.value})}/>
             <label style={lbl}>Contenu</label>
@@ -5319,6 +5303,23 @@ function AdminScreen({ onNewItem, onBack }) {
 
             <label style={lbl}>Sous-titre (optionnel)</label>
             <input style={inp} placeholder="Ex: Dilution standard, Baby-Nora..." value={dilForm.subtitle} onChange={e=>setDilForm({...dilForm,subtitle:e.target.value})}/>
+
+            <label style={lbl}>Catégorie</label>
+            <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:14}}>
+              {DILUTION_CATS.map(cat => {
+                const active = dilForm.categorie === cat.key;
+                return (
+                  <button key={cat.key} type="button" onClick={()=>setDilForm({...dilForm, categorie: active ? "" : cat.key})} style={{
+                    border:`1.5px solid ${active?cat.color:C.border}`, borderRadius:20,
+                    padding:"6px 13px", cursor:"pointer", fontSize:12, fontWeight:700,
+                    background:active?cat.color:C.white, color:active?"#fff":cat.color,
+                    display:"flex", alignItems:"center", gap:5,
+                  }}>
+                    <span>{cat.icon}</span> {cat.label}
+                  </button>
+                );
+              })}
+            </div>
 
             <label style={lbl}>{"Tags (séparés par espace ou virgule)"}</label>
             <input style={inp} placeholder="ketamine choc analgesie" value={dilForm.tags} onChange={e=>setDilForm({...dilForm,tags:e.target.value})}/>
