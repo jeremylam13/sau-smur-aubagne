@@ -2372,7 +2372,7 @@ function RetexScreen({ deepLinkId, onBack }) {
     return true;
   }).filter(x=>
     !search || x.title?.toLowerCase().includes(search.toLowerCase()) ||
-    (x.tags||[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
+    (x.tags||[]).some(t=>(t||"").toLowerCase().includes(search.toLowerCase()))
   );
 
   if(editing) return (
@@ -3875,8 +3875,8 @@ function DiversScreen({ deepLinkId, onBack }) {
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
 
   const filtered = allDivers.filter(d =>
-    d.title.toLowerCase().includes(search.toLowerCase()) ||
-    (Array.isArray(d.tags)?d.tags:d.tags?[d.tags]:[]).some(t => t.toLowerCase().includes(search.toLowerCase()))
+    (d.title||"").toLowerCase().includes(search.toLowerCase()) ||
+    (Array.isArray(d.tags)?d.tags:d.tags?[d.tags]:[]).some(t => (t||"").toLowerCase().includes(search.toLowerCase()))
   );
 
   if(selected) {
@@ -3988,7 +3988,7 @@ function AnnuaireScreen({ deepLinkId, onBack }) {
 
   const filtered = contacts.filter(p => {
     const q = search.toLowerCase();
-    const matchSearch = !q || p.nom.toLowerCase().includes(q) || (p.role||"").toLowerCase().includes(q) || (p.tel||"").includes(q);
+    const matchSearch = !q || (p.nom||"").toLowerCase().includes(q) || (p.role||"").toLowerCase().includes(q) || (p.tel||"").includes(q);
     const matchCat = filterCat==="Tous" || (p.categorie||"Autre")===filterCat;
     return matchSearch && matchCat;
   });
@@ -4112,11 +4112,19 @@ function AnnuaireScreen({ deepLinkId, onBack }) {
 
 
 // ─── DilutionScreen ───────────────────────────────────────────────────────────
+// Catégories de dilution (extensible : ajouter une ligne pour une nouvelle catégorie)
+const DILUTION_CATS = [
+  { key:"cardio",    label:"Cardio",    icon:"❤️", color:"#DC2626" },
+  { key:"antidote",  label:"Antidote",  icon:"🧪", color:"#059669" },
+  { key:"pediatrie", label:"Pédiatrie", icon:"👶", color:"#EC4899" },
+];
+
 function DilutionScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
+  const [selectedCat, setSelectedCat] = useState("all");
   const { toggleFavori, isFavori } = useFavoris();
 
   const allDilutions = [...DILUTIONS, ...store.dilutions];
@@ -4124,10 +4132,15 @@ function DilutionScreen({ deepLinkId, onBack }) {
   useEffect(()=>{ if(deepLinkId && allDilutions.length){ const it=allDilutions.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.dilutions]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
 
-  const filtered = allDilutions.filter(d =>
-    d.title.toLowerCase().includes(search.toLowerCase()) ||
-    (Array.isArray(d.tags)?d.tags:[]).some(t=>t.toLowerCase().includes(search.toLowerCase()))
-  ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
+  const filtered = allDilutions.filter(d => {
+    // Filtre catégorie
+    if (selectedCat === "favoris") { if (!isFavori("dilution", d.id)) return false; }
+    else if (selectedCat !== "all") { if (d.categorie !== selectedCat) return false; }
+    // Filtre recherche
+    const q = search.toLowerCase();
+    return (d.title||"").toLowerCase().includes(q) ||
+      (Array.isArray(d.tags)?d.tags:[]).some(t=>(t||"").toLowerCase().includes(q));
+  }).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   if(selected) {
     // 9 rubriques pédagogiques — ordre logique de lecture clinique
@@ -4301,6 +4314,52 @@ function DilutionScreen({ deepLinkId, onBack }) {
         )}
       </div>
 
+      {/* Filtres catégories — grille compacte (style Scores) */}
+      <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:4, marginBottom:16}}>
+        {/* Toutes */}
+        <button onClick={()=>setSelectedCat("all")} style={{
+          border:`1.5px solid ${selectedCat==="all"?C.navy:C.border}`, borderRadius:8, padding:"5px 2px",
+          cursor:"pointer", background:selectedCat==="all"?C.navy:C.white, color:selectedCat==="all"?"#fff":C.sub,
+          fontWeight:700, fontSize:9, display:"flex", flexDirection:"column", alignItems:"center", gap:1,
+          transition:"all .15s", lineHeight:1.2, WebkitTapHighlightColor:"transparent",
+        }}>
+          <span style={{fontSize:13}}>📋</span>
+          <span style={{fontSize:9}}>Toutes</span>
+        </button>
+        {/* Favoris */}
+        {(() => {
+          const favCount = allDilutions.filter(d => isFavori("dilution", d.id)).length;
+          if (!favCount) return null;
+          const active = selectedCat==="favoris";
+          return (
+            <button onClick={()=>setSelectedCat(active?"all":"favoris")} style={{
+              border:`1.5px solid ${active?"#F59E0B":C.border}`, borderRadius:8, padding:"5px 2px",
+              cursor:"pointer", background:active?"#F59E0B":C.white, color:active?"#fff":"#F59E0B",
+              fontWeight:700, fontSize:9, display:"flex", flexDirection:"column", alignItems:"center", gap:1,
+              transition:"all .15s", lineHeight:1.2, WebkitTapHighlightColor:"transparent",
+            }}>
+              <span style={{fontSize:13}}>⭐</span>
+              <span style={{fontSize:9}}>Favoris</span>
+            </button>
+          );
+        })()}
+        {/* Catégories */}
+        {DILUTION_CATS.map(cat => {
+          const active = selectedCat === cat.key;
+          return (
+            <button key={cat.key} onClick={()=>setSelectedCat(active?"all":cat.key)} style={{
+              border:`1.5px solid ${active?cat.color:C.border}`, borderRadius:8, padding:"5px 2px",
+              cursor:"pointer", background:active?cat.color:C.white, color:active?"#fff":cat.color,
+              fontWeight:700, fontSize:9, display:"flex", flexDirection:"column", alignItems:"center", gap:1,
+              transition:"all .15s", lineHeight:1.2, WebkitTapHighlightColor:"transparent",
+            }}>
+              <span style={{fontSize:13}}>{cat.icon}</span>
+              <span style={{fontSize:9}}>{cat.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Liste */}
       <div style={{display:"flex", flexDirection:"column", gap:10}}>
         {filtered.map(d=>(
@@ -4361,7 +4420,7 @@ function AdminScreen({ onNewItem, onBack }) {
   const [ecgConfirmed, setEcgConfirmed] = useState(false);
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
-  const [dForm, setDForm] = useState({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
+  const [dForm, setDForm] = useState({ title:"", categorie:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
@@ -4455,12 +4514,12 @@ function AdminScreen({ onNewItem, onBack }) {
     if(editingD !== null) {
       const item = {...dForm, id:editingD, tags};
       await updateItem("divers","admin_divers",item,["image"]);
-      setEditingD(null); setDForm({title:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
+      setEditingD(null); setDForm({title:"",categorie:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
       showSaved("Fiche modifiée !");
     } else {
       const item = {...dForm, id:Date.now(), tags};
       await addItem("divers","admin_divers",item,["image"]);
-      setDForm({title:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
+      setDForm({title:"",categorie:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
       showSaved("Fiche ajoutée !");
       if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
     }
@@ -5165,6 +5224,22 @@ function AdminScreen({ onNewItem, onBack }) {
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingD ? "✏️ Modifier la fiche" : "+ Nouvelle fiche"}</div>
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Dilution Ketamine" value={dForm.title} onChange={e=>setDForm({...dForm,title:e.target.value})}/>
+            <label style={lbl}>Catégorie</label>
+            <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:14}}>
+              {DILUTION_CATS.map(cat => {
+                const active = dForm.categorie === cat.key;
+                return (
+                  <button key={cat.key} type="button" onClick={()=>setDForm({...dForm, categorie: active ? "" : cat.key})} style={{
+                    border:`1.5px solid ${active?cat.color:C.border}`, borderRadius:20,
+                    padding:"6px 13px", cursor:"pointer", fontSize:12, fontWeight:700,
+                    background:active?cat.color:C.white, color:active?"#fff":cat.color,
+                    display:"flex", alignItems:"center", gap:5,
+                  }}>
+                    <span>{cat.icon}</span> {cat.label}
+                  </button>
+                );
+              })}
+            </div>
             <label style={lbl}>{"Tags (separes par virgule ou espace)"}</label>
             <input style={inp} placeholder="ketamine, dilution, SMUR" value={dForm.tags} onChange={e=>setDForm({...dForm,tags:e.target.value})}/>
             <label style={lbl}>Contenu</label>
@@ -5197,7 +5272,7 @@ function AdminScreen({ onNewItem, onBack }) {
             <label style={lbl}>{"Crédit photo / document (optionnel)"}</label>
             <input style={inp} placeholder="Ex: © Dr Martin, CHU Timone — CC BY-NC" value={dForm.credit||""} onChange={e=>setDForm({...dForm,credit:e.target.value})}/>
 
-            {editingD && <Btn onClick={()=>{ setEditingD(null); setDForm({ title:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingD && <Btn onClick={()=>{ setEditingD(null); setDForm({ title:"", categorie:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addDivers} color={C.navy} style={{width:"100%"}}>{editingD ? "✅ Enregistrer les modifications" : "Ajouter la fiche"}</Btn>
           </Card>
           {customDivers.length>0 && (
@@ -15772,7 +15847,7 @@ function QuizScreen({ deepLinkId, onBack }) {
     !search ||
     q.title?.toLowerCase().includes(search.toLowerCase()) ||
     q.theme?.toLowerCase().includes(search.toLowerCase()) ||
-    (q.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase()))
+    (q.tags || []).some(t => (t||"").toLowerCase().includes(search.toLowerCase()))
   );
 
   // Routage des sous-écrans
@@ -24681,7 +24756,7 @@ function Abg_HomeScreen({ onSelect, onBackApp }) {
 
   const filtered = Abg_MODULES.filter(m => {
     const q = search.toLowerCase();
-    return m.label.toLowerCase().includes(q) || m.subtitle.toLowerCase().includes(q) || m.tags.some(t => t.toLowerCase().includes(q));
+    return (m.label||"").toLowerCase().includes(q) || (m.subtitle||"").toLowerCase().includes(q) || (m.tags||[]).some(t => (t||"").toLowerCase().includes(q));
   });
 
   const handleSearch = (q) => {
@@ -26588,15 +26663,18 @@ const PEDIA_MEDICAMENTS_DATA = [
   { id:"adr_ped",   nom:"Adrénaline",             indication:"Arrêt cardiaque",             voie:"IVD / IO",       dose_par_kg:0.01, unite:"mg",  dose_max:1,    concentration:"0,1 mg/mL (1 mg/10 mL)", concentration_value:0.1,  frequence:"Toutes les 3-5 min", remarques:"Diluer 1 amp 5 mg/5 mL dans 45 mL NaCl 0,9% = 0,1 mg/mL", categorie:"hemodynamique", color:"#DC2626" },
   { id:"adr_anaph_ped", nom:"Adrénaline (anaphylaxie)", indication:"Choc anaphylactique", voie:"IM ++++", dose_par_kg:0.01, unite:"mg", dose_max:0.5, concentration:"1 mg/mL (ampoule pure)", concentration_value:1, frequence:"2ᵉ dose à 5 min si symptômes persistants", dosePaliers:[ {max:20, dose:0.15, label:"< 20 kg"}, {max:40, dose:0.3, label:"20–40 kg"}, {max:null, dose:0.5, label:"> 40 kg"} ], remarques:"Anaphylaxie : 0,01 mg/kg (max 0,5 mg) en IM (face antéro-latérale de cuisse). En pratique : < 20 kg → 0,15 mg ; 20–40 kg → 0,3 mg ; > 40 kg → 0,5 mg. Ampoule 1 mg/mL. 2ᵉ dose à 5 min si les symptômes persistent.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"act_ped",   nom:"Acide tranexamique (Exacyl)",      indication:"Hémorragie traumatique",      voie:"IVL 10 min",     dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:10, doseSup:15 }, unite:"mg",  dose_max:2000, concentration:"10 mg/mL (500 mg/5 mL dilué)", concentration_value:10, frequence:"Dose unique", remarques:"Posologie selon poids : ≤ 10 kg → 10 mg/kg ; > 10 kg → 15 mg/kg. Diluer dans poche 50 ou 100 mL NaCl 0,9% selon poids", categorie:"hemodynamique", color:"#B91C1C" },
+  { id:"cordarone_ped", nom:"Amiodarone (Cordarone)",       indication:"Trouble du rythme / ACR rythmes chocables", voie:"IVD / IVL", dose_par_kg:5, unite:"mg", dose_max:300, concentration:"50 mg/mL (2 amp pures = 300 mg/6 mL)", concentration_value:50, frequence:"ACR : après le 3ᵉ choc", remarques:"Posologie : 5 mg/kg. Préparation : 2 ampoules pures = 300 mg / 6 mL (50 mg/mL). Ampoule 150 mg/3 mL.", categorie:"hemodynamique", color:"#DC2626" },
 
   // ── Analgésie ──────────────────────────────────────────────────────────
   { id:"mor_ped",   nom:"Morphine",                indication:"Douleur modérée à sévère",    voie:"IVD titration",  dose_par_kg:0.1,  unite:"mg",  dose_max:10,   concentration:"1 mg/mL (10 mg/10 mL)", concentration_value:1, frequence:"Puis 0,05 mg/kg toutes les 5 min si besoin", remarques:"Diluer 1 amp 10 mg/1 mL dans 9 mL NaCl 0,9% = 1 mg/mL. Max = dose adulte.", categorie:"analgesie", color:"#7C3AED" },
   { id:"ketan_a",   nom:"Kétamine (low dose — analgésie)", indication:"Analgésie — geste douloureux", voie:"IVDL",          dose_par_kg:0.2,  unite:"mg",  dose_max:50,   concentration:"10 mg/mL (amp 50 mg/5 mL)", concentration_value:10, frequence:"Dose unique avant geste", remarques:"Low dose analgésie : 0,2 mg/kg. Prélever 2 mL (soit 20 mg) de l'ampoule de 50 mg/5 mL = concentration 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
+  { id:"para_ped",  nom:"Paracétamol",             indication:"Antalgique / antipyrétique",  voie:"Per os / IV",    dose_par_kg:15,   unite:"mg",  dose_max:1000, concentration:"10 mg/mL (IV : 500 mg/50 mL)", concentration_value:10, frequence:"Toutes les 6h", remarques:"15 mg/kg/6h (per os ou IV). Max 1 g par prise et 60 mg/kg/j. Voie IV : flacon 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
   // ── ISR ────────────────────────────────────────────────────────────────
   { id:"ketan_i",   nom:"Kétamine ISR",             indication:"Induction séquence rapide",  voie:"IVD",            dose_par_kg:3,    unite:"mg",  dose_max:200,  concentration:"10 mg/mL (200 mg/20 mL)", concentration_value:10, frequence:"Dose unique — induction", remarques:"ISR : 3 mg/kg. Préparation : prélever 200 mg (soit 4 mL) de l'ampoule 250 mg/5 mL, puis compléter à 20 mL avec du NaCl 0,9% dans une seringue de 20 mL = 10 mg/mL. À partir de 24 mois : étomidate préférable si choc absent.", categorie:"isr", color:"#0891B2" },
   { id:"eto_ped",   nom:"Étomidate ISR",             indication:"Induction (> 24 mois)",      voie:"IVD",            dose_par_kg:0.3,  unite:"mg",  dose_max:20,   concentration:"2 mg/mL (20 mg/10 mL)", concentration_value:2, frequence:"Dose unique — induction", remarques:"Disponible à partir de 24 mois. Non recommandé < 2 ans.", categorie:"isr", color:"#0891B2" },
   { id:"sux_ped",   nom:"Suxaméthonium",            indication:"Curarisation ISR (< 8 ans)", voie:"IVD",            dose_par_kg:2,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (100 mg/10 mL)", concentration_value:10, frequence:"Dose unique", remarques:"À partir de 8 ans : réduire à 1 mg/kg. Diluer amp 100 mg/2 mL dans 8 mL NaCl.", categorie:"isr", color:"#0891B2" },
   { id:"roc_ped",   nom:"Rocuronium",               indication:"Curarisation ISR",           voie:"IVD",            dose_par_kg:1,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (50 mg/5 mL)", concentration_value:10, frequence:"Dose unique", remarques:"Antidote : sugammadex 16 mg/kg. Flacon pur 50 mg/5 mL.", categorie:"isr", color:"#0891B2" },
+  { id:"celo_ped",  nom:"Suxaméthonium (Célocurine)", indication:"Curarisation ISR",         voie:"IVD",            dose_par_kg:2,    doseParKgPaliers:[ {max:11, dose:2, label:"≤ 11 kg"}, {max:25, dose:1.5, label:"12–25 kg"}, {max:null, dose:1, label:"> 25 kg"} ], unite:"mg", dose_max:100, concentration:"50 mg/mL (100 mg/2 mL)", concentration_value:50, frequence:"Dose unique", remarques:"Posologie selon poids : ≤ 11 kg → 2 mg/kg ; 12–25 kg → 1,5 mg/kg ; > 25 kg → 1 mg/kg. Ampoule 100 mg/2 mL (50 mg/mL). CI : hyperkaliémie, brûlés, crush.", categorie:"isr", color:"#0891B2" },
   // ── Sédation ───────────────────────────────────────────────────────────
   { id:"ketan_s",   nom:"Kétamine sédation",         indication:"Sédation procédurale",       voie:"IVDL",           dose_par_kg:0.5,  unite:"mg",  dose_max:100,  concentration:"Concentration selon poids ↓", concentration_value:null, concParPoidsSeuil:{ seuilPoids:20, concInf:1, concSup:5 }, frequence:"Dose unique", remarques:"Sédation procédurale : 0,5 mg/kg. Préparation selon poids — < 20 kg (1 mg/mL) : seringue de 20 mL, prélever 20 mg (2 mL de l'amp 50 mg/5 mL ou 0,4 mL de l'amp 250 mg/5 mL) et compléter à 20 mL avec NaCl 0,9%. 20–50 kg (5 mg/mL) : seringue de 20 mL, prélever 100 mg (2 amp de 50 mg/5 mL ou 2 mL de l'amp 250 mg/5 mL) et compléter à 20 mL avec NaCl 0,9%. Titrer selon effet.", categorie:"sedation", color:"#6366F1" },
   { id:"mid_ped",   nom:"Midazolam sédation",        indication:"Sédation — entretien",       voie:"PSE",            dose_par_kg:0.1,  unite:"mg/kg/h", dose_max:null, concentration:"1 mg/mL (50 mg/50 mL)", concentration_value:1, frequence:"Débuter 0,1 mg/kg/h — max 0,3 mg/kg/h", remarques:"Diluer 50 mg/10 mL dans 40 mL NaCl 0,9% = 1 mg/mL", categorie:"sedation", color:"#6366F1" },
@@ -26851,7 +26929,9 @@ function PediaDoseCard({ medic, poids }) {
     );
   }
 
-  const dosePerKg = medic.doseParKgSeuil
+  const dosePerKg = medic.doseParKgPaliers
+    ? (medic.doseParKgPaliers.find(p => p.max == null || poids <= p.max) || medic.doseParKgPaliers[medic.doseParKgPaliers.length-1]).dose
+    : medic.doseParKgSeuil
     ? (poids <= medic.doseParKgSeuil.seuilPoids ? medic.doseParKgSeuil.doseInf : medic.doseParKgSeuil.doseSup)
     : parseFloat(medic.dose_par_kg);
   const doseMax   = medic.dose_max != null ? parseFloat(medic.dose_max) : null;
@@ -27813,28 +27893,27 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"IVD", remarques:"Délai d'action 45-60s. Durée 10-15 min. CI : hyperkaliémie, brûlés, crush.",
     color:"#7C3AED",
   },
+  {
+    id:"esmeron", cat:"isr", groupe:"Curare ISR",
+    nom:"Esmeron (Rocuronium)", amp:"50 mg / 5 mL", concentration:10, unite:"mg",
+    doseMin:1.2, doseMax:1.2,
+    voie:"IVD", remarques:"Dose ISR : 1,2 mg/kg. Prélever la dose selon le poids. Délai d'action ~60s. Durée prolongée (~45 min). Antagonisable par sugammadex. Alternative à la célocurine (CI hyperkaliémie, brûlés, crush).",
+    color:"#7C3AED",
+  },
   // ── Analgésie IV ─────────────────────────────────────────────────────────
   {
-    id:"propofol_analgesie", cat:"analgesie", groupe:"Analgésie IV",
+    id:"propofol_analgesie", cat:"sedation_proc", groupe:"Sédation procédurale",
     nom:"Propofol (sédation procédurale)", amp:"200 mg / 20 mL", concentration:10, unite:"mg",
-    doseMin:1, doseMax:1,
-    doseAlt:{ label:"Sujet âgé", doseMin:0.5, doseMax:0.5 },
-    voie:"IVDL sur 30s", remarques:"Sédation procédurale : 1 mg/kg en IVD lente sur 30s. 1 amp 200 mg/20 mL (10 mg/mL). Surveiller apnée et hypotension.",
-    color:"#EA580C",
+    doseMin:0.5, doseMax:0.5,
+    voie:"IVD lente", remarques:"Sédation procédurale : 0,5 mg/kg, en association avec la kétamine. Titration prudente, réduire chez le sujet âgé ou hémodynamiquement instable.",
+    color:"#7C3AED",
   },
   {
-    id:"propofol_cee", cat:"analgesie", groupe:"Analgésie IV",
+    id:"propofol_cee", cat:"sedation_proc", groupe:"Sédation procédurale",
     nom:"Propofol (sédation pour CEE)", amp:"200 mg / 20 mL", concentration:10, unite:"mg",
     doseMin:0.5, doseMax:0.5,
     voie:"IVDL sur 30s", remarques:"Sédation pour cardioversion électrique externe : 0,5 mg/kg. 1 amp 200 mg/20 mL (10 mg/mL). Surveiller apnée et hypotension.",
-    color:"#EA580C",
-  },
-  {
-    id:"ketamine_analgesie", cat:"analgesie", groupe:"Analgésie IV",
-    nom:"Kétamine (sub-dissociative)", amp:"250 mg / 5 mL", concentration:50, unite:"mg",
-    doseMin:0.5, doseMax:1,
-    voie:"IVDL", remarques:"Diluer avant injection. Effet analgésique sans sédation profonde.",
-    color:"#EA580C",
+    color:"#7C3AED",
   },
   {
     id:"ketamine_lowdose", cat:"analgesie", groupe:"Analgésie IV",
@@ -27844,11 +27923,11 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#EA580C",
   },
   {
-    id:"ketamine_sedation_proc", cat:"analgesie", groupe:"Analgésie IV",
+    id:"ketamine_sedation_proc", cat:"sedation_proc", groupe:"Sédation procédurale",
     nom:"Kétamine (sédation procédurale)", amp:"4 amp 50 mg pures / 20 mL", concentration:10, unite:"mg",
-    doseMin:1, doseMax:1,
-    voie:"IVL 30-60s", remarques:"Sédation procédurale : 1 mg/kg en injection lente sur 30 à 60s. Préparation : prélever 4 ampoules de 50 mg pures dans une seringue de 20 mL = 10 mg/mL.",
-    color:"#EA580C",
+    doseMin:0.5, doseMax:0.5,
+    voie:"IVL 30-60s", remarques:"Sédation procédurale : 0,5 mg/kg en injection lente sur 30 à 60s, en association avec le propofol. Préparation : prélever 4 ampoules de 50 mg pures dans une seringue de 20 mL = 10 mg/mL.",
+    color:"#7C3AED",
   },
   {
     id:"morphine", cat:"analgesie", groupe:"Analgésie IV",
@@ -27884,15 +27963,15 @@ const CALC_ADULTE_MEDICAMENTS = [
 
   // ── Analgésie ─────────────────────────────────────────────────────────────
   {
-    id:"sufentanil_iv", cat:"analgesie_iv", groupe:"Analgésie IV",
+    id:"sufentanil_iv", cat:"analgesie", groupe:"Analgésie IV",
     nom:"Sufentanil (bolus IV)", amp:"250 µg / 5 mL", concentration:50, unite:"µg",
     doseMin:0.1, doseMax:0.3,
     doseAbsMax:null,
     voie:"IVD", remarques:"Bolus de 0,1 µg/kg — ne pas dépasser 0,3 µg/kg. Diluer avant injection.",
-    color:"#7C3AED",
+    color:"#EA580C",
   },
   {
-    id:"sufentanil_in", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    id:"sufentanil_in", cat:"analgesie_in", groupe:"Intranasal",
     nom:"Sufentanil (intranasal)", amp:"250 µg / 5 mL", concentration:50, unite:"µg",
     doseMin:0.3, doseMax:0.3,
     voie:"IN", isIN:true,
@@ -27902,7 +27981,7 @@ const CALC_ADULTE_MEDICAMENTS = [
     doseAdditionnelle:0.15,
   },
   {
-    id:"midazolam_in_sed", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    id:"midazolam_in_sed", cat:"analgesie_in", groupe:"Intranasal",
     nom:"Midazolam IN — Sédation", amp:"5 mg/mL", concentration:5, unite:"mg",
     doseMin:5, doseMax:5, isFixedDose:true,
     doseAlt:{ label:"Sujet âgé", doseMin:2.5, doseMax:2.5 },
@@ -27911,7 +27990,7 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#7C3AED",
   },
   {
-    id:"midazolam_in_epi", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    id:"midazolam_in_epi", cat:"analgesie_in", groupe:"Intranasal",
     nom:"Midazolam IN — Épilepsie", amp:"5 mg/mL", concentration:5, unite:"mg",
     doseMin:0.2, doseMax:0.2,
     voie:"IN", isIN:true,
@@ -27919,7 +27998,7 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#7C3AED",
   },
   {
-    id:"ketamine_in", cat:"analgesie_in", groupe:"Analgésie intranasale",
+    id:"ketamine_in", cat:"analgesie_in", groupe:"Intranasal",
     nom:"Kétamine (intranasale)", amp:"250 mg / 5 mL", concentration:50, unite:"mg",
     doseMin:1, doseMax:1,
     voie:"IN", isIN:true,
@@ -27965,11 +28044,30 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#DC2626",
   },
   {
+    id:"actilyse", cat:"cardio", groupe:"Thrombolyse",
+    nom:"Actilyse (Alteplase)", amp:"2 flacons de 50 mg",
+    voie:"IVD + PSE",
+    isThrombolyse:true,
+    concentration:2,        // 2 mg/mL
+    doseParKg:1.5,          // 1,5 mg/kg
+    doseMax:100,            // max 100 mg
+    bolusMg:10,             // 10 mg en bolus IVD
+    dureeHeures:2,          // reste sur 2h
+    preparation:"EP grave : reconstituer 2 flacons de 50 mg avec 25 mL d'EPPI chacun → 2 mg/mL. Total 100 mg / 50 mL disponibles.",
+    noteACR:"50 mg en IVD (bolus direct)",
+    remarques:"Thrombolyse dans l'EP grave (avec instabilité hémodynamique). Le bolus de 10 mg est inclus dans la dose totale. Vérifier l'absence de contre-indication à la thrombolyse (hémorragie active, AVC récent, chirurgie récente...).",
+    color:"#B91C1C",
+  },
+  {
     id:"hnf", cat:"cardio", groupe:"Anticoagulation",
-    nom:"HNF (Héparine non fractionnée)", amp:"Variable", concentration:null, unite:"UI",
-    doseMin:500, doseMax:500,
-    voie:"IVSE / SC", isHNF:true,
-    remarques:"Curatif : 500 UI/kg/24h en 2 injections (ou 3 si volume > 0,6 mL). Préventif : 5000 UI/12h SC.",
+    nom:"HNF (Héparine non fractionnée)", amp:"Flacon 25 000 UI / 5 mL",
+    voie:"IVD + PSE",
+    isAnticoag:true,
+    concentrationPrep:500,      // 500 UI/mL après dilution
+    bolusUIkg:80,               // 80 UI/kg
+    entretienUIkgH:18,          // 18 UI/kg/h
+    preparation:"Prélever 1 ampoule de 25 000 UI (5 mL) et compléter à 50 mL avec du NaCl 0,9% → 500 UI/mL.",
+    remarques:"Anticoagulation curative. Bolus 80 UI/kg puis entretien 18 UI/kg/h au PSE. Adapter secondairement selon TCA / anti-Xa (premier contrôle à H4-H6). Surveiller le risque hémorragique.",
     color:"#DC2626",
   },
 
@@ -28000,20 +28098,435 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"IVL 15 min", remarques:"60 mg/kg. Diluer dans 100 mL NaCl 0,9%. Max 4 g absolus.",
     color:"#CA8A04",
   },
+  // ── Antidotes ──────────────────────────────────────────────────────────────
+  {
+    id:"sugammadex", cat:"antidote", groupe:"Antidote curare",
+    nom:"Sugammadex (Bridion®)", amp:"200 mg / 2 mL", concentration:100, unite:"mg",
+    doseMin:16, doseMax:16,
+    voie:"IVDL", remarques:"Antidote de l'Esmeron (rocuronium). Dose 16 mg/kg en IVDL : décurarisation en ~10 s (reversion immédiate après ISR). Prélever la dose selon le poids.",
+    color:"#059669",
+  },
+  {
+    id:"intralipide", cat:"antidote", groupe:"Antidote anesthésiques locaux",
+    nom:"Émulsion lipidique (Intralipide® 20%)", amp:"Poche de 500 mL",
+    voie:"IVD puis perfusion",
+    isProtocole:true,
+    indication:"Antidote de la toxicité systémique des anesthésiques locaux (LAST) : convulsions, troubles du rythme, arrêt cardiaque.",
+    remarques:"Seuil de poids à 70 kg. Bolus IVD puis perfusion d'entretien. Le bolus ne dépasse pas 100 mL. Poursuivre la RCP en parallèle si ACR. Répéter le bolus 1-2× si besoin selon protocole LAST.",
+    color:"#059669",
+  },
+  {
+    id:"octaplex", cat:"antidote", groupe:"Antagonisation anticoagulants",
+    nom:"Octaplex (CCP)", amp:"Flacon 500 UI / 20 mL",
+    voie:"IVL",
+    isCCP:true,
+    uiParFlacon:500,
+    mlParFlacon:20,
+    remarques:"Concentré de complexe prothrombinique (facteurs II, VII, IX, X). Antagonisation en urgence. Associer 10 mg de vitamine K IV si AVK. Contrôler le TP/INR après administration. Reconstituer chaque flacon selon la notice.",
+    color:"#059669",
+  },
+  {
+    id:"nac", cat:"antidote", groupe:"Antidote paracétamol",
+    nom:"N-acétylcystéine (Hidonac®)", amp:"Flacon 5 g / 25 mL",
+    voie:"IVSE",
+    isNAC:true,
+    concentration:200, // 5000 mg / 25 mL = 200 mg/mL
+    indication:"Antidote de l'intoxication au paracétamol. Protocole en 3 phases successives (~21h).",
+    phases:[
+      { titre:"DOSE DE CHARGE", doseParKg:150, duree:"sur 1h",  dilution:"Poche de G5% 250 mL : retirer 50 mL, puis ajouter le volume d'acétylcystéine." },
+      { titre:"2ᵉ DOSE",        doseParKg:50,  duree:"sur 4h",  dilution:"Ajouter le volume d'acétylcystéine dans une poche de G5% 500 mL." },
+      { titre:"3ᵉ DOSE",        doseParKg:100, duree:"sur 16h", dilution:"Ajouter le volume d'acétylcystéine dans une poche de G5% 1000 mL." },
+    ],
+    remarques:"Flacon 5 g / 25 mL (200 mg/mL). Surveiller la survenue de réactions anaphylactoïdes, surtout pendant la dose de charge (ralentir si besoin).",
+    color:"#059669",
+  },
 ];
 
 // Catégories avec config affichage
 const CALC_ADULTE_CATS = [
   { key:"isr",              label:"Induction séquence rapide", icon:"⚡", color:"#0891B2", bg:"#CFFAFE" },
   { key:"analgesie",        label:"Analgésie IV",              icon:"💊", color:"#EA580C", bg:"#FFEDD5" },
-  { key:"analgesie_iv",     label:"Analgésie IV — Opioïdes",   icon:"💉", color:"#7C3AED", bg:"#F3E8FF" },
-  { key:"analgesie_in",     label:"Analgésie intranasale",     icon:"👃", color:"#7C3AED", bg:"#F3E8FF" },
+  { key:"sedation_proc",    label:"Sédation procédurale",      icon:"🌙", color:"#7C3AED", bg:"#F3E8FF" },
   { key:"sedation",         label:"Sédation & Curarisation",   icon:"😴", color:"#6366F1", bg:"#EEF2FF" },
+  { key:"analgesie_in",     label:"Intranasal",                icon:"👃", color:"#7C3AED", bg:"#F3E8FF" },
   { key:"infectieux",       label:"Infectieux",                icon:"🦠", color:"#16A34A", bg:"#DCFCE7" },
   { key:"cardio",           label:"Cardio-vasculaire",         icon:"❤️", color:"#DC2626", bg:"#FEE2E2" },
   { key:"osmotherapie",     label:"Osmothérapie",              icon:"💧", color:"#0891B2", bg:"#CFFAFE" },
   { key:"antiepileptique",  label:"Antiépileptiques",          icon:"🧠", color:"#CA8A04", bg:"#FEF9C3" },
+  { key:"antidote",         label:"Antidotes",                 icon:"🧪", color:"#059669", bg:"#D1FAE5" },
 ];
+
+// ── Carte spéciale : protocole en 3 phases successives (N-acétylcystéine) ──
+function CalcAdulteNACCard({ medic, poids, color }) {
+  const C = useC();
+  const conc = medic.concentration; // 200 mg/mL
+
+  const phase = (p) => {
+    const doseMg = p.doseParKg * poids;
+    const volume = Math.round((doseMg / conc) * 10) / 10;
+    const doseG = Math.round((doseMg / 1000) * 100) / 100; // en grammes, 2 décimales
+    return { doseMg: Math.round(doseMg), doseG, volume };
+  };
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      {/* En-tête */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {/* Indication */}
+      {medic.indication && (
+        <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+          💊 {medic.indication}
+        </div>
+      )}
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Protocole pour <span style={{color, fontWeight:900}}>{poids} kg</span> (flacon {conc} mg/mL)
+      </div>
+
+      {/* Les 3 phases */}
+      {medic.phases.map((ph, i) => {
+        const r = phase(ph);
+        return (
+          <div key={i} style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+            <div style={{background:color+"15", padding:"7px 12px", display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+              <span style={{fontSize:11, fontWeight:800, color}}>{i+1}️⃣ {ph.titre}</span>
+              <span style={{fontSize:10, fontWeight:700, color:C.sub}}>{ph.doseParKg} mg/kg · {ph.duree}</span>
+            </div>
+            <div style={{padding:"10px 12px"}}>
+              <div style={{display:"flex", gap:16, marginBottom:6}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+                  <div style={{fontSize:17, fontWeight:900, color:C.text}}>{r.doseG} g</div>
+                </div>
+                <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+                  <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME À PRÉLEVER</div>
+                  <div style={{fontSize:17, fontWeight:900, color}}>{r.volume} mL</div>
+                </div>
+              </div>
+              <div style={{fontSize:11, color:C.sub, lineHeight:1.4, fontStyle:"italic"}}>{ph.dilution}</div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Note enchaînement */}
+      <div style={{background:"#FEF3C7", border:"1px solid #D97706", borderRadius:10, padding:"9px 12px", marginTop:2, marginBottom:6}}>
+        <div style={{fontSize:12, fontWeight:700, color:"#B45309", lineHeight:1.5}}>
+          ⏱️ Enchaîner les 3 perfusions sans interruption (durée totale ~21h).
+        </div>
+      </div>
+
+      {/* Remarque */}
+      {medic.remarques && (
+        <div style={{marginTop:2, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Carte spéciale : anticoagulation (bolus + entretien PSE) — HNF ──
+function CalcAdulteAnticoagCard({ medic, poids, color }) {
+  const C = useC();
+  const conc = medic.concentrationPrep;   // 500 UI/mL (après dilution)
+  const bolusUIkg = medic.bolusUIkg;       // 80 UI/kg
+  const entretienUIkgH = medic.entretienUIkgH; // 18 UI/kg/h
+
+  const bolusUI = Math.round(bolusUIkg * poids);
+  const bolusMl = Math.round((bolusUI / conc) * 10) / 10;
+  const entretienUIh = Math.round(entretienUIkgH * poids);
+  const entretienMlh = Math.round((entretienUIh / conc) * 10) / 10;
+
+  const Ligne = ({ num, titre, valeurUI, valeurMl, unite }) => (
+    <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+      <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>{num} {titre}</div>
+      <div style={{padding:"10px 12px", display:"flex", gap:16}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{valeurUI} {unite}</div>
+        </div>
+        <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+          <div style={{fontSize:18, fontWeight:900, color}}>{valeurMl} {unite==="UI"?"mL":"mL/h"}</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      {/* En-tête */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {/* Préparation */}
+      {medic.preparation && (
+        <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+          🧪 {medic.preparation}
+        </div>
+      )}
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Protocole pour <span style={{color, fontWeight:900}}>{poids} kg</span> (préparation {conc} UI/mL)
+      </div>
+
+      <Ligne num="1️⃣" titre="BOLUS (IVD)" valeurUI={bolusUI} valeurMl={bolusMl} unite="UI"/>
+      <Ligne num="2️⃣" titre="ENTRETIEN PSE" valeurUI={entretienUIh} valeurMl={entretienMlh} unite="UI/h"/>
+
+      {/* Remarque */}
+      {medic.remarques && (
+        <div style={{marginTop:2, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Carte spéciale : CCP (Octaplex) — 2 posologies selon contexte (AVK/AOD) ──
+function CalcAdulteCCPCard({ medic, poids, color }) {
+  const C = useC();
+  const uiParFlacon = medic.uiParFlacon;   // 500 UI
+  const mlParFlacon = medic.mlParFlacon;   // 20 mL
+  const concUI = uiParFlacon / mlParFlacon; // 25 UI/mL
+
+  const calcul = (uiParKg) => {
+    const doseUI = uiParKg * poids;
+    const flacons = Math.ceil(doseUI / uiParFlacon); // arrondi flacon supérieur
+    const volume = Math.round((doseUI / concUI) * 10) / 10;
+    return { doseUI, flacons, volume };
+  };
+
+  const Bloc = ({ poso, contexte, uiParKg }) => {
+    const r = calcul(uiParKg);
+    return (
+      <div style={{border:`1.5px solid ${color}44`, borderRadius:12, overflow:"hidden", marginBottom:10}}>
+        <div style={{background:color+"15", padding:"9px 12px"}}>
+          <div style={{fontSize:13, fontWeight:900, color}}>{poso}</div>
+          <div style={{fontSize:11, color:C.sub, marginTop:1}}>{contexte}</div>
+        </div>
+        <div style={{padding:"10px 12px", display:"flex", flexDirection:"column", gap:8}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+            <span style={{fontSize:12, color:C.sub}}>Dose</span>
+            <span style={{fontSize:17, fontWeight:900, color:C.text}}>{r.doseUI} UI</span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+            <span style={{fontSize:12, color:C.sub}}>Nombre de flacons (500 UI)</span>
+            <span style={{fontSize:17, fontWeight:900, color:C.text}}>{r.flacons}</span>
+          </div>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+            <span style={{fontSize:12, color:C.sub}}>Volume à prélever</span>
+            <span style={{fontSize:17, fontWeight:900, color:C.text}}>{r.volume} mL</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      {/* En-tête */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:10}}>
+        Doses pour <span style={{color, fontWeight:900}}>{poids} kg</span> (concentration {concUI} UI/mL)
+      </div>
+
+      <Bloc poso="25 UI/kg" contexte="Hémorragie grave + AVK, ou chirurgie urgente + AVK" uiParKg={25}/>
+      <Bloc poso="50 UI/kg" contexte="Hémorragie grave + AOD" uiParKg={50}/>
+
+      {/* Administration au PSE */}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"10px 12px", marginBottom:10}}>
+        <div style={{fontSize:11, fontWeight:800, color, marginBottom:3}}>⚙️ ADMINISTRATION</div>
+        <div style={{fontSize:12.5, color:C.text, lineHeight:1.5}}>
+          Vitesse PSE : <span style={{fontWeight:900}}>200 mL/h</span>. Passer les pousse-seringues successivement jusqu'à la dose prescrite.
+        </div>
+      </div>
+
+      {/* Remarque */}
+      {medic.remarques && (
+        <div style={{marginTop:2, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Carte spéciale : thrombolyse (bolus IVD + reste au PSE sur durée définie) ──
+function CalcAdulteThrombolyseCard({ medic, poids, color }) {
+  const C = useC();
+  const conc = medic.concentration;      // mg/mL (Actilyse : 2)
+  const doseParKg = medic.doseParKg;     // 1,5 mg/kg
+  const doseMax = medic.doseMax;         // 100 mg
+  const bolusMg = medic.bolusMg;         // 10 mg
+  const dureeH = medic.dureeHeures;      // 2 h
+
+  // Dose totale (plafonnée)
+  const doseTotale = Math.min(doseParKg * poids, doseMax);
+  const volumeTotal = Math.round((doseTotale / conc) * 10) / 10;
+  const bolusVol = Math.round((bolusMg / conc) * 10) / 10; // 5 mL
+  const resteMg = doseTotale - bolusMg;
+  const vitesse = Math.floor((resteMg / conc / dureeH) * 10) / 10; // mL/h (troncature, cf fiche)
+  const plafonne = doseParKg * poids > doseMax;
+
+  const Ligne = ({ num, titre, valeur, detail, big }) => (
+    <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+      <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>{num} {titre}</div>
+      <div style={{padding:"10px 12px"}}>
+        <div style={{fontSize:big?20:18, fontWeight:900, color:C.text}}>{valeur}</div>
+        {detail && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{detail}</div>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      {/* En-tête */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {/* Préparation */}
+      {medic.preparation && (
+        <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+          🧪 {medic.preparation}
+        </div>
+      )}
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Protocole EP grave pour <span style={{color, fontWeight:900}}>{poids} kg</span>
+      </div>
+
+      {/* Dose totale */}
+      <div style={{background:color+"12", borderRadius:10, padding:"10px 12px", marginBottom:10}}>
+        <div style={{fontSize:11, fontWeight:800, color, marginBottom:2}}>DOSE TOTALE</div>
+        <div style={{fontSize:16, fontWeight:900, color:C.text}}>{doseTotale} mg = {volumeTotal} mL</div>
+        <div style={{fontSize:11, color:C.sub, marginTop:2}}>
+          {plafonne ? "Plafonnée à 100 mg (dose max)" : `1,5 mg/kg × ${poids} kg`}
+        </div>
+      </div>
+
+      {/* Étapes */}
+      <Ligne num="1️⃣" titre="BOLUS IVD" valeur={`${bolusVol} mL`} detail={`${bolusMg} mg en IVD`} big/>
+      <Ligne num="2️⃣" titre="PUIS PSE (sur 2h)" valeur={`${vitesse} mL/h`} detail={`reste = ${resteMg} mg = ${Math.round((resteMg/conc)*10)/10} mL, sur ${dureeH}h`} big/>
+
+      {/* ACR */}
+      {medic.noteACR && (
+        <div style={{background:"#FEE2E2", border:"1px solid #DC2626", borderRadius:10, padding:"10px 12px", marginTop:2, marginBottom:6}}>
+          <div style={{fontSize:11, fontWeight:800, color:"#DC2626", marginBottom:2}}>🚨 SI ARRÊT CARDIAQUE</div>
+          <div style={{fontSize:13, fontWeight:700, color:C.text}}>{medic.noteACR}</div>
+        </div>
+      )}
+
+      {/* Remarque */}
+      {medic.remarques && (
+        <div style={{marginTop:8, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Carte spéciale : protocole en 2 temps (bolus + perfusion) selon poids ──
+function CalcAdulteProtocoleCard({ medic, poids, color }) {
+  const C = useC();
+
+  // Intralipide LAST : seuil à 70 kg
+  const lourd = poids >= 70;
+
+  // Bolus initial
+  const bolus = lourd
+    ? { valeur: "100 mL", detail: "dose plafonnée (poids ≥ 70 kg)" }
+    : { valeur: `${Math.round(1.5 * poids * 10) / 10} mL`, detail: `1,5 mL/kg × ${poids} kg` };
+
+  // Perfusion
+  const perf = lourd
+    ? { valeur: "250 mL en 15-20 min", detail: "poids ≥ 70 kg" }
+    : { valeur: `${Math.round(0.25 * poids * 10) / 10} mL/min`, detail: `0,25 mL/kg/min × ${poids} kg` };
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      {/* En-tête */}
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {/* Indication */}
+      {medic.indication && (
+        <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+          💊 {medic.indication}
+        </div>
+      )}
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Protocole pour <span style={{color, fontWeight:900}}>{poids} kg</span>
+      </div>
+
+      {/* Temps 1 : Bolus */}
+      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+        <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>
+          1️⃣ BOLUS INITIAL (IVD)
+        </div>
+        <div style={{padding:"10px 12px"}}>
+          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{bolus.valeur}</div>
+          <div style={{fontSize:11, color:C.sub, marginTop:2}}>{bolus.detail}</div>
+        </div>
+      </div>
+
+      {/* Temps 2 : Perfusion */}
+      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
+        <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>
+          2️⃣ PUIS PERFUSION
+        </div>
+        <div style={{padding:"10px 12px"}}>
+          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{perf.valeur}</div>
+          <div style={{fontSize:11, color:C.sub, marginTop:2}}>{perf.detail}</div>
+        </div>
+      </div>
+
+      {/* Remarque */}
+      {medic.remarques && (
+        <div style={{marginTop:10, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Carte spéciale : médicament en PSE, tableau de vitesses (mL/h) ──
 function CalcAdultePSECard({ medic, poids, color }) {
@@ -28084,6 +28597,31 @@ function CalcAdulteCard({ medic, poids }) {
   // Cas spécial : médicament en PSE avec tableau de vitesses (mL/h) selon dose et poids
   if (medic.isPSETable) {
     return <CalcAdultePSECard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : protocole en 2 temps (bolus + perfusion) avec seuil de poids
+  if (medic.isProtocole) {
+    return <CalcAdulteProtocoleCard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : thrombolyse (bolus IVD + reste au PSE)
+  if (medic.isThrombolyse) {
+    return <CalcAdulteThrombolyseCard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : CCP (Octaplex) — 2 posologies selon contexte
+  if (medic.isCCP) {
+    return <CalcAdulteCCPCard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : anticoagulation (bolus + entretien PSE) — HNF
+  if (medic.isAnticoag) {
+    return <CalcAdulteAnticoagCard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : N-acétylcystéine (protocole 3 phases)
+  if (medic.isNAC) {
+    return <CalcAdulteNACCard medic={medic} poids={poids} color={color}/>;
   }
 
   // Calcul dose de base
