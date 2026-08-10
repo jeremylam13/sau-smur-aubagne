@@ -69,6 +69,7 @@ function rowToItem(table, row) {
   if ("photo_data"  in r) { r.photoData  = r.photo_data;  delete r.photo_data; }
   if ("credit_photo" in r) { r.creditPhoto = r.credit_photo; delete r.credit_photo; }
   if ("nom_commercial"      in r) { r.nomCommercial      = r.nom_commercial;      delete r.nom_commercial; }
+  if ("points_forts"        in r) { r.pointsForts        = r.points_forts;        delete r.points_forts; }
   if ("dilution_standard"   in r) { r.dilutionStandard   = r.dilution_standard;   delete r.dilution_standard; }
   if ("conditionnement"     in r) { r.conditionnement     = r.conditionnement; }
   if ("mecanisme_action"    in r) { r.mecanismeAction     = r.mecanisme_action;    delete r.mecanisme_action; }
@@ -137,6 +138,7 @@ function itemToRow(table, item) {
   if ("photoUrl"         in r) { r.photo_url          = r.photoUrl;         delete r.photoUrl; }
   if ("creditPhoto"      in r) { r.credit_photo       = r.creditPhoto;      delete r.creditPhoto; }
   if ("nomCommercial"    in r) { r.nom_commercial     = r.nomCommercial;    delete r.nomCommercial; }
+  if ("pointsForts"      in r) { r.points_forts       = r.pointsForts;      delete r.pointsForts; }
   if ("dilutionStandard" in r) { r.dilution_standard  = r.dilutionStandard; delete r.dilutionStandard; }
   if ("hasSecondEcg"     in r) { r.has_second_ecg     = r.hasSecondEcg;     delete r.hasSecondEcg; }
   if ("secondTitle"      in r) { r.second_title       = r.secondTitle;      delete r.secondTitle; }
@@ -793,29 +795,56 @@ const NOTIF_KEY = "app_notifications";
 
 function useNotifications() {
   const [notifs, setNotifs] = useState([]);
+  const [lastSeen, setLastSeen] = useState(0); // timestamp de dernière consultation (local, personnel)
 
+  // Charge les notifications partagées depuis Supabase + le "dernière vue" local
   useEffect(()=>{
     (async()=>{
-      try { const r = await safeGet(NOTIF_KEY); if(r) setNotifs(JSON.parse(r.value)); } catch(e){}
+      // dernière consultation personnelle
+      try { const r = await safeGet("notif_last_seen"); if(r) setLastSeen(Number(r.value)||0); } catch(e){}
+      // notifications partagées
+      try {
+        const rows = await supaFetch("/notifications?order=ts.desc&limit=50", "GET");
+        if(Array.isArray(rows)) setNotifs(rows.map(n => ({...n, key:n.id})));
+      } catch(e){ /* silencieux : hors-ligne ou table absente */ }
     })();
   },[]);
 
+  // Pousse une notification partagée (visible par tous)
   async function pushNotif(item) {
-    // item : { id, title, icon, nav, type }
-    const notif = { ...item, key: Date.now() + "_" + item.id, ts: Date.now() };
-    setNotifs(prev => {
-      const next = [notif, ...prev].slice(0, 50); // max 50
-      safeSet(NOTIF_KEY, JSON.stringify(next));
-      return next;
-    });
+    // item : { title, body, icon, nav, type, ref_id }
+    const notif = {
+      type: item.type || "",
+      title: item.title || "",
+      body: item.body || "",
+      icon: item.icon || "🔔",
+      nav: item.nav || "",
+      ref_id: String(item.ref_id || item.id || ""),
+      ts: Date.now(),
+    };
+    try {
+      const rows = await supaFetch("/notifications", "POST", notif);
+      const created = Array.isArray(rows) ? rows[0] : rows;
+      if(created) setNotifs(prev => [{...created, key:created.id}, ...prev].slice(0,50));
+    } catch(e){ console.error("pushNotif error", e); }
+  }
+
+  // "Marquer comme lu" : on mémorise localement le timestamp de la plus récente
+  async function markSeen() {
+    const now = Date.now();
+    setLastSeen(now);
+    try { await safeSet("notif_last_seen", String(now)); } catch(e){}
   }
 
   async function clearAll() {
-    setNotifs([]);
-    try { await safeSet(NOTIF_KEY, "[]"); } catch(e){}
+    // Ne supprime pas les notifs partagées (elles appartiennent à tous),
+    // marque simplement tout comme lu localement.
+    await markSeen();
   }
 
-  return { notifs, pushNotif, clearAll };
+  const unread = notifs.filter(n => (n.ts||0) > lastSeen).length;
+
+  return { notifs, pushNotif, clearAll, markSeen, unread };
 }
 
 // ── Panneau notifications ─────────────────────────────────────────────────────
@@ -862,7 +891,7 @@ function NotifPanel({ notifs, onNav, onClear, onClose, theme }) {
             <div style={{fontSize:13, fontWeight:600}}>Aucune notification</div>
           </div>
         ) : notifs.map(n => (
-          <button key={n.key} onClick={()=>{ onNav(n.nav, {id:n.id}); onClose(); }}
+          <button key={n.key} onClick={()=>{ onNav(n.nav, {id:n.ref_id||n.id}); onClose(); }}
             style={{width:"100%", background:"none", border:"none", borderBottom:`1px solid ${C.border}`,
               padding:"11px 16px", cursor:"pointer", textAlign:"left", display:"flex", gap:12, alignItems:"center"}}>
             <div style={{background:(n.color||"#2E7EAD")+"22", borderRadius:10,
@@ -871,12 +900,12 @@ function NotifPanel({ notifs, onNav, onClear, onClose, theme }) {
             </div>
             <div style={{flex:1, minWidth:0}}>
               <div style={{fontSize:12, fontWeight:800, color:n.color||C.blue, marginBottom:2}}>
-                {typeLabels[n.nav]||n.nav}
+                {n.title || typeLabels[n.nav] || n.nav}
               </div>
-              <div style={{fontSize:13, fontWeight:600, color:C.text,
+              {n.body && <div style={{fontSize:13, fontWeight:600, color:C.text,
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>
-                {n.title}
-              </div>
+                {n.body}
+              </div>}
               <div style={{fontSize:10, color:C.sub, marginTop:2}}>{relTime(n.ts)}</div>
             </div>
             <span style={{color:C.sub, fontSize:16, flexShrink:0}}>›</span>
@@ -1940,14 +1969,69 @@ function DerniersAjoutsWidget({ onNav }) {
 
 // ─── RETEX PÉDAGOGIQUE ────────────────────────────────────────────────────────
 
+// Réactions par défaut (rétrocompatibilité) + jeux distincts par type
 const REACTIONS = [
   { emoji:"💡", label:"Instructif" },
   { emoji:"⚠️", label:"Important" },
   { emoji:"👏", label:"Bravo" },
   { emoji:"🎯", label:"Essentiel" },
 ];
+const REACTIONS_RETEX = [
+  { emoji:"💡", label:"Utile" },
+  { emoji:"🙏", label:"Merci" },
+  { emoji:"✋", label:"Vécu aussi" },
+];
+const REACTIONS_CAS = [
+  { emoji:"💡", label:"Appris" },
+  { emoji:"👍", label:"Merci" },
+  { emoji:"🔥", label:"Top" },
+];
 
 // ── Formulaire d'ajout RETEX/Récit ────────────────────────────────────────────
+// ── Constantes RETEX (méthode ALARM / HAS) ──────────────────────────────────
+const RETEX_TYPES = [
+  { v:"difficulte",   l:"Difficulté",          bg:"#FEF3C7", col:"#B45309" },
+  { v:"presque",      l:"Presque-accident",    bg:"#E0F2FE", col:"#0369A1" },
+  { v:"ei",           l:"Évén. indésirable",   bg:"#FEE2E2", col:"#DC2626" },
+  { v:"amelioration", l:"Axe d'amélioration",  bg:"#ECFCCB", col:"#4D7C0F" },
+];
+const RETEX_ZONES = ["Urgences","IOA","UHCD","SAUV","SMUR"];
+const RETEX_FLUX  = ["Fluide","Dense","Saturation majeure"];
+const RETEX_STATUTS = [
+  { v:"ouvert",  l:"Ouvert",         col:"#0EA5E9", ic:"📂" },
+  { v:"encours", l:"Actions en cours", col:"#F59E0B", ic:"🔄" },
+  { v:"cloture", l:"Clôturé",        col:"#22C55E", ic:"✅" },
+];
+const ALARM_FACTEURS = [
+  { k:"patient",     ic:"👤", nom:"Facteurs liés au Patient",             desc:"Langue, troubles cognitifs, agressivité, pathologie intriquée..." },
+  { k:"taches",      ic:"🩺", nom:"Facteurs liés aux Tâches",             desc:"Protocoles indisponibles, prescription verbale non tracée..." },
+  { k:"pro",         ic:"🧑‍⚕️", nom:"Facteurs liés aux Professionnels",  desc:"Fatigue, intérimaire non doublé, manque de compétence..." },
+  { k:"equipe",      ic:"👥", nom:"Facteurs liés à l'Équipe",             desc:"Transmission, communication médecin/IDE, leadership..." },
+  { k:"environnement", ic:"🏥", nom:"Facteurs liés à l'Environnement",    desc:"Surcharge, bruit, matériel manquant/défectueux..." },
+  { k:"si",          ic:"💻", nom:"Facteurs liés au Système d'Information", desc:"Bug logiciel de tri, panne terminaux, lenteur résultats..." },
+  { k:"organisation", ic:"🏢", nom:"Facteurs liés à l'Organisation",      desc:"Ratio soignants/patients, absence de sénior..." },
+  { k:"institution", ic:"🏛️", nom:"Facteurs liés au Contexte Institutionnel", desc:"Lit d'aval indisponible, transport ambulancier..." },
+  { k:"autre",       ic:"➕", nom:"Autre",                                desc:"Toute autre cause non listée ci-dessus..." },
+];
+const CAS_CATS = ["Cardio","Neuro","Pneumo","Traumato","Pédiatrie","Toxico","Infectieux","Autre"];
+const CAS_LIEUX = ["Urgences","SMUR","UHCD","Hospitalisation"];
+
+// Section repliable pour le formulaire RETEX
+function RetexSection({ icon, title, color, children, defaultOpen=false }) {
+  const C = useC();
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{border:`1px solid ${C.border}`, borderRadius:12, marginBottom:10, overflow:"hidden", background:C.white}}>
+      <div onClick={()=>setOpen(o=>!o)} style={{padding:"12px 14px", display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontWeight:800, fontSize:13, background:C.bg, color:C.text, WebkitTapHighlightColor:"transparent"}}>
+        <span>{icon} {title}</span>
+        <span style={{marginLeft:"auto", fontSize:9, fontWeight:700, color:C.sub, background:C.white, borderRadius:8, padding:"2px 7px"}}>optionnel</span>
+        <span style={{color:C.sub, fontSize:12}}>{open?"▲":"▼"}</span>
+      </div>
+      {open && <div style={{padding:14, borderTop:`1px solid ${C.border}`}}>{children}</div>}
+    </div>
+  );
+}
+
 function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   const C = useC();
   const isEdit = !!initial;
@@ -1956,10 +2040,25 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     ...initial,
     // Reconvertit tags array → string pour l'input
     tags: Array.isArray(initial.tags) ? initial.tags.join(" ") : (initial.tags || ""),
+    // Valeurs par défaut pour les nouveaux champs (anciens RETEX sans ces champs)
+    facteurs: initial.facteurs || {},
+    actions: Array.isArray(initial.actions) ? initial.actions : [],
+    anonyme: !!initial.anonyme,
+    nature: initial.nature || "",
+    zone: initial.zone || "",
+    flux: initial.flux || "",
+    declencheurs: initial.declencheurs || "",
+    chronologie: initial.chronologie || "",
+    pointsForts: initial.pointsForts || "",
+    statut: initial.statut || "ouvert",
+    evitabilite: initial.evitabilite || "",
   } : {
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
-    recit:"", tags:"", gravite:"", categorie:"Réanimation", medias:[],
+    recit:"", tags:"", gravite:"", categorie:"Réanimation", evolution:"", medias:[],
+    // Champs RETEX (méthode ALARM)
+    anonyme:false, nature:"", zone:"", flux:"", declencheurs:"", chronologie:"",
+    facteurs:{}, pointsForts:"", actions:[], statut:"ouvert", evitabilite:"",
   });
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initial); // pré-coché en mode édition
@@ -1981,6 +2080,9 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
 
   async function handleSubmit() {
     if(!form.title.trim() || !confirmed) return;
+    // RETEX : type d'événement obligatoire ; Cas : message à retenir obligatoire
+    if(tab==="retex" && !form.nature) return;
+    if(tab==="recit" && !form.takehome.trim()) return;
     setSaving(true);
     await onSubmit(form);
     setSaving(false);
@@ -1997,93 +2099,194 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
 
       {/* 2 onglets */}
       <div style={{display:"flex", gap:8, marginBottom:16}}>
-        {[{v:"retex",l:"🔬 RETEX structuré"},{v:"recit",l:"📖 Récit libre"}].map(t=>(
+        {[
+          {v:"retex", ic:"🔬", l:"RETEX", sub:"Améliorer nos pratiques", col:C.green, bg:C.greenLight},
+          {v:"recit", ic:"📖", l:"Cas",   sub:"Partager & apprendre",    col:"#9B59B6", bg:"#F3E8FF"},
+        ].map(t=>(
           <button key={t.v} onClick={()=>switchTab(t.v)} style={{
-            flex:1, border:`2px solid ${tab===t.v?C.green:C.border}`,
-            background:tab===t.v?C.greenLight:"#fff",
-            borderRadius:10, padding:"10px 6px", fontSize:12, fontWeight:700,
-            color:tab===t.v?C.green:C.sub, cursor:"pointer"
-          }}>{t.l}</button>
+            flex:1, border:`2px solid ${tab===t.v?t.col:C.border}`,
+            background:tab===t.v?t.bg:"#fff",
+            borderRadius:12, padding:"12px 6px", fontSize:13, fontWeight:800,
+            color:tab===t.v?t.col:C.sub, cursor:"pointer", textAlign:"center",
+            WebkitTapHighlightColor:"transparent",
+          }}>
+            <div>{t.ic} {t.l}</div>
+            <div style={{fontSize:10, fontWeight:600, opacity:.85, marginTop:2}}>{t.sub}</div>
+          </button>
         ))}
       </div>
 
-      {/* Champs communs */}
-      <label style={lbl}>Titre *</label>
-      <input style={inp} placeholder={tab==="retex"?"Ex: Arrêt cardiaque en salle d'attente":"Ex: Prise en charge d'un polytraumatisé SMUR"} value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
-
-      <div style={{display:"flex", gap:8}}>
-        <div style={{flex:1}}>
-          <label style={lbl}>Auteur</label>
-          <input style={inp} placeholder="Dr. Martin (ou anonyme)" value={form.author} onChange={e=>setForm({...form,author:e.target.value})}/>
+      {/* Toggle anonyme */}
+      <div onClick={()=>setForm(f=>({...f, anonyme:!f.anonyme}))}
+        style={{display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
+          background: form.anonyme ? C.greenLight : C.bg, border:`1px solid ${form.anonyme?C.green:C.border}`,
+          borderRadius:10, marginBottom:16, cursor:"pointer", userSelect:"none"}}>
+        <div style={{width:40, height:23, borderRadius:20, background: form.anonyme?C.green:"#CBD5E1", position:"relative", flexShrink:0, transition:"all .15s"}}>
+          <div style={{width:19, height:19, borderRadius:"50%", background:"#fff", position:"absolute", top:2, left: form.anonyme?19:2, transition:"all .15s"}}/>
         </div>
-        <div style={{flex:1}}>
-          <label style={lbl}>Date</label>
-          <input style={inp} type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+        <div>
+          <div style={{fontSize:12, fontWeight:800, color:C.text}}>Publier anonymement</div>
+          <div style={{fontSize:10, color:C.sub}}>Ton nom ne sera pas affiché sur la fiche</div>
         </div>
       </div>
 
-      <label style={lbl}>Lieu / Secteur</label>
-      <input style={inp} placeholder="SAU · SMUR · SAUV..." value={form.lieu} onChange={e=>setForm({...form,lieu:e.target.value})}/>
-
-      <label style={lbl}>Catégorie</label>
-      <select style={inp} value={form.categorie} onChange={e=>setForm({...form,categorie:e.target.value})}>
-        {CATS.map(c=><option key={c}>{c}</option>)}
-      </select>
-
-      <label style={lbl}>Gravité perçue</label>
-      <div style={{display:"flex", gap:6, marginBottom:10}}>
-        {[{v:"critique",l:"🔴 Critique"},{v:"serieux",l:"🟠 Sérieux"},{v:"modere",l:"🟡 Modéré"},{v:"formateur",l:"🟢 Formateur"}].map(g=>(
-          <button key={g.v} onClick={()=>setForm({...form,gravite:g.v})} style={{
-            flex:1, border:`1.5px solid ${form.gravite===g.v?C.blue:C.border}`,
-            background:form.gravite===g.v?C.blueLight:"transparent",
-            borderRadius:8, padding:"6px 2px", fontSize:10, fontWeight:700,
-            color:form.gravite===g.v?C.blue:C.sub, cursor:"pointer"
-          }}>{g.l}</button>
-        ))}
-      </div>
-
-      {/* Champs RETEX structuré */}
-      {tab==="retex" && (
-        <div>
-          <label style={lbl}>📍 Contexte</label>
-          <textarea style={ta(70)} placeholder="Heure, équipe présente, ressources disponibles..." value={form.contexte} onChange={e=>setForm({...form,contexte:e.target.value})}/>
-          <label style={lbl}>🩺 Situation clinique</label>
-          <textarea style={ta(90)} placeholder="Présentation clinique, décisions prises, chronologie..." value={form.situation} onChange={e=>setForm({...form,situation:e.target.value})}/>
-          <label style={lbl}>✅ Ce qui a bien fonctionné</label>
-          <textarea style={ta(60)} placeholder="Points positifs, réflexes acquis..." value={form.bien} onChange={e=>setForm({...form,bien:e.target.value})}/>
-          <label style={lbl}>⚠️ Difficultés rencontrées</label>
-          <textarea style={ta(60)} placeholder="Points de friction, imprévus..." value={form.difficultes} onChange={e=>setForm({...form,difficultes:e.target.value})}/>
-          <label style={lbl}>💡 Ce que l'on ferait différemment</label>
-          <textarea style={ta(60)} placeholder="Axes d'amélioration concrets..." value={form.amelio} onChange={e=>setForm({...form,amelio:e.target.value})}/>
+      {/* ═══ RETEX ═══ */}
+      {tab==="retex" && (<div>
+        <label style={lbl}>Type d'événement *</label>
+        <div style={{display:"flex", gap:5, flexWrap:"wrap", marginBottom:14}}>
+          {RETEX_TYPES.map(t=>{
+            const on = form.nature===t.v;
+            return (
+              <button key={t.v} onClick={()=>setForm({...form,nature:t.v})} style={{
+                border:`1.5px solid ${on?t.col:C.border}`, borderRadius:10, padding:"7px 11px",
+                fontSize:11, fontWeight:700, cursor:"pointer",
+                background:on?t.col:C.white, color:on?"#fff":t.col, WebkitTapHighlightColor:"transparent",
+              }}>{t.l}</button>
+            );
+          })}
         </div>
-      )}
 
-      {/* Champs récit libre */}
-      {tab==="recit" && (
-        <div>
-          <label style={lbl}>Récit de l'intervention *</label>
-          <textarea style={ta(180)} placeholder={"Raconte l'intervention librement, avec le plus de détails utiles...\n\nQui, quoi, où, quand, comment ?"} value={form.recit} onChange={e=>setForm({...form,recit:e.target.value})}/>
+        <label style={lbl}>Titre *</label>
+        <input style={{...inp, marginBottom:14}} placeholder="Ex: Retard de PEC d'un SCA" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+
+        {/* Section 1 : Identité */}
+        <RetexSection icon="📋" title="Fiche d'identité" color={C.green}>
+          <label style={lbl}>Date et heure</label>
+          <input style={inp} type="datetime-local" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/>
+          <label style={lbl}>Zone des urgences concernée</label>
+          <div style={{display:"flex", gap:5, flexWrap:"wrap", marginBottom:12}}>
+            {RETEX_ZONES.map(z=>{
+              const on = form.zone===z;
+              return <button key={z} onClick={()=>setForm({...form,zone:on?"":z})} style={{border:`1.5px solid ${on?C.navy:C.border}`, borderRadius:16, padding:"5px 11px", fontSize:11, fontWeight:600, cursor:"pointer", background:on?C.navy:C.white, color:on?"#fff":C.sub}}>{z}</button>;
+            })}
+          </div>
+          <label style={lbl}>Flux au moment des faits</label>
+          <div style={{display:"flex", gap:5, flexWrap:"wrap", marginBottom:12}}>
+            {RETEX_FLUX.map(fl=>{
+              const on = form.flux===fl;
+              return <button key={fl} onClick={()=>setForm({...form,flux:on?"":fl})} style={{border:`1.5px solid ${on?C.navy:C.border}`, borderRadius:16, padding:"5px 11px", fontSize:11, fontWeight:600, cursor:"pointer", background:on?C.navy:C.white, color:on?"#fff":C.sub}}>{fl}</button>;
+            })}
+          </div>
+          <label style={lbl}>Éléments déclencheurs du RETEX</label>
+          <input style={{...inp, marginBottom:0}} placeholder="Ex: réclamation famille, déclaration EIGS, alerte équipe..." value={form.declencheurs} onChange={e=>setForm({...form,declencheurs:e.target.value})}/>
+        </RetexSection>
+
+        {/* Section 2 : Chronologie */}
+        <RetexSection icon="⏱️" title="Chronologie des faits" color={C.green}>
+          <textarea style={{...ta(120), marginBottom:4}} placeholder={"14h30 — Arrivée du patient...\n14h35 — Premier ECG...\n15h10 — Relecture ECG..."} value={form.chronologie} onChange={e=>setForm({...form,chronologie:e.target.value})}/>
+          <div style={{fontSize:10, color:C.sub, fontStyle:"italic"}}>Rester strictement factuel. Minute par minute si aigu, heure par heure si problème global.</div>
+        </RetexSection>
+
+        {/* Section 3 : Analyse ALARM */}
+        <RetexSection icon="🔍" title="Analyse des causes (ALARM)" color={C.green}>
+          <div style={{fontSize:10, color:C.sub, fontStyle:"italic", marginBottom:10}}>Cocher uniquement les facteurs pertinents. Chaque case ouvre un champ de détail.</div>
+          {ALARM_FACTEURS.map(fac=>{
+            const checked = !!(form.facteurs && form.facteurs[fac.k] !== undefined);
+            return (
+              <div key={fac.k} style={{border:`1px solid ${checked?C.green:C.border}`, background:checked?C.greenLight:C.white, borderRadius:10, padding:"10px 12px", marginBottom:7}}>
+                <div onClick={()=>{
+                  setForm(f=>{
+                    const nf = {...(f.facteurs||{})};
+                    if (nf[fac.k] !== undefined) delete nf[fac.k];
+                    else nf[fac.k] = "";
+                    return {...f, facteurs:nf};
+                  });
+                }} style={{display:"flex", alignItems:"center", gap:9, cursor:"pointer"}}>
+                  <div style={{width:20, height:20, borderRadius:5, border:`2px solid ${checked?C.green:"#CBD5E1"}`, background:checked?C.green:"transparent", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:12, fontWeight:900}}>{checked?"✓":""}</div>
+                  <div>
+                    <div style={{fontSize:12, fontWeight:700, color:C.text}}>{fac.ic} {fac.nom}</div>
+                    <div style={{fontSize:10, color:C.sub, marginTop:2}}>{fac.desc}</div>
+                  </div>
+                </div>
+                {checked && (
+                  <input style={{...inp, margin:"9px 0 0"}} placeholder="Détailler..." value={form.facteurs[fac.k]} onChange={e=>{
+                    setForm(f=>({...f, facteurs:{...f.facteurs, [fac.k]:e.target.value}}));
+                  }}/>
+                )}
+              </div>
+            );
+          })}
+        </RetexSection>
+
+        {/* Section 4 : Points forts */}
+        <RetexSection icon="✅" title="Points forts à valoriser" color={C.green}>
+          <textarea style={{...ta(90), marginBottom:0}} placeholder="Comportements, réflexes ou outils à valoriser et partager avec l'équipe..." value={form.pointsForts} onChange={e=>setForm({...form,pointsForts:e.target.value})}/>
+        </RetexSection>
+
+        {/* Section 5 : Plan d'actions */}
+        <RetexSection icon="🎯" title="Plan d'actions correctives" color={C.green}>
+          {(form.actions||[]).map((act, i)=>(
+            <div key={i} style={{background:C.bg, borderRadius:10, padding:10, marginBottom:8}}>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
+                <span style={{fontSize:11, fontWeight:700, color:C.sub}}>Action {i+1}</span>
+                <button onClick={()=>setForm(f=>({...f, actions:f.actions.filter((_,j)=>j!==i)}))} style={{background:"none", border:"none", color:C.red, cursor:"pointer", fontSize:14}}>✕</button>
+              </div>
+              <input style={{...inp, marginBottom:8}} placeholder="Action à mettre en place..." value={act.action||""} onChange={e=>setForm(f=>{const a=[...f.actions]; a[i]={...a[i],action:e.target.value}; return {...f,actions:a};})}/>
+              <div style={{display:"flex", gap:8}}>
+                <input style={{...inp, marginBottom:0}} placeholder="Pilote (optionnel)" value={act.pilote||""} onChange={e=>setForm(f=>{const a=[...f.actions]; a[i]={...a[i],pilote:e.target.value}; return {...f,actions:a};})}/>
+                <input style={{...inp, marginBottom:0}} placeholder="Délai (optionnel)" value={act.delai||""} onChange={e=>setForm(f=>{const a=[...f.actions]; a[i]={...a[i],delai:e.target.value}; return {...f,actions:a};})}/>
+              </div>
+            </div>
+          ))}
+          <button onClick={()=>setForm(f=>({...f, actions:[...(f.actions||[]), {action:"",pilote:"",delai:""}]}))} style={{width:"100%", background:C.greenLight, border:`1px dashed ${C.green}`, borderRadius:10, padding:"10px", fontSize:12, fontWeight:700, color:C.green, cursor:"pointer"}}>+ Ajouter une action</button>
+        </RetexSection>
+      </div>)}
+
+      {/* ═══ CAS ═══ */}
+      {tab==="recit" && (<div>
+        <label style={lbl}>Titre *</label>
+        <input style={{...inp, marginBottom:14}} placeholder="Ex: AVC du sujet jeune : penser à la dissection" value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+
+        <label style={lbl}>Catégorie clinique</label>
+        <div style={{display:"flex", gap:5, flexWrap:"wrap", marginBottom:14}}>
+          {CAS_CATS.map(cat=>{
+            const on = form.categorie===cat;
+            return <button key={cat} onClick={()=>setForm({...form,categorie:cat})} style={{border:`1.5px solid ${on?"#9B59B6":C.border}`, borderRadius:16, padding:"5px 11px", fontSize:11, fontWeight:600, cursor:"pointer", background:on?"#9B59B6":C.white, color:on?"#fff":C.sub}}>{cat}</button>;
+          })}
         </div>
-      )}
 
-      {/* Take home message (commun) */}
-      <label style={lbl}>🎯 Take home message</label>
-      <textarea
-        style={{...inp, minHeight:100, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}}
-        placeholder="Le message clé à retenir..."
-        value={form.takehome}
-        onChange={e=>setForm({...form,takehome:e.target.value})}
-      />
+        <label style={lbl}>Lieu</label>
+        <div style={{display:"flex", gap:5, flexWrap:"wrap", marginBottom:14}}>
+          {CAS_LIEUX.map(li=>{
+            const on = form.lieu===li;
+            return <button key={li} onClick={()=>setForm({...form,lieu:on?"":li})} style={{border:`1.5px solid ${on?"#9B59B6":C.border}`, borderRadius:16, padding:"5px 11px", fontSize:11, fontWeight:600, cursor:"pointer", background:on?"#9B59B6":C.white, color:on?"#fff":C.sub}}>{li}</button>;
+          })}
+        </div>
+
+        <label style={lbl}>Récit de l'intervention</label>
+        <textarea style={{...ta(180), marginBottom:14}} placeholder={"Présentation du patient (terrain, motif), raisonnement, examens clés (ECG, bio, imagerie), diagnostic retenu et prise en charge..."} value={form.recit} onChange={e=>setForm({...form,recit:e.target.value})}/>
+      </div>)}
+
+
+      {/* Message à retenir + évolution : uniquement pour les Cas */}
+      {tab==="recit" && (<div>
+        {/* Iconographie */}
+        <MediaUploader
+          label="📎 Iconographie / photographie (ECG, scanner, photo...)"
+          medias={form.medias||[]}
+          onChange={upd => setForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
+          accept="image/*,video/*,application/pdf"
+        />
+
+        <label style={{...lbl, marginTop:14}}>🎯 Message à retenir *</label>
+        <textarea
+          style={{...inp, minHeight:90, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}}
+          placeholder="Le point pédagogique clé de ce cas..."
+          value={form.takehome}
+          onChange={e=>setForm({...form,takehome:e.target.value})}
+        />
+
+        <label style={lbl}>📈 Évolution <span style={{fontWeight:400, color:C.sub}}>(optionnel — à compléter quand on connaît la suite)</span></label>
+        <textarea
+          style={{...inp, minHeight:80, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}}
+          placeholder="Devenir du patient, suite en hospitalisation... (peut être ajouté plus tard en modifiant la fiche)"
+          value={form.evolution||""}
+          onChange={e=>setForm({...form,evolution:e.target.value})}
+        />
+      </div>)}
 
       <label style={lbl}>Tags (optionnel)</label>
       <input style={inp} placeholder="#SMUR #SCA #Pediatrie" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
-
-      <MediaUploader
-        label="📎 Photos / Vidéos / PDF (optionnel)"
-        medias={form.medias||[]}
-        onChange={upd => setForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
-        accept="image/*,video/*,application/pdf"
-      />
 
       {/* Case à cocher obligatoire */}
       <div onClick={()=>setConfirmed(v=>!v)}
@@ -2101,20 +2304,26 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
           Je certifie que ce cas est anonymisé, que sa publication est conforme au règlement intérieur du service et que j'en assume la responsabilité éditoriale.
         </span>
       </div>
-      <button onClick={handleSubmit} disabled={saving||!form.title.trim()||!confirmed} style={{
-        width:"100%", background:(form.title.trim()&&confirmed)?C.green:"#CBD5E1",
+      {(() => {
+        const valide = form.title.trim() && confirmed
+          && (tab==="retex" ? !!form.nature : !!form.takehome.trim());
+        return (
+      <button onClick={handleSubmit} disabled={saving||!valide} style={{
+        width:"100%", background:valide?(tab==="retex"?C.green:"#9B59B6"):"#CBD5E1",
         border:"none", borderRadius:10, padding:"14px", fontSize:14,
-        fontWeight:800, color:"#fff", cursor:(form.title.trim()&&confirmed)?"pointer":"not-allowed",
+        fontWeight:800, color:"#fff", cursor:valide?"pointer":"not-allowed",
         marginTop:4,
       }}>
         {saving?"Enregistrement...":(isEdit ? "✅ Enregistrer les modifications" : "✅ Publier")}
       </button>
+        );
+      })()}
     </div>
   );
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onStatut, onDelete, onEdit }) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
   const [commentText, setCommentText] = useState("");
@@ -2123,7 +2332,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
 
   const typeColors = { recit:"#9B59B6", retex:"#2E9E6B" };
   const typeIcons  = { recit:"📖", retex:"🔬" };
-  const typeLabels = { recit:"Récit d'intervention", retex:"RETEX structuré" };
+  const typeLabels = { recit:"Cas clinique", retex:"RETEX" };
   const col = typeColors[item.type]||"#2E9E6B";
 
   const sections = [
@@ -2159,20 +2368,37 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
 
       {/* Header coloré */}
       <div style={{background:`linear-gradient(135deg, ${col} 0%, ${col}BB 100%)`, borderRadius:16, padding:18, marginBottom:16, color:"#fff"}}>
-        <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8}}>
+        <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap"}}>
           <span style={{fontSize:18}}>{typeIcons[item.type]||"🔬"}</span>
-          <span style={{background:"rgba(255,255,255,.2)", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700}}>
-            {typeLabels[item.type]||"RETEX"}
-          </span>
+          {/* Type d'événement RETEX */}
+          {item.type==="retex" && item.nature ? (() => {
+            const t = RETEX_TYPES.find(x=>x.v===item.nature);
+            return <span style={{background:"#fff", color:t?t.col:col, borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:800}}>{t?t.l.toUpperCase():"RETEX"}</span>;
+          })() : (
+            <span style={{background:"rgba(255,255,255,.2)", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700}}>
+              {typeLabels[item.type]||"RETEX"}{item.type==="recit"&&item.categorie?` · ${item.categorie}`:""}
+            </span>
+          )}
           {item.gravite && (
             <span style={{background:"rgba(0,0,0,.2)", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700}}>
               {item.gravite==="critique"?"🔴":item.gravite==="serieux"?"🟠":item.gravite==="modere"?"🟡":"🟢"} {item.gravite}
             </span>
           )}
         </div>
+
+        {/* Statut RETEX */}
+        {item.type==="retex" && (() => {
+          const st = RETEX_STATUTS.find(s=>s.v===(item.statut||"ouvert")) || RETEX_STATUTS[0];
+          return (
+            <div style={{marginBottom:8}}>
+              <span style={{background:st.col, color:"#fff", borderRadius:8, padding:"3px 9px", fontSize:10, fontWeight:800}}>{st.ic} {st.l.toUpperCase()}</span>
+            </div>
+          );
+        })()}
+
         <div style={{fontSize:17, fontWeight:800, lineHeight:1.3, marginBottom:6}}>{item.title}</div>
         <div style={{fontSize:11, opacity:.8}}>
-          {[item.author, item.date, item.lieu, item.categorie].filter(Boolean).join(" · ")}
+          {[item.anonyme?"👤 Anonyme":item.author, item.date, item.type==="recit"?item.lieu:"", item.type==="retex"?item.zone:""].filter(Boolean).join(" · ")}
         </div>
         {(item.tags&&item.tags.length>0) && (
           <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
@@ -2183,39 +2409,128 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
         )}
       </div>
 
-      {/* Récit libre */}
+      {/* Cas : récit de l'intervention */}
       {item.type==="recit" && item.recit && (
-        <div style={{background:C.white, borderRadius:14, padding:16, marginBottom:14, border:`1px solid ${C.border}`}}>
+        <div style={{background:C.white, borderRadius:14, padding:16, marginTop:6, marginBottom:14, border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:11, fontWeight:800, color:"#9B59B6", letterSpacing:.5, marginBottom:8}}>📝 RÉCIT DE L'INTERVENTION</div>
           <div style={{fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{item.recit}</div>
         </div>
       )}
 
-      {/* Sections RETEX structuré */}
-      {item.type==="retex" && sections.map(s => item[s.key] ? (
-        <div key={s.key} style={{marginBottom:10}}>
-          <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
-            <span style={{fontSize:14}}>{s.icon}</span>
-            <span style={{fontSize:11, fontWeight:800, color:s.color, letterSpacing:.5}}>{s.label.toUpperCase()}</span>
-          </div>
-          <div style={{background:C.white, borderRadius:12, padding:14, border:`1px solid ${C.border}`, borderLeft:`3px solid ${s.color}`}}>
-            <div style={{fontSize:13, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item[s.key]}</div>
-          </div>
-        </div>
-      ) : null)}
-
-      {/* Take home message */}
-      {item.takehome && (
-        <div style={{background:"#FDF0F1", border:`2px solid #E05260`, borderRadius:14, padding:14, margin:"4px 0 16px"}}>
-          <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
-            <span style={{fontSize:16}}>🎯</span>
-            <span style={{fontSize:11, fontWeight:800, color:"#E05260", letterSpacing:.5}}>TAKE HOME MESSAGE</span>
-          </div>
-          <div style={{fontSize:14, fontWeight:700, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.takehome}</div>
+      {/* Cas : iconographie (juste après le récit) */}
+      {item.type==="recit" && item.medias?.length > 0 && (
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:8}}>📎 ICONOGRAPHIE</div>
+          <MediaGallery medias={item.medias}/>
         </div>
       )}
 
-      {/* Médias */}
-      {item.medias?.length > 0 && (
+      {/* ═══ Affichage RETEX structuré (ALARM) ═══ */}
+      {item.type==="retex" && (<div>
+        {/* Identité : flux + déclencheurs */}
+        {(item.flux || item.declencheurs) && (
+          <div style={{marginBottom:14}}>
+            {item.flux && <div style={{display:"inline-block", background:C.blueLight, color:C.navy, borderRadius:8, padding:"5px 11px", fontSize:11, fontWeight:700, marginRight:8, marginBottom:6}}>🌊 Flux : {item.flux}</div>}
+            {item.declencheurs && (
+              <div style={{marginTop:6}}>
+                <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:4}}>⚡ ÉLÉMENT DÉCLENCHEUR</div>
+                <div style={{background:C.white, borderRadius:12, padding:"10px 14px", border:`1px solid ${C.border}`, fontSize:13, color:C.text, lineHeight:1.6}}>{item.declencheurs}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Chronologie */}
+        {item.chronologie && (
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>⏱️ CHRONOLOGIE DES FAITS</div>
+            <div style={{background:C.white, borderRadius:12, padding:14, border:`1px solid ${C.border}`, borderLeft:`3px solid ${col}`, fontSize:12.5, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap", fontFamily:"ui-monospace, monospace"}}>{item.chronologie}</div>
+          </div>
+        )}
+
+        {/* Analyse ALARM : seuls les facteurs cochés */}
+        {item.facteurs && Object.keys(item.facteurs).length>0 && (
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>🔍 ANALYSE DES CAUSES (ALARM)</div>
+            {ALARM_FACTEURS.filter(f=>item.facteurs[f.k]!==undefined).map(f=>(
+              <div key={f.k} style={{background:C.white, border:`1px solid ${C.border}`, borderLeft:`3px solid ${col}`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
+                <div style={{fontSize:12.5, fontWeight:800, color:C.text, marginBottom:item.facteurs[f.k]?3:0}}>{f.ic} {f.nom}</div>
+                {item.facteurs[f.k] && <div style={{fontSize:12.5, color:C.text, lineHeight:1.5}}>{item.facteurs[f.k]}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Points forts */}
+        {item.pointsForts && (
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>✅ POINTS FORTS À VALORISER</div>
+            <div style={{background:C.greenLight, border:`1px solid ${C.green}33`, borderRadius:12, padding:14, fontSize:13, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.pointsForts}</div>
+          </div>
+        )}
+
+        {/* Plan d'actions */}
+        {item.actions && item.actions.length>0 && item.actions.some(a=>a.action) && (
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>🎯 PLAN D'ACTIONS CORRECTIVES</div>
+            {item.actions.filter(a=>a.action).map((a,i)=>(
+              <div key={i} style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
+                <div style={{fontSize:13, fontWeight:700, color:C.text}}>{i+1}. {a.action}</div>
+                {(a.pilote||a.delai) && (
+                  <div style={{display:"flex", gap:12, marginTop:5, fontSize:11, color:C.sub}}>
+                    <span>👤 <b style={{color:C.text}}>{a.pilote||"—"}</b></span>
+                    <span>⏳ <b style={{color:C.text}}>{a.delai||"—"}</b></span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Statut modifiable */}
+        {onStatut && (
+          <div style={{marginBottom:14, background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 14px"}}>
+            <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:8}}>📌 STATUT DU RETEX</div>
+            <div style={{display:"flex", gap:6}}>
+              {RETEX_STATUTS.map(s=>{
+                const on = (item.statut||"ouvert")===s.v;
+                return (
+                  <button key={s.v} onClick={()=>onStatut(item.id, s.v)} style={{
+                    flex:1, border:`1.5px solid ${on?s.col:C.border}`, borderRadius:8, padding:"8px 4px",
+                    background:on?s.col:C.white, color:on?"#fff":C.sub, fontSize:11, fontWeight:700,
+                    cursor:"pointer", WebkitTapHighlightColor:"transparent",
+                  }}>{s.ic} {s.l}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>)}
+
+      {/* Message à retenir (Cas uniquement) */}
+      {item.type==="recit" && item.takehome && (
+        <div style={{background:"#F3E8FF", border:`2px solid #9B59B6`, borderRadius:14, padding:14, margin:"4px 0 16px"}}>
+          <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
+            <span style={{fontSize:16}}>🎯</span>
+            <span style={{fontSize:11, fontWeight:800, color:"#9B59B6", letterSpacing:.5}}>MESSAGE À RETENIR</span>
+          </div>
+          <div style={{fontSize:14, fontWeight:600, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.takehome}</div>
+        </div>
+      )}
+
+      {/* Évolution / suivi */}
+      {item.evolution && (
+        <div style={{background:C.blueLight, border:`1px solid ${C.blue}44`, borderRadius:14, padding:14, margin:"4px 0 16px"}}>
+          <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:6}}>
+            <span style={{fontSize:16}}>📈</span>
+            <span style={{fontSize:11, fontWeight:800, color:C.blue, letterSpacing:.5}}>ÉVOLUTION / SUIVI</span>
+          </div>
+          <div style={{fontSize:13.5, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.evolution}</div>
+        </div>
+      )}
+
+      {/* Médias (RETEX seulement — les Cas ont leur iconographie plus haut) */}
+      {item.type==="retex" && item.medias?.length > 0 && (
         <div style={{marginBottom:16}}>
           <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:8}}>📎 DOCUMENTS / MÉDIAS</div>
           <MediaGallery medias={item.medias}/>
@@ -2226,18 +2541,21 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
       <div style={{marginBottom:16}}>
         <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:8}}>RÉACTIONS DU SERVICE</div>
         <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
-          {REACTIONS.map(r=>{
+          {(item.type==="retex"?REACTIONS_RETEX:item.type==="recit"?REACTIONS_CAS:REACTIONS).map(r=>{
             const count = (item.reactions||{})[r.emoji]||0;
+            const actif = count>0;
+            const accent = item.type==="recit" ? "#9B59B6" : C.green;
+            const accentBg = item.type==="recit" ? "#F3E8FF" : C.greenLight;
             return (
               <button key={r.emoji} onClick={()=>onReaction(item.id, r.emoji)} style={{
                 display:"flex", alignItems:"center", gap:5,
-                background:count>0?C.greenLight:C.white,
-                border:`1.5px solid ${count>0?C.green:C.border}`,
+                background:actif?accentBg:C.white,
+                border:`1.5px solid ${actif?accent:C.border}`,
                 borderRadius:20, padding:"6px 12px", cursor:"pointer",
               }}>
                 <span style={{fontSize:16}}>{r.emoji}</span>
-                <span style={{fontSize:11, fontWeight:700, color:count>0?C.green:C.sub}}>{r.label}</span>
-                {count>0 && <span style={{fontSize:11, fontWeight:800, color:C.green}}>×{count}</span>}
+                <span style={{fontSize:11, fontWeight:700, color:actif?accent:C.sub}}>{r.label}</span>
+                {count>0 && <span style={{fontSize:11, fontWeight:800, color:accent}}>×{count}</span>}
               </button>
             );
           })}
@@ -2294,7 +2612,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDelete, onEdit }) 
 }
 
 // ── RetexScreen ───────────────────────────────────────────────────────────────
-function RetexScreen({ deepLinkId, onBack }) {
+function RetexScreen({ deepLinkId, onBack, pushNotif }) {
   const C = useC();
   const { store, addRetexItem, removeRetexItem, updateRetex } = useData();
   const items = [...(store.retex||[])].sort((a,b)=>{
@@ -2318,6 +2636,18 @@ function RetexScreen({ deepLinkId, onBack }) {
     const tags = (form.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...form, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
     await addRetexItem(item);
+    // Notification partagée
+    if(pushNotif){
+      const estCas = form.type==="recit";
+      pushNotif({
+        type:"retex",
+        icon: estCas ? "📖" : "🔬",
+        title: estCas ? "Nouveau cas clinique" : "Nouveau RETEX",
+        body: item.title,
+        nav:"retex",
+        ref_id:item.id,
+      });
+    }
     return item;
   }
 
@@ -2344,6 +2674,24 @@ function RetexScreen({ deepLinkId, onBack }) {
     await updateRetex({...item, comments:[...(item.comments||[]), comment]});
   }
 
+  async function changeStatut(id, statut) {
+    const item = items.find(x=>x.id===id);
+    if(!item) return;
+    await updateRetex({...item, statut});
+    // Notification partagée si clôturé ou passé en cours
+    if(pushNotif && statut!==item.statut){
+      const st = RETEX_STATUTS.find(s=>s.v===statut);
+      pushNotif({
+        type:"retex",
+        icon: st ? st.ic : "📌",
+        title: `RETEX ${st?st.l.toLowerCase():statut}`,
+        body: item.title,
+        nav:"retex",
+        ref_id:item.id,
+      });
+    }
+  }
+
   async function deleteItem(id) {
     await removeRetexItem(id);
     setSelected(null);
@@ -2364,7 +2712,7 @@ function RetexScreen({ deepLinkId, onBack }) {
 
   const typeColors = { recit:"#9B59B6", retex:"#2E9E6B" };
   const typeIcons  = { recit:"📖", retex:"🔬" };
-  const typeLabels = { recit:"Récit", retex:"RETEX" };
+  const typeLabels = { recit:"Cas", retex:"RETEX" };
 
   const filtered = items.filter(x=>{
     if(filter==="retex") return x.type==="retex";
@@ -2396,6 +2744,7 @@ function RetexScreen({ deepLinkId, onBack }) {
       onBack={()=>setSelected(null)}
       onReaction={toggleReaction}
       onComment={addComment}
+      onStatut={changeStatut}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
       onEdit={(it)=>{ setSelected(null); setEditing(it); }}
     />
@@ -2430,7 +2779,7 @@ function RetexScreen({ deepLinkId, onBack }) {
           {[
             {v:"tous",  l:`Tous (${items.length})`},
             {v:"retex", l:`🔬 RETEX (${items.filter(x=>x.type==="retex").length})`},
-            {v:"recit", l:`📖 Récits (${items.filter(x=>x.type==="recit").length})`},
+            {v:"recit", l:`📖 Cas (${items.filter(x=>x.type==="recit").length})`},
           ].map(f=>(
             <button key={f.v} onClick={()=>setFilter(f.v)} style={{
               flex:1, background:filter===f.v?C.navy:C.blueLight,
@@ -4423,7 +4772,7 @@ function AdminScreen({ onNewItem, onBack }) {
   const [dForm, setDForm] = useState({ title:"", categorie:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
-  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", medias:[] });
+  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", evolution:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"", tags:"" });
   const [qzForm, setQzForm] = useState({ title:"", theme:"", description:"", icon:"🧠", color:"#6366F1", estimatedMin:5, sources:"", takeaways:"", questions:[], tags:"" });
@@ -4530,7 +4879,7 @@ function AdminScreen({ onNewItem, onBack }) {
     const tags = (rForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
     await addRetexItem(item);
-    setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",medias:[]});
+    setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",evolution:"",medias:[]});
     setRetexAdminConfirmed(false);
     showSaved("Publication ajoutée !");
     if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
@@ -5031,90 +5380,19 @@ function AdminScreen({ onNewItem, onBack }) {
           {/* ── Panneau de validation des soumissions ── */}
 
 
-          {/* ── Publication directe admin (déjà validée) ── */}
+          {/* ── Publication directe admin (utilise le même formulaire que le module) ── */}
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:4}}>+ Publication directe (admin)</div>
-            <div style={{fontSize:11, color:C.sub, marginBottom:14}}>Publie immédiatement sans validation</div>
-
-            <div style={{display:"flex", gap:8, marginBottom:12}}>
-              {[{v:"retex",l:"🔬 RETEX structuré"},{v:"recit",l:"📖 Récit libre"}].map(t=>(
-                <button key={t.v} onClick={()=>setRForm({...rForm,type:t.v})} style={{
-                  flex:1, border:`2px solid ${rForm.type===t.v?C.green:C.border}`,
-                  background:rForm.type===t.v?C.greenLight:"#fff",
-                  borderRadius:10, padding:"8px 6px", fontSize:11, fontWeight:700,
-                  color:rForm.type===t.v?C.green:C.sub, cursor:"pointer"
-                }}>{t.l}</button>
-              ))}
-            </div>
-
-            <label style={lbl}>Titre *</label>
-            <input style={inp} placeholder="Ex: Arrêt cardiaque en montagne" value={rForm.title} onChange={e=>setRForm({...rForm,title:e.target.value})}/>
-
-            <div style={{display:"flex", gap:8}}>
-              <div style={{flex:1}}>
-                <label style={lbl}>Auteur</label>
-                <input style={inp} placeholder="Dr. Dupont" value={rForm.author} onChange={e=>setRForm({...rForm,author:e.target.value})}/>
-              </div>
-              <div style={{flex:1}}>
-                <label style={lbl}>Date</label>
-                <input style={inp} placeholder="12/05/2026" value={rForm.date} onChange={e=>setRForm({...rForm,date:e.target.value})}/>
-              </div>
-            </div>
-
-            <label style={lbl}>Lieu / Service</label>
-            <input style={inp} placeholder="SMUR Aubagne" value={rForm.lieu} onChange={e=>setRForm({...rForm,lieu:e.target.value})}/>
-
-            {rForm.type==="recit" && (
-              <div>
-                <label style={lbl}>Récit de l'intervention</label>
-                <textarea style={{...inp, height:140, resize:"vertical"}} placeholder="Racontez l'intervention librement..." value={rForm.recit} onChange={e=>setRForm({...rForm,recit:e.target.value})}/>
-                <label style={lbl}>Take home message</label>
-                <textarea style={{...inp, minHeight:100, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Le message clé à retenir..." value={rForm.takehome} onChange={e=>setRForm({...rForm,takehome:e.target.value})}/>
-              </div>
-            )}
-
-            {rForm.type==="retex" && (
-              <div>
-                <label style={lbl}>📍 Contexte</label>
-                <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Contexte de l'intervention..." value={rForm.contexte} onChange={e=>setRForm({...rForm,contexte:e.target.value})}/>
-                <label style={lbl}>🩺 Situation clinique</label>
-                <textarea style={{...inp, height:80, resize:"vertical"}} placeholder="Description de la situation clinique..." value={rForm.situation} onChange={e=>setRForm({...rForm,situation:e.target.value})}/>
-                <label style={lbl}>✅ Ce qui a bien fonctionné</label>
-                <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Points positifs..." value={rForm.bien} onChange={e=>setRForm({...rForm,bien:e.target.value})}/>
-                <label style={lbl}>⚠️ Difficultés rencontrées</label>
-                <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Difficultés, imprévus..." value={rForm.difficultes} onChange={e=>setRForm({...rForm,difficultes:e.target.value})}/>
-                <label style={lbl}>💡 Ce que l'on ferait différemment</label>
-                <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Axes d'amélioration..." value={rForm.amelio} onChange={e=>setRForm({...rForm,amelio:e.target.value})}/>
-                <label style={lbl}>🎯 Take home message</label>
-                <textarea style={{...inp, minHeight:100, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Le message clé à retenir..." value={rForm.takehome} onChange={e=>setRForm({...rForm,takehome:e.target.value})}/>
-              </div>
-            )}
-
-            <label style={lbl}>Tags (optionnel)</label>
-            <input style={inp} placeholder="#SMUR #Arret #Pediatrie" value={rForm.tags} onChange={e=>setRForm({...rForm,tags:e.target.value})}/>
-            <MediaUploader
-              label="📎 Photos / Vidéos / PDF du cas (optionnel)"
-              medias={rForm.medias}
-              onChange={upd => setRForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
-              accept="image/*,video/*,application/pdf"
+            <div style={{fontSize:11, color:C.sub, marginBottom:14}}>Même formulaire que le module RETEX/Cas</div>
+            <RetexSubmitForm
+              onSubmit={async (form)=>{
+                const tags = (typeof form.tags==="string" ? form.tags : (form.tags||[]).join(" ")).split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+                const item = {...form, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
+                await addRetexItem(item);
+                if(onNewItem) onNewItem({title:form.type==="recit"?"Nouveau cas clinique":"Nouveau RETEX", body:item.title, icon:form.type==="recit"?"📖":"🔬", nav:"retex", ref_id:item.id});
+              }}
+              onCancel={()=>setTab("home")}
             />
-            {/* Case à cocher obligatoire */}
-            <div onClick={()=>setRetexAdminConfirmed(v=>!v)}
-              style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
-                background: retexAdminConfirmed ? "#F0FDF4" : "#FFF7ED",
-                border:`1.5px solid ${retexAdminConfirmed ? "#22C55E" : "#F59E0B"}`,
-                borderRadius:10, marginBottom:8, cursor:"pointer", userSelect:"none"}}>
-              <div style={{width:20, height:20, borderRadius:5, flexShrink:0, marginTop:1,
-                border:`2px solid ${retexAdminConfirmed ? "#22C55E" : "#F59E0B"}`,
-                background: retexAdminConfirmed ? "#22C55E" : "#fff",
-                display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s"}}>
-                {retexAdminConfirmed && <span style={{color:"#fff", fontSize:13, fontWeight:900, lineHeight:1}}>✓</span>}
-              </div>
-              <span style={{fontSize:11, color: retexAdminConfirmed ? "#166534" : "#92400E", fontWeight:600, lineHeight:1.5}}>
-                Je certifie que ce cas est anonymisé et que sa publication est conforme au règlement du service.
-              </span>
-            </div>
-            <Btn onClick={addRetex} disabled={!retexAdminConfirmed} color={C.green} style={{width:"100%"}}>✅ Publier directement</Btn>
           </Card>
 
           {customRetex.length>0 && (
@@ -5124,7 +5402,7 @@ function AdminScreen({ onNewItem, onBack }) {
                 <div key={r.id} style={{background:C.white, borderRadius:10, padding:"10px 14px", marginBottom:8, border:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{fontSize:13, fontWeight:700, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.title}</div>
-                    <div style={{fontSize:11, color:C.sub}}>{r.type==="recit"?"📖 Récit":"🔬 RETEX"} · {r.date}</div>
+                    <div style={{fontSize:11, color:C.sub}}>{r.type==="recit"?"📖 Cas":"🔬 RETEX"} · {r.date}</div>
                   </div>
                   <button onClick={async()=>{ await removeRetexItem(r.id); }}
                     style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", flexShrink:0, marginLeft:8}}>Suppr.</button>
@@ -31816,9 +32094,9 @@ function AppInner() {
     });
   }
 
-  const { notifs, pushNotif, clearAll } = useNotifications();
+  const { notifs, pushNotif, clearAll, markSeen, unread } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
-  const unreadCount = notifs.length;
+  const unreadCount = unread;
 
   function navigate(screenId, favoriItem) {
     // Pousser l'écran courant dans l'historique sauf si c'est déjà le même ou si on va sur home
@@ -31928,7 +32206,7 @@ function AppInner() {
 
           {/* Cloche notifications */}
           <div style={{position:"relative"}}>
-            <button onClick={()=>setNotifOpen(o=>!o)} style={{
+            <button onClick={()=>{ setNotifOpen(o=>{ const nv=!o; if(nv) markSeen(); return nv; }); }} style={{
               background: notifOpen ? "rgba(255,255,255,.25)" : "rgba(255,255,255,.12)",
               border: "1.5px solid rgba(255,255,255,.25)",
               borderRadius:10, width:36, height:36, cursor:"pointer",
@@ -31982,7 +32260,7 @@ function AppInner() {
       >
         {screen==="home"       && <HomeScreen onNav={navigate}/>}
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
-        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack} pushNotif={pushNotif}/>}
         {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
