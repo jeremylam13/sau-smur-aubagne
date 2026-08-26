@@ -148,7 +148,9 @@ function AuthProvider({ children }) {
 
   const role = profile?.role || "consultatif";
   const profession = profile?.profession || null;
-  const roleLabel = profession ? (PROFESSION_LABELS[profession] || ROLE_LABELS[role]) : ROLE_LABELS[role];
+  const roleLabel = (role === "consultatif" && profession)
+    ? (PROFESSION_LABELS[profession] || ROLE_LABELS.consultatif)
+    : ROLE_LABELS[role];
 
   return (
     <AuthCtx.Provider value={{ session, profile, role, profession, roleLabel, loading, authError, signIn, signOut, changePassword, isAdmin: role === "admin", isMedecin: role === "medecin", canPublish: role === "admin" || role === "medecin" }}>
