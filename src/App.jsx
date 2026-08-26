@@ -200,12 +200,13 @@ function LoginScreen() {
 }
 
 function AccountModal({ onClose }) {
-  const { session, roleLabel, changePassword } = useAuth();
+  const { session, roleLabel, changePassword, signOut } = useAuth();
   const [pwd1, setPwd1] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   async function handleSubmit() {
     setError(null);
@@ -244,6 +245,22 @@ function AccountModal({ onClose }) {
           background: busy ? "#94A3B8" : "#1A3A5C", color:"#fff", fontSize:14, fontWeight:700,
           cursor: busy?"default":"pointer", marginBottom:10,
         }}>{busy ? "Enregistrement…" : "Valider"}</button>
+
+        <div style={{borderTop:"1px solid #E2E8F0", margin:"14px 0", paddingTop:14}}>
+          {!confirmLogout ? (
+            <button onClick={()=>setConfirmLogout(true)} style={{width:"100%", padding:"10px", borderRadius:10, border:"1px solid #FCA5A5", background:"#FEF2F2", color:"#DC2626", fontSize:13.5, fontWeight:700, cursor:"pointer"}}>
+              🚪 Se déconnecter
+            </button>
+          ) : (
+            <div>
+              <div style={{fontSize:12.5, color:"#334155", marginBottom:8, fontWeight:600}}>Confirmer la déconnexion ?</div>
+              <div style={{display:"flex", gap:8}}>
+                <button onClick={()=>setConfirmLogout(false)} style={{flex:1, padding:"9px 0", borderRadius:8, border:"1px solid #E2E8F0", background:"none", fontSize:12.5, cursor:"pointer"}}>Annuler</button>
+                <button onClick={signOut} style={{flex:1, padding:"9px 0", borderRadius:8, border:"none", background:"#DC2626", color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer"}}>Quitter</button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <button onClick={onClose} style={{width:"100%", padding:"10px", borderRadius:10, border:"1px solid #E2E8F0", background:"none", fontSize:13.5, color:"#64748B", cursor:"pointer"}}>Fermer</button>
       </div>
@@ -32322,7 +32339,6 @@ function AppInner() {
   const [notifOpen, setNotifOpen] = useState(false);
   const unreadCount = unread;
   const { signOut, roleLabel } = useAuth();
-  const [confirmLogout, setConfirmLogout] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
 
   function navigate(screenId, favoriItem) {
@@ -32460,30 +32476,12 @@ function AppInner() {
             )}
           </div>
 
-          {/* Rôle / Mon compte */}
+          {/* Rôle / Mon compte (déconnexion accessible depuis cette fenêtre) */}
           <button onClick={()=>setAccountOpen(true)} style={{
             background:"rgba(255,255,255,.12)", border:"1.5px solid rgba(255,255,255,.25)",
             borderRadius:20, padding:"5px 10px", cursor:"pointer", color:"#fff",
             fontSize:11, fontWeight:700, whiteSpace:"nowrap",
           }}>{roleLabel}</button>
-
-          {/* Déconnexion */}
-          <div style={{position:"relative"}}>
-            <button onClick={()=>setConfirmLogout(v=>!v)} title="Déconnexion" style={{
-              background:"rgba(255,255,255,.12)", border:"1.5px solid rgba(255,255,255,.25)",
-              borderRadius:10, width:36, height:36, cursor:"pointer",
-              display:"flex", alignItems:"center", justifyContent:"center", fontSize:16,
-            }}>🚪</button>
-            {confirmLogout && (
-              <div style={{position:"absolute", top:42, right:0, background:theme.white, borderRadius:12, padding:12, width:180, boxShadow:"0 8px 24px rgba(0,0,0,.15)", zIndex:50}}>
-                <div style={{fontSize:12.5, color:theme.text, marginBottom:10, fontWeight:600}}>Se déconnecter ?</div>
-                <div style={{display:"flex", gap:8}}>
-                  <button onClick={()=>setConfirmLogout(false)} style={{flex:1, padding:"7px 0", borderRadius:8, border:"1px solid "+theme.border, background:"none", fontSize:12.5, cursor:"pointer"}}>Annuler</button>
-                  <button onClick={signOut} style={{flex:1, padding:"7px 0", borderRadius:8, border:"none", background:"#DC2626", color:"#fff", fontSize:12.5, fontWeight:700, cursor:"pointer"}}>Quitter</button>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
       {accountOpen && <AccountModal onClose={()=>setAccountOpen(false)}/>}
