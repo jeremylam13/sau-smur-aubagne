@@ -268,6 +268,110 @@ function AccountModal({ onClose }) {
   );
 }
 
+const ROLE_OPTIONS = [
+  { value: "admin", label: "🛡️ Administrateur" },
+  { value: "medecin", label: "🩺 Médecin" },
+  { value: "consultatif", label: "👤 Consultatif" },
+];
+const PROFESSION_OPTIONS = [
+  { value: "", label: "— Profession —" },
+  { value: "medecin", label: "Médecin" },
+  { value: "interne", label: "Interne" },
+  { value: "infirmier", label: "Infirmier" },
+  { value: "aide_soignant", label: "Aide-soignant" },
+  { value: "ambulancier", label: "Ambulancier" },
+  { value: "cadre", label: "Cadre" },
+  { value: "autre", label: "Autre" },
+];
+
+function AccountsAdminScreen({ onBack }) {
+  const { isAdmin, session } = useAuth();
+  const [profiles, setProfiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState(null);
+  const [error, setError] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const rows = await supaFetch("/profiles?select=*&order=created_at.desc");
+      setProfiles(rows);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function updateProfile(id, patch) {
+    setSavingId(id);
+    setError(null);
+    try {
+      await supaFetch("/profiles?id=eq." + id, "PATCH", patch);
+      setProfiles(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <div style={{padding:30, textAlign:"center", color:"#64748B"}}>
+        <button onClick={onBack} style={{background:"none", border:"none", fontSize:20, cursor:"pointer", marginBottom:16}}>←</button>
+        <div>Accès réservé aux administrateurs.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:16}}>
+        <button onClick={onBack} style={{background:"none", border:"none", fontSize:20, cursor:"pointer"}}>←</button>
+        <div style={{fontSize:18, fontWeight:800, color:"#1A3A5C"}}>Comptes utilisateurs</div>
+      </div>
+
+      <div style={{fontSize:12.5, color:"#94A3B8", marginBottom:16, lineHeight:1.5}}>
+        Les comptes eux-mêmes sont encore créés manuellement (pas d'inscription automatique).
+        Ici tu peux ajuster le rôle et la profession de chaque personne déjà créée.
+      </div>
+
+      {loading && <div style={{color:"#94A3B8", textAlign:"center", padding:20}}>Chargement…</div>}
+      {error && <div style={{color:"#DC2626", fontSize:13, marginBottom:12, background:"#FEF2F2", padding:10, borderRadius:8}}>{error}</div>}
+
+      {!loading && profiles.length === 0 && (
+        <div style={{color:"#94A3B8", textAlign:"center", padding:20}}>Aucun compte pour l'instant.</div>
+      )}
+
+      {profiles.map(p => (
+        <div key={p.id} style={{background:"#fff", borderRadius:14, padding:14, marginBottom:10, boxShadow:"0 2px 8px rgba(0,0,0,.05)"}}>
+          <div style={{fontWeight:700, fontSize:14, color:"#1A3A5C"}}>
+            {p.email || p.id}
+            {p.id === session?.user?.id && <span style={{fontSize:11, color:"#94A3B8", fontWeight:600}}> (toi)</span>}
+          </div>
+          {(p.nom || p.prenom) && (
+            <div style={{fontSize:12.5, color:"#64748B", marginBottom:8}}>{p.prenom} {p.nom}</div>
+          )}
+          <div style={{display:"flex", gap:8, marginTop:8, flexWrap:"wrap"}}>
+            <select value={p.role || "consultatif"} onChange={e => updateProfile(p.id, { role: e.target.value })}
+              style={{flex:"1 1 140px", padding:"8px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13, background:"#fff"}}>
+              {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select value={p.profession || ""} onChange={e => updateProfile(p.id, { profession: e.target.value || null })}
+              style={{flex:"1 1 140px", padding:"8px 10px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:13, background:"#fff"}}>
+              {PROFESSION_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {savingId === p.id && <div style={{fontSize:11, color:"#94A3B8", marginTop:6}}>Enregistrement…</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Identifiant unique d'appareil (anti double-vote sondages)
 function getDeviceId() {
   try {
@@ -1751,6 +1855,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
 // - HomeScreen -
 function HomeScreen({onNav}) {
   const C = useC();
+  const { isAdmin } = useAuth();
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const allData = useGlobalSearch();
@@ -1807,7 +1912,7 @@ function HomeScreen({onNav}) {
     // ── Ligne 5 ──
     {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9"},
-  ];
+  ].concat(isAdmin ? [{id:"comptes", icon:"👥", label:"Comptes", color:"#475569", bg:"#F1F5F9"}] : []);
 
   const isSearching = searchFocused && query.trim().length>0;
 
@@ -32528,6 +32633,7 @@ function AppInner() {
         {screen==="echo"       && <EchoScreen key={"echo-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
+        {screen==="comptes"    && <AccountsAdminScreen onBack={goBack}/>}
       </div>
 
       <div style={{position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:theme.white, borderTop:`1px solid ${theme.border}`, display:"flex", padding:"8px 0 12px", boxShadow:"0 -4px 20px rgba(26,58,92,.08)", transition:"background .25s"}}>
