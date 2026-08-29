@@ -28659,6 +28659,136 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#B91C1C",
   },
   {
+    id:"aspegic", cat:"cardio", groupe:"Antiagrégant",
+    nom:"Acide acétylsalicylique (Aspégic)", amp:"Flacon poudre 500 mg",
+    voie:"IVD", isDoseFixe:true,
+    variantes:[
+      { label:"AVC / SCA", prepa:"Reconstituer 1 flacon (500 mg) dans 5 mL d'EPPI → 100 mg/mL.", dose:250, unite:"mg", volume:2.5 },
+      { label:"Péricardite", prepa:"Reconstituer 2 flacons (1000 mg) dans 10 mL d'EPPI → 100 mg/mL.", dose:1000, unite:"mg", volume:10 },
+    ],
+    remarques:"Péricardite : administrer la totalité du volume préparé (10 mL).",
+    color:"#DC2626",
+  },
+  {
+    id:"adrenaline_adulte", cat:"cardio", groupe:"Urgence vitale",
+    nom:"Adrénaline", amp:"5 mg / 5 mL", concentration:1,
+    voie:"IVD", isDoseFixe:true,
+    variantes:[
+      { label:"ACR — rythme non choquable", prepa:"Prélever 1 ampoule pure (5 mg/5 mL) dans une seringue de 5 mL.", dose:1, unite:"mg", volume:1 },
+      { label:"ACR — rythme choquable (après le 3ᵉ CEE)", prepa:"Prélever 1 ampoule pure (5 mg/5 mL) dans une seringue de 5 mL.", dose:1, unite:"mg", volume:1 },
+      { label:"Anaphylaxie (IM)", prepa:"Prélever 0,5 mL d'une ampoule de 5 mg/5 mL.", dose:0.5, unite:"mg", volume:0.5 },
+    ],
+    indication:"Arrêt cardiaque / choc anaphylactique.",
+    remarques:"ACR : rythme non choquable → 1 mg dès que possible puis toutes les 4 min. Rythme choquable → 1 mg après le 3ᵉ CEE puis toutes les 4 min. Anaphylaxie : 0,5 mg en IM (voie IM ++), à renouveler à 5 min si inefficace.",
+    color:"#DC2626",
+  },
+  {
+    id:"amiodarone_adulte", cat:"cardio", groupe:"Antiarythmique",
+    nom:"Amiodarone (Cordarone)", amp:"150 mg / 3 mL", concentration:50,
+    voie:"PSE / IVD selon contexte", isDoseFixe:true,
+    variantes:[
+      { label:"Trouble du rythme mal toléré / cardioversion FA", prepa:"2 ampoules (300 mg) complétées à 20 mL avec du G5% → à passer sur 30 min au PSE (≈ 40 mL/h).", dose:300, unite:"mg", volume:20 },
+      { label:"ACR — après le 3ᵉ CEE", prepa:"2 ampoules pures.", dose:300, unite:"mg", volume:6 },
+      { label:"ACR — après le 5ᵉ CEE", prepa:"1 ampoule pure.", dose:150, unite:"mg", volume:3 },
+    ],
+    indication:"Trouble du rythme mal toléré, cardioversion de FA, arrêt cardiaque sur rythme choquable.",
+    remarques:"Trouble du rythme / cardioversion : perfusion PSE sur 30 min. ACR : bolus IVD 300 mg après le 3ᵉ CEE, puis 150 mg après le 5ᵉ CEE.",
+    color:"#DC2626",
+  },
+  {
+    id:"atenolol_adulte", cat:"cardio", groupe:"Bêtabloquant",
+    nom:"Aténolol (Ténormine)", amp:"5 mg / 10 mL", concentration:0.5,
+    voie:"IVDL 5 min", isDoseFixe:true,
+    variantes:[
+      { label:"Dose unique", prepa:"Prélever 1 ampoule pure (5 mg/10 mL).", dose:5, unite:"mg", volume:10 },
+    ],
+    indication:"Poussée hypertensive, ralentissement de FA, syndrome aortique aigu.",
+    remarques:"5 mg IVDL sur 5 min. À renouveler à 15 min si besoin.",
+    color:"#DC2626",
+  },
+  {
+    id:"bicarbonate_84_adulte", cat:"cardio", groupe:"Réanimation",
+    nom:"Bicarbonate de sodium 8,4%", amp:"Flacon 250 mL (1 mL = 1 mmol)",
+    voie:"IVDL", isDoseFixe:true,
+    variantes:[
+      { label:"Arrêt cardiaque sur hyperkaliémie", prepa:"Pure.", dose:50, unite:"mL" },
+      { label:"Intoxication aux stabilisants de membrane", prepa:"Pure. Débuter par 250 mL (flacon entier), puis adapter selon l'affinement des QRS.", dose:250, unite:"mL" },
+    ],
+    indication:"Arrêt cardiaque sur hyperkaliémie, intoxication grave par produits stabilisants de membrane.",
+    remarques:"⚠️ Concentration 8,4% (différente du 4,2% utilisé en pédiatrie). Arrêt cardiaque : 50 mL en IVDL. Intoxication : débuter par 250 mL puis adapter selon l'affinement des QRS.",
+    color:"#DC2626",
+  },
+  {
+    id:"gluconate_calcium_adulte", cat:"cardio", groupe:"Réanimation",
+    nom:"Gluconate de calcium", amp:"1 g / 10 mL", concentration:0.1,
+    voie:"IVL / IVD selon contexte", isDoseFixe:true,
+    variantes:[
+      { label:"Hyperkaliémie menaçante / Transfusion massive / Hypocalcémie aiguë", prepa:"Prélever 3 ampoules (3 g) et diluer dans 100 mL de NaCl 0,9%. IVL sur 10 min, à renouveler tant que les anomalies persistent (ECG pour l'hyperkaliémie).", dose:3, unite:"g" },
+      { label:"Arrêt cardiaque sur hyperkaliémie", prepa:"3 ampoules pures (3 g / 30 mL).", dose:3, unite:"g", volume:30 },
+    ],
+    indication:"Hyperkaliémie menaçante, arrêt cardiaque sur hyperkaliémie, transfusion massive, hypocalcémie aiguë.",
+    remarques:"Hors ACR : 3 g diluées dans 100 mL NaCl, IVL sur 10 min, à renouveler tant que les anomalies ne disparaissent pas. ACR : 3 g en IVD (bolus pur).",
+    color:"#DC2626",
+  },
+  {
+    id:"digoxine_adulte", cat:"cardio", groupe:"Antiarythmique",
+    nom:"Digoxine", amp:"0,5 mg / 2 mL",
+    voie:"IVL 10 min", isDoseFixe:true,
+    variantes:[
+      { label:"Dose unique", prepa:"Prélever 1 ampoule (0,5 mg) et diluer dans une poche de 100 mL de NaCl 0,9%.", dose:0.5, unite:"mg" },
+    ],
+    indication:"Contrôle de la fréquence cardiaque dans la FA ou le flutter auriculaire, sur cardiopathie préexistante.",
+    remarques:"0,5 mg en IVL sur 10 min.",
+    color:"#DC2626",
+  },
+  {
+    id:"esmolol_adulte", cat:"cardio", groupe:"Bêtabloquant",
+    nom:"Esmolol (Brevibloc)", amp:"100 mg / 10 mL", concentration:10,
+    voie:"IVD puis PSE", isDoseFixe:true,
+    variantes:[
+      { label:"Dose de charge", prepa:"À laisser passer sur 1 min.", mgKgUnique:0.5, unite:"mg", concentration:10 },
+      { label:"Entretien PSE", mgKgHMin:6, mgKgHMax:6 },
+    ],
+    indication:"Arrêt cardiaque : FV réfractaire malgré la 2ᵉ dose d'amiodarone (après le 5ᵉ CEE).",
+    remarques:"Dose de charge 0,5 mg/kg à laisser passer sur 1 min, puis entretien 6 mg/kg/h.",
+    color:"#DC2626",
+  },
+  {
+    id:"erythromycine_adulte", cat:"digestif", groupe:"Prokinétique",
+    nom:"Érythromycine", amp:"Flacon poudre 500 mg",
+    voie:"IVL 30 min", isDoseFixe:true,
+    variantes:[
+      { label:"Dose unique", prepa:"Reconstituer le flacon (500 mg) avec 10 mL d'EPPI → 50 mg/mL. Prélever la moitié (5 mL) et diluer dans une poche de 50 mL de NaCl 0,9%.", dose:250, unite:"mg", volume:5 },
+    ],
+    indication:"Vidange gastrique avant FOGD.",
+    remarques:"250 mg en IVL sur 30 min, à passer 30 à 60 min avant le geste.",
+    color:"#65A30D",
+  },
+  {
+    id:"adenosine", cat:"cardio", groupe:"Antiarythmique",
+    nom:"Adénosine (Krenosin)", amp:"6 mg / 2 mL", concentration:3,
+    voie:"IVD flash", isDoseFixe:true,
+    variantes:[
+      { label:"1ère dose", prepa:"Pure — prélever 2 flacons (6 mg/2 mL chacun) avec une seringue de 10 mL.", dose:12, unite:"mg", volume:4 },
+      { label:"2ème dose (si inefficace)", prepa:"Pure — prélever 3 flacons.", dose:18, unite:"mg", volume:6 },
+    ],
+    indication:"Tachycardie jonctionnelle (réduction).",
+    remarques:"Injection IVD flash suivie d'une rinçure au NaCl 0,9%. Prévenir le patient (sensation de malaise bref). Scope et défibrillateur à proximité.",
+    color:"#DC2626",
+  },
+  {
+    id:"striadyne_adulte", cat:"cardio", groupe:"Antiarythmique",
+    nom:"Striadyne (ATP)", amp:"20 mg / 2 mL", concentration:10,
+    voie:"IVD flash", isDoseFixe:true,
+    variantes:[
+      { label:"1ère dose", prepa:"1 ampoule pure.", dose:20, unite:"mg", volume:2 },
+      { label:"2ème dose (si inefficace)", prepa:"1 ampoule pure.", dose:20, unite:"mg", volume:2 },
+    ],
+    indication:"Tachycardie jonctionnelle (réduction).",
+    remarques:"Injection IVD flash. À renouveler une fois si la 1ère dose est inefficace. Prévenir le patient (sensation de malaise bref). Scope et défibrillateur à proximité.",
+    color:"#DC2626",
+  },
+  {
     id:"hnf", cat:"cardio", groupe:"Anticoagulation",
     nom:"HNF (Héparine non fractionnée)", amp:"Flacon 25 000 UI / 5 mL",
     indication:"Embolie pulmonaire",
@@ -28741,6 +28871,41 @@ const CALC_ADULTE_MEDICAMENTS = [
     remarques:"Flacon 5 g / 25 mL (200 mg/mL). Surveiller la survenue de réactions anaphylactoïdes, surtout pendant la dose de charge (ralentir si besoin).",
     color:"#059669",
   },
+  {
+    id:"flumazenil", cat:"antidote", groupe:"Antidote benzodiazépines",
+    nom:"Flumazénil (Anexate)", amp:"0,5 mg / 5 mL", concentration:0.1,
+    voie:"IVDL", isDoseFixe:true,
+    variantes:[
+      { label:"Bolus (titration)", prepa:"Pure — 0,1 mg/mL.", dose:0.1, unite:"mg", volume:1 },
+    ],
+    indication:"Antagonisation des benzodiazépines.",
+    remarques:"Bolus 0,1 mg (1 mL) en IVDL toutes les 30 secondes jusqu'à obtention d'une conscience et FR > 14/min. Max 2 mg au total. Si le bolus est efficace, relais possible en entretien PSE : 2 ampoules (1 mg) complétées avec 40 mL de NaCl 0,9% (50 mL au total) → 0,02 mg/mL. Débit horaire de l'entretien = dose de titration qui s'est révélée efficace.",
+    color:"#059669",
+  },
+  {
+    id:"exacyl_adulte", cat:"antidote", groupe:"Hémostatique",
+    nom:"Acide tranexamique (Exacyl)", amp:"0,5 g / 5 mL",
+    voie:"IVL 10 min", isDoseFixe:true,
+    variantes:[
+      { label:"Dose unique", prepa:"Prélever 2 ampoules (1 g) et diluer dans une poche de 100 mL de NaCl 0,9%. À passer en 10 min.", dose:1, unite:"g" },
+    ],
+    indication:"Hémorragie traumatique (CRASH-2, dans les 3h du traumatisme).",
+    remarques:"1 g IVL sur 10 min.",
+    color:"#059669",
+  },
+  {
+    id:"atropine_adulte", cat:"cardio", groupe:"Bradycardie / Antidote organophosphorés",
+    nom:"Sulfate d'atropine", amp:"1 mg / 1 mL (bradycardie) — 40 mg / 20 mL (antidote)",
+    voie:"IVD / IM selon contexte", isDoseFixe:true,
+    variantes:[
+      { label:"Bradycardie mal tolérée / trouble conductif", prepa:"Prélever 1 ampoule (1 mg/1 mL) dans une seringue de 2 mL.", dose:1, unite:"mg", volume:1 },
+      { label:"Antidote organophosphorés — dose de charge", prepa:"Utiliser l'ampoule 40 mg/20 mL (2 mg/mL).", dose:2, unite:"mg", volume:1 },
+      { label:"Antidote organophosphorés — entretien", mgKgHMin:0.02, mgKgHMax:0.08 },
+    ],
+    indication:"Bradycardie mal tolérée, trouble de la conduction auriculo-ventriculaire, antidote de l'intoxication aux organophosphorés.",
+    remarques:"Bradycardie : bolus 1 mg en titration toutes les 3-5 min, sans dépasser 3 mg. Organophosphorés : dose de charge 2 mg en IVD ou IM, jusqu'à levée des signes muscariniques (sécrétions bronchiques, bronchoconstriction), puis entretien 0,02 à 0,08 mg/kg/h.",
+    color:"#059669",
+  },
 ];
 
 // Catégories avec config affichage
@@ -28752,6 +28917,7 @@ const CALC_ADULTE_CATS = [
   { key:"analgesie_in",     label:"Intranasal",                icon:"👃", color:"#7C3AED", bg:"#F3E8FF" },
   { key:"infectieux",       label:"Infectieux",                icon:"🦠", color:"#16A34A", bg:"#DCFCE7" },
   { key:"cardio",           label:"Cardio-vasculaire",         icon:"❤️", color:"#DC2626", bg:"#FEE2E2" },
+  { key:"digestif",         label:"Digestif",                  icon:"🫃", color:"#65A30D", bg:"#ECFCCB" },
   { key:"osmotherapie",     label:"Osmothérapie",              icon:"💧", color:"#0891B2", bg:"#CFFAFE" },
   { key:"antiepileptique",  label:"Antiépileptiques",          icon:"🧠", color:"#CA8A04", bg:"#FEF9C3" },
   { key:"antidote",         label:"Antidotes",                 icon:"🧪", color:"#059669", bg:"#D1FAE5" },
@@ -29290,6 +29456,81 @@ function CalcAdulteGardenalCard({ medic, poids, color }) {
   );
 }
 
+// ── Carte spéciale : dose fixe non calculée au poids (ex : Aspégic) ──────────
+function CalcAdulteDoseFixeCard({ medic, poids, color }) {
+  const C = useC();
+  const aVarianteAuPoids = (medic.variantes || []).some(v => v.mgKgHMin != null || v.mgKgUnique != null);
+
+  return (
+    <div style={{background:C.white, border:`1.5px dashed ${color}`, borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:4}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      <div style={{display:"inline-block", background:"#F1F5F9", color:C.sub, fontSize:9.5, fontWeight:800, borderRadius:6, padding:"2px 8px", marginBottom:10, letterSpacing:.3}}>
+        {aVarianteAuPoids ? "⚖️ CALCULÉ AU POIDS" : "⚖️ DOSE FIXE — non calculée au poids"}
+      </div>
+
+      {/* Une ou plusieurs variantes (ex : indications différentes) */}
+      {(medic.variantes || []).map((v, i) => (
+        <div key={i} style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+          <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>{v.label}</div>
+          <div style={{padding:"10px 12px"}}>
+            {v.prepa && <div style={{fontSize:11.5, color:C.text, lineHeight:1.5, marginBottom:8}}>🧪 {v.prepa}</div>}
+            {v.mgKgHMin != null ? (
+              <div>
+                <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DÉBIT D'ENTRETIEN (pour {poids} kg)</div>
+                <div style={{fontSize:20, fontWeight:900, color:C.text}}>
+                  {Math.round(v.mgKgHMin*poids*100)/100} – {Math.round(v.mgKgHMax*poids*100)/100} <span style={{fontSize:12}}>mg/h</span>
+                </div>
+                <div style={{fontSize:9, color:C.sub, marginTop:2}}>{v.mgKgHMin}-{v.mgKgHMax} mg/kg/h</div>
+              </div>
+            ) : v.mgKgUnique != null ? (
+              <div style={{display:"flex", gap:16}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE (pour {poids} kg)</div>
+                  <div style={{fontSize:20, fontWeight:900, color:C.text}}>
+                    {Math.round(v.mgKgUnique*poids*100)/100} <span style={{fontSize:12}}>{v.unite}</span>
+                  </div>
+                  <div style={{fontSize:9, color:C.sub, marginTop:2}}>{v.mgKgUnique} {v.unite}/kg</div>
+                </div>
+                {v.concentration != null && (
+                  <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+                    <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+                    <div style={{fontSize:20, fontWeight:900, color}}>
+                      {Math.round((v.mgKgUnique*poids/v.concentration)*100)/100} <span style={{fontSize:12}}>mL</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{display:"flex", gap:16}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+                  <div style={{fontSize:20, fontWeight:900, color:C.text}}>{v.dose} <span style={{fontSize:12}}>{v.unite}</span></div>
+                </div>
+                {v.volume != null && (
+                  <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+                    <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+                    <div style={{fontSize:20, fontWeight:900, color}}>{v.volume} <span style={{fontSize:12}}>mL</span></div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {medic.frequence && <div style={{fontSize:11, color:C.sub, marginBottom:3}}>⏱️ {medic.frequence}</div>}
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
 function CalcAdulteCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
@@ -29332,6 +29573,11 @@ function CalcAdulteCard({ medic, poids }) {
   // Cas spécial : Gardénal (flacons entiers, volume de dose, vitesse PSE 20 min)
   if (medic.isGardenal) {
     return <CalcAdulteGardenalCard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : dose fixe non calculée au poids (ex : Aspégic)
+  if (medic.isDoseFixe) {
+    return <CalcAdulteDoseFixeCard medic={medic} poids={poids} color={color}/>;
   }
 
   // Calcul dose de base
