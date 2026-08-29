@@ -28531,8 +28531,9 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"morphine", cat:"analgesie", groupe:"Analgésie IV",
     nom:"Morphine (titration)", amp:"10 mg / 1 mL", concentration:10, unite:"mg",
-    doseMin:0.05, doseMax:0.05,
-    voie:"IVD / 5 min", remarques:"Renouvelable toutes les 5 min jusqu'à EVA < 3. Diluer 1 mg/mL.",
+    isDoseSeuilPoids:true,
+    seuilPoids:60, doseInf:2, doseSup:3,
+    voie:"IVD / 5 min", remarques:"Bolus initial : ≤ 60 kg → 2 mg ; > 60 kg → 3 mg. Renouvelable toutes les 5 min jusqu'à EVA < 3. Diluer 1 mg/mL.",
     color:"#EA580C",
   },
   // ── Sédation ─────────────────────────────────────────────────────────────
@@ -28589,12 +28590,12 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#7C3AED",
   },
   {
-    id:"midazolam_in_epi", cat:"analgesie_in", groupe:"Intranasal",
-    nom:"Midazolam IN — Épilepsie", amp:"5 mg/mL", concentration:5, unite:"mg",
-    doseMin:0.2, doseMax:0.2,
-    voie:"IN", isIN:true,
-    remarques:"État de mal épileptique. Atomiseur MAD. +0,1 mL espace mort inclus.",
-    color:"#7C3AED",
+    id:"midazolam_im_epi", cat:"antiepileptique", groupe:"Antiépileptiques",
+    nom:"Midazolam IM — Épilepsie", amp:"5 mg/mL", concentration:5, unite:"mg",
+    doseMin:10, doseMax:10, isFixedDose:true,
+    voie:"IM",
+    remarques:"État de mal épileptique. 10 mg en IM. Seulement si VVP indisponible.",
+    color:"#CA8A04",
   },
   {
     id:"ketamine_in", cat:"analgesie_in", groupe:"Intranasal",
@@ -28660,13 +28661,14 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"hnf", cat:"cardio", groupe:"Anticoagulation",
     nom:"HNF (Héparine non fractionnée)", amp:"Flacon 25 000 UI / 5 mL",
+    indication:"Embolie pulmonaire",
     voie:"IVD + PSE",
     isAnticoag:true,
     concentrationPrep:500,      // 500 UI/mL après dilution
     bolusUIkg:80,               // 80 UI/kg
     entretienUIkgH:18,          // 18 UI/kg/h
     preparation:"Prélever 1 ampoule de 25 000 UI (5 mL) et compléter à 50 mL avec du NaCl 0,9% → 500 UI/mL.",
-    remarques:"Anticoagulation curative. Bolus 80 UI/kg puis entretien 18 UI/kg/h au PSE. Adapter secondairement selon TCA / anti-Xa (premier contrôle à H4-H6). Surveiller le risque hémorragique.",
+    remarques:"Embolie pulmonaire. Bolus 80 UI/kg puis entretien 18 UI/kg/h au PSE. Adapter secondairement selon TCA / anti-Xa (premier contrôle à H4-H6). Surveiller le risque hémorragique.",
     color:"#DC2626",
   },
 
@@ -28683,18 +28685,18 @@ const CALC_ADULTE_MEDICAMENTS = [
   // ── Antiépileptiques ──────────────────────────────────────────────────────
   {
     id:"gardenal", cat:"antiepileptique", groupe:"Antiépileptiques",
-    nom:"Gardénal (Phénobarbital)", amp:"200 mg / flacon (poudre)", concentration:100, unite:"mg",
+    nom:"Gardénal (Phénobarbital)", amp:"200 mg / flacon (poudre)", concentrationPrep:20, unite:"mg",
     doseMin:15, doseMax:15,
-    voie:"IVSE", isGardenal:true,
-    remarques:"Ne pas dépasser 100 mg/min. Reconstituer dans 2 mL EPPI = 100 mg/mL.",
+    voie:"PSE / 20 min", isGardenal:true,
+    remarques:"État de mal épileptique. Reconstituer chaque flacon dans 10 mL d'EPPI → 20 mg/mL. À passer au PSE en 20 min, sans dépasser 100 mg/min. Administrer la totalité de la dose même si la crise s'arrête.",
     color:"#CA8A04",
   },
   {
     id:"keppra", cat:"antiepileptique", groupe:"Antiépileptiques",
     nom:"Keppra (Lévétiracétam)", amp:"500 mg / 5 mL", concentration:100, unite:"mg",
     doseMin:60, doseMax:60,
-    doseAbsMax:4000,
-    voie:"IVL 15 min", remarques:"60 mg/kg. Diluer dans 100 mL NaCl 0,9%. Max 4 g absolus.",
+    doseAbsMax:4000, flaconVolume:5,
+    voie:"IVL 15 min", remarques:"60 mg/kg. Prélever le volume nécessaire et transférer dans une poche de 100 mL de NaCl 0,9%, à passer en 15 min. Max 4 g absolus.",
     color:"#CA8A04",
   },
   // ── Antidotes ──────────────────────────────────────────────────────────────
@@ -28869,6 +28871,7 @@ function CalcAdulteAnticoagCard({ medic, poids, color }) {
         <div style={{flex:1}}>
           <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
           {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+          {medic.indication && <div style={{fontSize:11, color, fontWeight:700, marginTop:2}}>{medic.indication}</div>}
         </div>
         {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
       </div>
@@ -29189,6 +29192,104 @@ function CalcAdultePSECard({ medic, poids, color }) {
 }
 
 // ── Composant carte médicament ──
+// ── Carte spéciale : dose fixe selon seuil de poids (ex : Morphine bolus) ──
+function CalcAdulteDoseSeuilCard({ medic, poids, color }) {
+  const C = useC();
+  const dose = poids <= medic.seuilPoids ? medic.doseInf : medic.doseSup;
+  const vol = medic.concentration ? Math.round((dose / medic.concentration) * 100) / 100 : null;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Pour <span style={{color, fontWeight:900}}>{poids} kg</span> — {poids <= medic.seuilPoids ? `≤ ${medic.seuilPoids} kg` : `> ${medic.seuilPoids} kg`}
+      </div>
+
+      <div style={{background:color+"12", border:`1.5px solid ${color}44`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
+        <div style={{display:"flex", gap:16}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+            <div style={{fontSize:22, fontWeight:900, color:C.text}}>{dose} <span style={{fontSize:12}}>{medic.unite}</span></div>
+          </div>
+          {vol != null && (
+            <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+              <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+              <div style={{fontSize:22, fontWeight:900, color}}>{vol} <span style={{fontSize:12}}>mL</span></div>
+            </div>
+          )}
+        </div>
+        <div style={{fontSize:10, color:C.sub, marginTop:4}}>≤ {medic.seuilPoids} kg → {medic.doseInf} {medic.unite} · &gt; {medic.seuilPoids} kg → {medic.doseSup} {medic.unite}</div>
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ── Carte spéciale : Gardénal (flacons entiers, volume de dose, PSE 20 min) ──
+function CalcAdulteGardenalCard({ medic, poids, color }) {
+  const C = useC();
+  const conc = medic.concentrationPrep;         // 20 mg/mL après reconstitution
+  const doseParKg = medic.doseMin;              // 15 mg/kg
+  const doseMg = Math.round(doseParKg * poids); // dose totale en mg
+  const flaconMg = 200;                         // 1 flacon = 200 mg reconstitué dans 10 mL
+  const nbFlacons = Math.ceil(doseMg / flaconMg);
+  const volMl = Math.round((doseMg / conc) * 10) / 10;   // volume de la dose à administrer
+  const vitesseMlh = Math.round((volMl / 20 * 60) * 10) / 10; // vitesse PSE sur 20 min
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {/* Nombre de flacons + reconstitution */}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"10px 12px", marginBottom:10, textAlign:"center"}}>
+        <div style={{fontSize:10, color:C.sub, fontWeight:700, marginBottom:2}}>FLACONS À RECONSTITUER</div>
+        <div style={{fontSize:26, fontWeight:900, color, lineHeight:1}}>{nbFlacons} <span style={{fontSize:13}}>flacon{nbFlacons>1?"s":""}</span></div>
+        <div style={{fontSize:10, color:C.sub, marginTop:4}}>Chaque flacon (200 mg) reconstitué dans 10 mL d'EPPI → 20 mg/mL</div>
+      </div>
+
+      {/* Dose + volume + vitesse */}
+      <div style={{display:"flex", gap:8, marginBottom:8}}>
+        <div style={{flex:1, background:color+"0E", borderRadius:10, padding:"10px", textAlign:"center"}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{doseMg} <span style={{fontSize:11}}>mg</span></div>
+          <div style={{fontSize:9, color:C.sub}}>{doseParKg} mg/kg</div>
+        </div>
+        <div style={{flex:1, background:color+"0E", borderRadius:10, padding:"10px", textAlign:"center"}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{volMl} <span style={{fontSize:11}}>mL</span></div>
+        </div>
+        <div style={{flex:1, background:"#FEF2F2", borderRadius:10, padding:"10px", textAlign:"center"}}>
+          <div style={{fontSize:10, color:"#DC2626", fontWeight:700}}>VITESSE PSE</div>
+          <div style={{fontSize:18, fontWeight:900, color:"#DC2626"}}>{vitesseMlh} <span style={{fontSize:11}}>mL/h</span></div>
+          <div style={{fontSize:9, color:C.sub}}>sur 20 min</div>
+        </div>
+      </div>
+
+      <div style={{background:"#FEF3C7", border:"1px solid #F59E0B", borderRadius:8, padding:"8px 10px", marginBottom:8, fontSize:11.5, color:C.text, lineHeight:1.5, fontWeight:600}}>
+        ⚠️ Administrer la totalité de la dose même si la crise s'arrête.
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
 function CalcAdulteCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
@@ -29223,6 +29324,16 @@ function CalcAdulteCard({ medic, poids }) {
     return <CalcAdulteNACCard medic={medic} poids={poids} color={color}/>;
   }
 
+  // Cas spécial : dose fixe par seuil de poids (ex : Morphine bolus)
+  if (medic.isDoseSeuilPoids) {
+    return <CalcAdulteDoseSeuilCard medic={medic} poids={poids} color={color}/>;
+  }
+
+  // Cas spécial : Gardénal (flacons entiers, volume de dose, vitesse PSE 20 min)
+  if (medic.isGardenal) {
+    return <CalcAdulteGardenalCard medic={medic} poids={poids} color={color}/>;
+  }
+
   // Calcul dose de base
   // isFixedDose : dose en valeur absolue (mg/µg), NON multipliée par le poids
   const rawMin = medic.isFixedDose ? medic.doseMin : medic.doseMin * poids;
@@ -29243,6 +29354,9 @@ function CalcAdulteCard({ medic, poids }) {
   // Pour la voie IN : ajouter l'espace mort au volume à prélever
   const volMin = hasVol ? (medic.isIN ? Math.round((volMinRaw + ESPACE_MORT) * 100) / 100 : Math.round(volMinRaw * 10) / 10) : null;
   const volMax = hasVol ? (medic.isIN ? Math.round((volMaxRaw + ESPACE_MORT) * 100) / 100 : Math.round(volMaxRaw * 10) / 10) : null;
+
+  // Nombre de flacons/ampoules nécessaires (arrondi supérieur)
+  const nbFlacons = medic.flaconVolume && volMax != null ? Math.ceil(volMax / medic.flaconVolume) : null;
 
   // Dose alt (sujet âgé) — fixe ou par kg selon isFixedDose
   let altMin = null, altMax = null;
@@ -29365,6 +29479,15 @@ function CalcAdulteCard({ medic, poids }) {
                   ? `(${isRange ? `${volMinRaw}-${volMaxRaw}` : volMinRaw} mL + 0,1 mL espace mort)`
                   : `(÷ ${medic.concentration} ${medic.unite}/mL)`}
               </span>
+            </div>
+          )}
+
+          {/* Nombre de flacons/ampoules */}
+          {nbFlacons != null && (
+            <div style={{display:"flex", alignItems:"center", gap:4, flexWrap:"wrap", paddingTop:6}}>
+              <span style={{fontSize:10, color:C.sub, fontWeight:600}}>Flacons à prélever :</span>
+              <span style={{fontSize:13, fontWeight:800, color}}>{nbFlacons} flacon{nbFlacons>1?"s":""}</span>
+              <span style={{fontSize:10, color:C.sub}}>({medic.flaconVolume} mL/flacon)</span>
             </div>
           )}
 
