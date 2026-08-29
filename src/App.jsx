@@ -436,8 +436,11 @@ function DataProvider({ children }) {
     const rg = await safeGet("admin_gestes");
     next.gestes = rg ? await loadFiles(JSON.parse(rg.value), ["image"]) : [];
 
-    const rr = await safeGet("retex_submissions");
-    next.retex = rr ? JSON.parse(rr.value) : [];
+    // RETEX/Cas — chargé depuis Supabase (source de vérité), pas depuis le cache local
+    try {
+      const rawRetex = await supaFetch("/retex?order=ts.desc");
+      next.retex = Array.isArray(rawRetex) ? rawRetex.map(r => rowToItem("retex", r)) : [];
+    } catch(e) { next.retex = []; }
 
     const rc = await safeGet("admin_contacts");
     next.contacts = rc ? JSON.parse(rc.value) : [];
@@ -1370,7 +1373,7 @@ function useGlobalSearch() {
         recoflash: [],
       };
       try { const r=await safeGet("admin_ecgs");        if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("retex_submissions"); if(r) base.retex=JSON.parse(r.value); } catch(e){}
+      try { const rows = await supaFetch("/retex?order=ts.desc"); base.retex = Array.isArray(rows) ? rows.map(r => rowToItem("retex", r)) : []; } catch(e){}
       try { const r=await safeGet("admin_divers");      if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
       try { const r=await safeGet("admin_agenda");      if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
       try { const r=await safeGet("admin_imagerie");    if(r) base.imagerie=JSON.parse(r.value); } catch(e){}
@@ -2616,14 +2619,9 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
   const C = useC();
   const { store, addRetexItem, removeRetexItem, updateRetex } = useData();
   const items = [...(store.retex||[])].sort((a,b)=>{
-    // Trier par date saisie d'abord, puis created_at
-    const da = a.date ? new Date(a.date) : null;
-    const db = b.date ? new Date(b.date) : null;
-    const ta = a.created_at ? new Date(a.created_at) : new Date(0);
-    const tb = b.created_at ? new Date(b.created_at) : new Date(0);
-    if(da && db) return db - da;
-    if(da) return -1;
-    if(db) return 1;
+    // Trier par ordre de publication : le plus récent en premier
+    const ta = a.ts || (a.created_at ? new Date(a.created_at).getTime() : 0);
+    const tb = b.ts || (b.created_at ? new Date(b.created_at).getTime() : 0);
     return tb - ta;
   });
   const [selected, setSelected] = useState(null);
@@ -26941,16 +26939,23 @@ const PEDIA_MEDICAMENTS_DATA = [
   // ── Hémodynamique ──────────────────────────────────────────────────────
   { id:"adr_ped",   nom:"Adrénaline",             indication:"Arrêt cardiaque",             voie:"IVD / IO",       dose_par_kg:0.01, unite:"mg",  dose_max:1,    concentration:"0,1 mg/mL (1 mg/10 mL)", concentration_value:0.1,  frequence:"Toutes les 3-5 min", remarques:"Diluer 1 amp 5 mg/5 mL dans 45 mL NaCl 0,9% = 0,1 mg/mL", categorie:"hemodynamique", color:"#DC2626" },
   { id:"adr_anaph_ped", nom:"Adrénaline (anaphylaxie)", indication:"Choc anaphylactique", voie:"IM ++++", dose_par_kg:0.01, unite:"mg", dose_max:0.5, concentration:"1 mg/mL (ampoule pure)", concentration_value:1, frequence:"2ᵉ dose à 5 min si symptômes persistants", dosePaliers:[ {max:20, dose:0.15, label:"< 20 kg"}, {max:40, dose:0.3, label:"20–40 kg"}, {max:null, dose:0.5, label:"> 40 kg"} ], remarques:"Anaphylaxie : 0,01 mg/kg (max 0,5 mg) en IM (face antéro-latérale de cuisse). En pratique : < 20 kg → 0,15 mg ; 20–40 kg → 0,3 mg ; > 40 kg → 0,5 mg. Ampoule 1 mg/mL. 2ᵉ dose à 5 min si les symptômes persistent.", categorie:"hemodynamique", color:"#DC2626" },
-  { id:"act_ped",   nom:"Acide tranexamique (Exacyl)",      indication:"Hémorragie traumatique",      voie:"IVL 10 min",     dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:10, doseSup:15 }, unite:"mg",  dose_max:2000, concentration:"10 mg/mL (500 mg/5 mL dilué)", concentration_value:10, frequence:"Dose unique", remarques:"Posologie selon poids : ≤ 10 kg → 10 mg/kg ; > 10 kg → 15 mg/kg. Diluer dans poche 50 ou 100 mL NaCl 0,9% selon poids", categorie:"hemodynamique", color:"#B91C1C" },
-  { id:"cordarone_ped", nom:"Amiodarone (Cordarone)",       indication:"Trouble du rythme / ACR rythmes chocables", voie:"IVD / IVL", dose_par_kg:5, unite:"mg", dose_max:300, concentration:"50 mg/mL (2 amp pures = 300 mg/6 mL)", concentration_value:50, frequence:"ACR : après le 3ᵉ choc", remarques:"Posologie : 5 mg/kg. Préparation : 2 ampoules pures = 300 mg / 6 mL (50 mg/mL). Ampoule 150 mg/3 mL.", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"adr_aero_ped", nom:"Adrénaline (aérosol)", indication:"Laryngite / anaphylaxie (voie inhalée)", voie:"Aérosol", isAerosol:true, unite:"mg", frequence:"Renouvelable selon évolution", remarques:"Ampoule 5 mg/5 mL (1 mg/mL). Posologie 0,5 mg/kg (max 5 mg). Surveillance : fréquence cardiaque, efficacité respiratoire. Effet transitoire → surveiller l'effet rebond.", categorie:"aerosols", color:"#0EA5E9" },
+  { id:"act_ped",   nom:"Acide tranexamique (Exacyl)",      indication:"Hémorragie traumatique",      voie:"IVL 10 min",     dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:10, doseSup:15 }, unite:"mg",  concentration:"100 mg/mL (0,5 g / 5 mL)", concentration_value:100, frequence:"Dose unique", dilutionSeuil:{ seuilPoids:30, volInf:"50 mL", volSup:"100 mL" }, remarques:"Posologie : ≤ 10 kg → 10 mg/kg ; > 10 kg → 15 mg/kg. Prélever le volume nécessaire et diluer dans une poche de NaCl 0,9% (50 mL si ≤ 30 kg, 100 mL si > 30 kg).", categorie:"hemodynamique", color:"#B91C1C" },
+  { id:"striadyne_ped", nom:"Striadyne (Triphosadénine)", indication:"Tachycardie supraventriculaire", voie:"IVD FLASH", isStriadyne:true, unite:"mg", frequence:"AR si besoin", remarques:"Ampoule 20 mg / 2 mL. Posologie : 0,5 mg/kg (1ère dose) puis 1 mg/kg à 3 min (max 20 mg/dose). Prévenir le patient (sensation de malaise brève). Scope + défibrillateur à proximité.", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"cordarone_ped", nom:"Amiodarone (Cordarone)",       indication:"Trouble du rythme / ACR rythmes chocables", voie:"IVD / IVL", dose_par_kg:5, unite:"mg", concentration:"50 mg/mL (2 amp pures = 300 mg/6 mL)", concentration_value:50, frequence:"ACR : après le 3ᵉ choc", remarques:"Posologie : 5 mg/kg. Préparation : 2 ampoules pures = 300 mg / 6 mL (50 mg/mL). Ampoule 150 mg/3 mL.", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"atropine_ped", nom:"Atropine", indication:"Bradycardie / prémédication", voie:"IVD flash", isAtropine:true, unite:"mg", frequence:"Renouvelable si besoin", remarques:"Ampoule 0,5 mg/1 mL. Posologie 0,02 mg/kg (max 0,5 mg). ≤ 20 kg : diluer à 0,1 mg/mL ; > 20 kg : pur.", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"bicar_ped", nom:"Bicarbonate de sodium 4,2%", indication:"Intoxication grave aux stabilisants de membrane", voie:"IVL", isVolumeParKg:true, mlParKg:2, unite:"mL", frequence:"Jusqu'à normalisation des QRS", remarques:"Flacon 250 mL. Posologie 2 mL/kg en IVL, à passer jusqu'à normalisation des QRS. Pur.", categorie:"antidotes", color:"#059669" },
+  { id:"cyanokit_ped", nom:"Hydroxocobalamine (Cyanokit)", indication:"Intoxication au cyanure (fumées d'incendie)", voie:"Perfusion IV", isCyanokit:true, unite:"mg", frequence:"Sur 10 min", remarques:"Flacon poudre 5 g. Posologie 70 mg/kg sans dépasser 5 g, sur 10 min. Reconstituer avec 200 mL NaCl 0,9% (25 mg/mL).", categorie:"antidotes", color:"#059669" },
+  { id:"diazepam_ir_ped", nom:"Diazépam (Valium) intrarectal", indication:"Crise convulsive", voie:"Intrarectal", dose_par_kg:0.5, unite:"mg", dose_max:10, concentration:"5 mg/mL (10 mg / 2 mL)", concentration_value:5, arrondiVolume:0.1, frequence:"Dose unique", remarques:"Ampoule 10 mg/2 mL, pure. Posologie 0,5 mg/kg en intrarectal sans dépasser 10 mg. Administrer avec une canule/seringue adaptée.", categorie:"antiepileptique", color:"#9333EA" },
 
   // ── Analgésie ──────────────────────────────────────────────────────────
   { id:"mor_ped",   nom:"Morphine",                indication:"Douleur modérée à sévère",    voie:"IVD titration",  dose_par_kg:0.1,  unite:"mg",  dose_max:10,   concentration:"1 mg/mL (10 mg/10 mL)", concentration_value:1, frequence:"Puis 0,05 mg/kg toutes les 5 min si besoin", remarques:"Diluer 1 amp 10 mg/1 mL dans 9 mL NaCl 0,9% = 1 mg/mL. Max = dose adulte.", categorie:"analgesie", color:"#7C3AED" },
   { id:"ketan_a",   nom:"Kétamine (low dose — analgésie)", indication:"Analgésie — geste douloureux", voie:"IVDL",          dose_par_kg:0.2,  unite:"mg",  dose_max:50,   concentration:"10 mg/mL (amp 50 mg/5 mL)", concentration_value:10, frequence:"Dose unique avant geste", remarques:"Low dose analgésie : 0,2 mg/kg. Prélever 2 mL (soit 20 mg) de l'ampoule de 50 mg/5 mL = concentration 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
   { id:"para_ped",  nom:"Paracétamol",             indication:"Antalgique / antipyrétique",  voie:"Per os / IV",    dose_par_kg:15,   unite:"mg",  dose_max:1000, concentration:"10 mg/mL (IV : 500 mg/50 mL)", concentration_value:10, frequence:"Toutes les 6h", remarques:"15 mg/kg/6h (per os ou IV). Max 1 g par prise et 60 mg/kg/j. Voie IV : flacon 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
+  { id:"advil_ped", nom:"Ibuprofène (Advil)", indication:"Antalgique / antipyrétique", voie:"Per os", dose_par_kg:7.5, unite:"mg", dose_max:300, concentration:"20 mg/mL (suspension buvable)", concentration_value:20, arrondiVolume:0.1, frequence:"Toutes les 6-8h", alerte:"⛔ Contre-indiqué avant 3 mois (< 7 kg)", remarques:"Suspension buvable 20 mg/mL. Posologie 7,5 mg/kg/prise (max 300 mg/prise). Prélever le volume avec la seringue dédiée. À prendre au cours d'un repas.", categorie:"analgesie", color:"#7C3AED" },
   // ── ISR ────────────────────────────────────────────────────────────────
   { id:"ketan_i",   nom:"Kétamine ISR",             indication:"Induction séquence rapide",  voie:"IVD",            dose_par_kg:3,    unite:"mg",  dose_max:200,  concentration:"10 mg/mL (200 mg/20 mL)", concentration_value:10, frequence:"Dose unique — induction", remarques:"ISR : 3 mg/kg. Préparation : prélever 200 mg (soit 4 mL) de l'ampoule 250 mg/5 mL, puis compléter à 20 mL avec du NaCl 0,9% dans une seringue de 20 mL = 10 mg/mL. À partir de 24 mois : étomidate préférable si choc absent.", categorie:"isr", color:"#0891B2" },
-  { id:"eto_ped",   nom:"Étomidate ISR",             indication:"Induction (> 24 mois)",      voie:"IVD",            dose_par_kg:0.3,  unite:"mg",  dose_max:20,   concentration:"2 mg/mL (20 mg/10 mL)", concentration_value:2, frequence:"Dose unique — induction", remarques:"Disponible à partir de 24 mois. Non recommandé < 2 ans.", categorie:"isr", color:"#0891B2" },
+  { id:"eto_ped",   nom:"Étomidate ISR",             indication:"Induction (> 24 mois)",      voie:"IVD",            dose_par_kg:0.3,  unite:"mg",  dose_max:20,   concentration:"2 mg/mL (20 mg/10 mL)", concentration_value:2, frequence:"Dose unique — induction", alerte:"⛔ Non recommandé chez l'enfant < 2 ans", remarques:"Disponible à partir de 24 mois. Non recommandé < 2 ans.", categorie:"isr", color:"#0891B2" },
   { id:"sux_ped",   nom:"Suxaméthonium",            indication:"Curarisation ISR (< 8 ans)", voie:"IVD",            dose_par_kg:2,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (100 mg/10 mL)", concentration_value:10, frequence:"Dose unique", remarques:"À partir de 8 ans : réduire à 1 mg/kg. Diluer amp 100 mg/2 mL dans 8 mL NaCl.", categorie:"isr", color:"#0891B2" },
   { id:"roc_ped",   nom:"Rocuronium",               indication:"Curarisation ISR",           voie:"IVD",            dose_par_kg:1,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (50 mg/5 mL)", concentration_value:10, frequence:"Dose unique", remarques:"Antidote : sugammadex 16 mg/kg. Flacon pur 50 mg/5 mL.", categorie:"isr", color:"#0891B2" },
   { id:"celo_ped",  nom:"Suxaméthonium (Célocurine)", indication:"Curarisation ISR",         voie:"IVD",            dose_par_kg:2,    doseParKgPaliers:[ {max:11, dose:2, label:"≤ 11 kg"}, {max:25, dose:1.5, label:"12–25 kg"}, {max:null, dose:1, label:"> 25 kg"} ], unite:"mg", dose_max:100, concentration:"50 mg/mL (100 mg/2 mL)", concentration_value:50, frequence:"Dose unique", remarques:"Posologie selon poids : ≤ 11 kg → 2 mg/kg ; 12–25 kg → 1,5 mg/kg ; > 25 kg → 1 mg/kg. Ampoule 100 mg/2 mL (50 mg/mL). CI : hyperkaliémie, brûlés, crush.", categorie:"isr", color:"#0891B2" },
@@ -26969,10 +26974,13 @@ const PEDIA_MEDICAMENTS_DATA = [
 // Config affichage catégories (même ordre que cartes Urg'Ara)
 const PEDIA_DOSE_CATS = [
   { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
+  { key:"aerosols",     label:"Aérosols",                   icon:"💨",  color:"#0EA5E9", bg:"#E0F2FE" },
   { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
   { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
   { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
   { key:"osmotherapie",  label:"Osmothérapie",               icon:"💧",  color:"#CA8A04", bg:"#FEF9C3" },
+  { key:"antiepileptique", label:"Antiépileptiques",          icon:"🧠",  color:"#9333EA", bg:"#F3E8FF" },
+  { key:"antidotes",     label:"Antidotes",                  icon:"🧪",  color:"#059669", bg:"#D1FAE5" },
   { key:"antibiotique",  label:"Antibiotique",               icon:"🦠",  color:"#EA580C", bg:"#FFEDD5" },
 ];
 
@@ -27143,9 +27151,305 @@ function PediaDoseCardIN({ medic, poids }) {
   );
 }
 
+// ── Carte spéciale pédia : Cyanokit (reconstitution, dose mg + g) ─────────────
+function PediaCyanokitCard({ medic, poids, color }) {
+  const C = useC();
+  const conc = 25;                     // mg/mL après reconstitution (5 g / 200 mL)
+  const doseMax = 5000;                // mg (5 g)
+  const brute = 70 * poids;            // 70 mg/kg
+  const dosePlaf = Math.min(brute, doseMax);
+  const doseMg = Math.round(dosePlaf);
+  const doseG = Math.round((dosePlaf / 1000) * 100) / 100;   // g (2 déc)
+  const vol = Math.round(dosePlaf / conc);                   // mL entier
+  const capped = brute > doseMax;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      {/* Reconstitution */}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", marginBottom:8, fontSize:11.5, color:C.text, lineHeight:1.55}}>
+        🧪 <b>Reconstitution :</b> reconstituer le flacon de 5 g avec <b>200 mL de NaCl 0,9%</b> → 25 mg/mL. Agiter/retourner pendant 30 s (ne pas secouer).
+      </div>
+
+      {/* Dose + volume */}
+      <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
+        <div style={{display:"flex", gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+            <div style={{fontSize:22, fontWeight:900, color: capped ? "#DC2626" : C.text}}>{doseMg} <span style={{fontSize:12}}>mg</span></div>
+            <div style={{fontSize:12, fontWeight:700, color:C.sub}}>= {doseG} g</div>
+          </div>
+          <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:12}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+            <div style={{fontSize:22, fontWeight:900, color}}>{vol} <span style={{fontSize:12}}>mL</span></div>
+            <div style={{fontSize:9, color:C.sub, fontStyle:"italic"}}>(arrondi)</div>
+          </div>
+        </div>
+        <div style={{fontSize:10, color:C.sub, marginTop:4}}>70 mg/kg × {poids} kg</div>
+        {capped && <div style={{marginTop:4, fontSize:11, fontWeight:800, color:"#DC2626"}}>⚠️ Dose plafonnée à 5 g (200 mL = flacon entier)</div>}
+      </div>
+
+      <div style={{background:"#E0F2FE", border:"1px solid #0EA5E9", borderRadius:8, padding:"8px 10px", fontSize:11.5, color:C.text, lineHeight:1.5, fontWeight:600}}>
+        💉 Perfusion IV sur <b>10 min</b>. Colore les urines/téguments en rouge (normal).
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4, marginTop:6}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ── Carte spéciale pédia : dosage direct en mL/kg (ex : bicarbonate) ──────────
+function PediaVolumeCard({ medic, poids, color }) {
+  const C = useC();
+  const mlParKg = medic.mlParKg || 2;
+  const volExact = mlParKg * poids;
+  const vol = Math.round(volExact);      // arrondi au mL entier le plus proche
+  const arrondi = vol !== Math.round(volExact*100)/100;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      {/* Volume à administrer */}
+      <div style={{background:color+"12", border:`1.5px solid ${color}44`, borderRadius:10, padding:"12px", marginBottom:8, textAlign:"center"}}>
+        <div style={{fontSize:10, color:C.sub, fontWeight:700, marginBottom:2}}>VOLUME À ADMINISTRER</div>
+        <div style={{fontSize:30, fontWeight:900, color, lineHeight:1}}>{vol} <span style={{fontSize:14}}>mL</span></div>
+        {arrondi && <div style={{fontSize:9, color:C.sub, fontStyle:"italic", marginTop:2}}>(arrondi)</div>}
+        <div style={{fontSize:10, color:C.sub, marginTop:4}}>{mlParKg} mL/kg × {poids} kg</div>
+      </div>
+
+      {/* Préparation */}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", marginBottom:8, fontSize:11.5, color:C.text, lineHeight:1.55}}>
+        🧪 <b>Préparation :</b> pur — flacon de 250 mL de Bicarbonate de sodium 4,2%.
+      </div>
+
+      <div style={{background:"#E0F2FE", border:"1px solid #0EA5E9", borderRadius:8, padding:"8px 10px", fontSize:11.5, color:C.text, lineHeight:1.5, fontWeight:600}}>
+        💉 En <b>IVL</b>, à passer jusqu'à <b>normalisation des QRS</b>.
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4, marginTop:6}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ── Carte spéciale pédia : Atropine (concentration selon poids, dose unique) ──
+function PediaAtropineCard({ medic, poids, color }) {
+  const C = useC();
+  const dilue = poids <= 20;            // ≤ 20 kg : dilué
+  const conc = dilue ? 0.1 : 0.5;       // mg/mL
+  const doseMax = 0.5;                  // mg
+  const brute = 0.02 * poids;           // 0,02 mg/kg
+  const dosePlaf = Math.min(brute, doseMax);
+  const dose = Math.round(dosePlaf * 100) / 100;        // dose en mg (2 déc, doses fines)
+  const vol = Math.round((dosePlaf / conc) * 10) / 10;  // volume au 0,1 le plus proche
+  const capped = brute > doseMax;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Pour <span style={{color, fontWeight:900}}>{poids} kg</span> — {dilue ? "forme DILUÉE (0,1 mg/mL)" : "forme PURE (0,5 mg/mL)"}
+      </div>
+
+      {/* Dose + volume */}
+      <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
+        <div style={{display:"flex", gap:12}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+            <div style={{fontSize:22, fontWeight:900, color: capped ? "#DC2626" : C.text}}>{dose} <span style={{fontSize:12}}>mg</span></div>
+          </div>
+          <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:12}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME À PRÉLEVER</div>
+            <div style={{fontSize:22, fontWeight:900, color}}>{vol} <span style={{fontSize:12}}>mL</span></div>
+            <div style={{fontSize:9, color:C.sub, fontStyle:"italic"}}>(arrondi)</div>
+          </div>
+        </div>
+        <div style={{fontSize:10, color:C.sub, marginTop:4}}>0,02 mg/kg × {poids} kg</div>
+        {capped && <div style={{marginTop:4, fontSize:11, fontWeight:800, color:"#DC2626"}}>⚠️ Dose plafonnée à {doseMax} mg</div>}
+      </div>
+
+      {/* Préparation selon poids */}
+      <div style={{background: dilue ? "#FEF3C7" : color+"12", border:`1px solid ${dilue ? "#F59E0B" : color+"44"}`, borderRadius:10, padding:"9px 11px", marginBottom:8, fontSize:11.5, color:C.text, lineHeight:1.55}}>
+        🧪 <b>Préparation :</b> {dilue
+          ? "À DILUER — avec une seringue de 5 mL, prélever 1 mL de l'ampoule (0,5 mg/1 mL) et compléter à 5 mL avec du NaCl 0,9% → 0,1 mg/mL. Prélever ensuite le volume ci-dessus."
+          : "PUR — utiliser l'ampoule telle quelle (0,5 mg/1 mL = 0,5 mg/mL)."}
+      </div>
+
+      <div style={{background:"#FEE2E2", border:"1px solid #DC2626", borderRadius:8, padding:"8px 10px", fontSize:11.5, color:C.text, lineHeight:1.5, fontWeight:600}}>
+        ⚡ Injection <b>IVD flash</b>. Renouvelable si besoin.
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4, marginTop:6}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ── Carte spéciale pédia : Adrénaline aérosol (dose mg = volume mL, QSP 5 mL) ──
+function PediaAerosolCard({ medic, poids, color }) {
+  const C = useC();
+  const doseMax = 5;                 // mg (= 5 mL à 1 mg/mL)
+  const brute = 0.5 * poids;         // 0,5 mg/kg
+  const dosePlaf = Math.min(brute, doseMax);
+  // Concentration 1 mg/mL → dose (mg) = volume (mL). Arrondi au 0,1 le plus proche.
+  const dose = Math.round(dosePlaf * 10) / 10;
+  const vol = dose;                  // 1 mg/mL
+  const capped = brute > doseMax;
+  const complement = Math.round((5 - vol) * 10) / 10; // NaCl à ajouter si < 5 mL
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
+        <div style={{display:"flex", alignItems:"center", gap:12}}>
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
+            <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>DOSE</span>
+            <span style={{fontSize:24, fontWeight:900, color: capped ? "#DC2626" : color, lineHeight:1}}>{dose}</span>
+            <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mg</span>
+          </div>
+          <span style={{fontSize:18, color:C.sub}}>→</span>
+          <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
+            <span style={{fontSize:10, fontWeight:700, color:C.sub, marginBottom:2}}>À PRÉLEVER</span>
+            <span style={{fontSize:24, fontWeight:900, color, lineHeight:1}}>{vol}</span>
+            <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL</span>
+          </div>
+          <div style={{flex:1, minWidth:80}}>
+            <div style={{fontSize:10, color:C.sub, lineHeight:1.5}}>0,5 mg/kg × {poids} kg<br/>Ampoule 1 mg/mL (pure)</div>
+          </div>
+        </div>
+        {capped && <div style={{marginTop:6, fontSize:11, fontWeight:800, color:"#DC2626"}}>⚠️ Dose plafonnée à {doseMax} mg (5 mL)</div>}
+      </div>
+
+      {/* Préparation */}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", marginBottom:8, fontSize:11.5, color:C.text, lineHeight:1.55}}>
+        🧪 <b>Préparation :</b> prélever <b>{vol} mL</b> de l'ampoule (5 mg/5 mL) et verser dans le nébulisateur.{" "}
+        {complement > 0
+          ? <>Compléter à 5 mL en ajoutant <b>{complement} mL</b> de NaCl 0,9%.</>
+          : <>Volume déjà à 5 mL : <b>pas de complément</b> nécessaire.</>}
+      </div>
+
+      <div style={{background:"#E0F2FE", border:"1px solid #0EA5E9", borderRadius:8, padding:"8px 10px", fontSize:11.5, color:C.text, lineHeight:1.5, fontWeight:600}}>
+        💨 Nébulisation sur <b>20 min</b> avec O₂ à <b>6 L/min</b>.
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4, marginTop:6}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ── Carte spéciale pédia : Striadyne (2 doses successives, conc selon poids) ──
+function PediaStriadyneCard({ medic, poids, color }) {
+  const C = useC();
+  const dilue = poids < 20;            // < 20 kg : dilué
+  const conc = dilue ? 2 : 10;         // mg/mL
+  const doseMax = 20;                  // max par dose
+
+  const calcDose = (mgParKg) => {
+    const brute = mgParKg * poids;
+    const dosePlafonnee = Math.min(brute, doseMax);
+    // Dose : arrondi au 0,1 le plus proche ; Volume : arrondi au demi-mL le plus proche
+    const dose = Math.round(dosePlafonnee * 10) / 10;
+    const vol = Math.round((dosePlafonnee / conc) * 2) / 2;
+    return { dose, vol, capped: brute > doseMax };
+  };
+  const d1 = calcDose(0.5);
+  const d2 = calcDose(1);
+
+  const DoseBloc = ({ num, titre, mgkg, r }) => (
+    <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+      <div style={{background:color+"15", padding:"7px 12px", display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+        <span style={{fontSize:11, fontWeight:800, color}}>{num} {titre}</span>
+        <span style={{fontSize:10, fontWeight:700, color:C.sub}}>{mgkg} mg/kg</span>
+      </div>
+      <div style={{padding:"10px 12px", display:"flex", gap:16}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+          <div style={{fontSize:20, fontWeight:900, color: r.capped ? "#DC2626" : C.text}}>{r.dose} <span style={{fontSize:12}}>mg</span></div>
+          <div style={{fontSize:9, color:C.sub, fontStyle:"italic"}}>(arrondi)</div>
+        </div>
+        <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+          <div style={{fontSize:20, fontWeight:900, color}}>{r.vol} <span style={{fontSize:12}}>mL</span></div>
+          <div style={{fontSize:9, color:C.sub, fontStyle:"italic"}}>(arrondi)</div>
+        </div>
+      </div>
+      {r.capped && <div style={{padding:"0 12px 8px", fontSize:10, fontWeight:800, color:"#DC2626"}}>⚠️ Dose plafonnée à {doseMax} mg</div>}
+    </div>
+  );
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+        Pour <span style={{color, fontWeight:900}}>{poids} kg</span> — {dilue ? "forme DILUÉE (2 mg/mL)" : "forme PURE (10 mg/mL)"}
+      </div>
+
+      {/* Préparation selon poids */}
+      <div style={{background: dilue ? "#FEF3C7" : color+"12", border:`1px solid ${dilue ? "#F59E0B" : color+"44"}`, borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:11.5, color:C.text, lineHeight:1.5}}>
+        🧪 <b>Préparation :</b> {dilue
+          ? "À DILUER — prélever 1 ampoule (20 mg / 2 mL) et compléter à 10 mL avec NaCl 0,9% → 2 mg/mL."
+          : "PUR — utiliser l'ampoule telle quelle (20 mg / 2 mL = 10 mg/mL)."}
+      </div>
+
+      <DoseBloc num="1️⃣" titre="1ère dose" mgkg="0,5" r={d1}/>
+      <DoseBloc num="2️⃣" titre="2ème dose (à 3 min)" mgkg="1" r={d2}/>
+
+      <div style={{background:"#FEE2E2", border:"1px solid #DC2626", borderRadius:8, padding:"8px 10px", marginTop:2, marginBottom:6, fontSize:11.5, color:C.text, lineHeight:1.5, fontWeight:600}}>
+        ⚡ Injection <b>IVD FLASH</b> puis flush immédiat de <b>5 mL de NaCl 0,9%</b>. Renouvelable si besoin.
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
 function PediaDoseCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+
+  // Cas spécial : Striadyne (2 doses successives, concentration selon poids)
+  if (medic.isStriadyne) {
+    return <PediaStriadyneCard medic={medic} poids={poids} color={color}/>;
+  }
+  // Cas spécial : adrénaline aérosol (dose mg = volume mL, compléter à 5 mL si < 5 mL)
+  if (medic.isAerosol) {
+    return <PediaAerosolCard medic={medic} poids={poids} color={color}/>;
+  }
+  // Cas spécial : atropine (concentration selon poids, dilué ≤ 20 kg)
+  if (medic.isAtropine) {
+    return <PediaAtropineCard medic={medic} poids={poids} color={color}/>;
+  }
+  // Cas spécial : dosage direct en mL/kg (ex : bicarbonate)
+  if (medic.isVolumeParKg) {
+    return <PediaVolumeCard medic={medic} poids={poids} color={color}/>;
+  }
+  // Cas spécial : Cyanokit (reconstitution, dose en mg + g, gros volumes)
+  if (medic.isCyanokit) {
+    return <PediaCyanokitCard medic={medic} poids={poids} color={color}/>;
+  }
 
   if (!medic.dose_par_kg) {
     return (
@@ -27225,7 +27529,8 @@ function PediaDoseCard({ medic, poids }) {
   const concLabel = medic.concParPoidsSeuil
     ? `${concVal} ${medic.unite||"mg"}/mL (${poids < medic.concParPoidsSeuil.seuilPoids ? `< ${medic.concParPoidsSeuil.seuilPoids}` : "≥ "+medic.concParPoidsSeuil.seuilPoids} kg)`
     : medic.concentration;
-  const volume  = concVal ? Math.round((doseR / concVal) * 100) / 100 : null;
+  const arrVol = medic.arrondiVolume || 0.01; // pas d'arrondi (0,01) par défaut
+  const volume  = concVal ? Math.round(Math.round((doseR / concVal) / arrVol) * arrVol * 1000) / 1000 : null;
 
   return (
     <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
@@ -27234,6 +27539,11 @@ function PediaDoseCard({ medic, poids }) {
         {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
       </div>
       {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+      {medic.alerte && (
+        <div style={{background:"#FEE2E2", border:"1.5px solid #DC2626", borderRadius:8, padding:"8px 11px", marginBottom:8, fontSize:12, fontWeight:800, color:"#DC2626", lineHeight:1.4}}>
+          {medic.alerte}
+        </div>
+      )}
       <div style={{background: capped ? "#FEF2F2" : color+"12", border:`1.5px solid ${capped ? "#FCA5A5" : color+"44"}`, borderRadius:10, padding:"10px 12px", marginBottom:6}}>
         <div style={{display:"flex", alignItems:"center", gap:6, flexWrap:"wrap"}}>
           <div style={{display:"flex", flexDirection:"column", alignItems:"center", background:"#fff", borderRadius:8, padding:"6px 12px", minWidth:80}}>
@@ -27263,6 +27573,16 @@ function PediaDoseCard({ medic, poids }) {
         )}
       </div>
       {medic.frequence && <div style={{fontSize:11, color:C.sub, marginBottom:3}}>⏱️ {medic.frequence}</div>}
+      {medic.dilutionSeuil && (() => {
+        const pocheVol = poids <= medic.dilutionSeuil.seuilPoids ? medic.dilutionSeuil.volInf : medic.dilutionSeuil.volSup;
+        return (
+          <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:8, padding:"8px 10px", marginTop:6, marginBottom:6}}>
+            <span style={{fontSize:11, fontWeight:800, color}}>🧪 DILUTION : </span>
+            <span style={{fontSize:11.5, color:C.text, fontWeight:600}}>diluer dans une poche de <b>{pocheVol}</b> de NaCl 0,9%</span>
+            <span style={{fontSize:10, color:C.sub}}> (≤ {medic.dilutionSeuil.seuilPoids} kg → {medic.dilutionSeuil.volInf})</span>
+          </div>
+        );
+      })()}
       {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
     </div>
   );
