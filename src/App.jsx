@@ -28465,9 +28465,9 @@ const CALC_ADULTE_MEDICAMENTS = [
   // ── ISR — Hypnotiques ────────────────────────────────────────────────────
   {
     id:"etomidate", cat:"isr", groupe:"Hypnotique ISR",
-    nom:"Étomidate", amp:"20 mg / 10 mL", concentration:2, unite:"mg",
+    nom:"Étomidate", amp:"2 ampoules de 20 mg / 10 mL", prepa:"Pure — 2 ampoules (40 mg / 20 mL)", concentration:2, unite:"mg",
     doseMin:0.3, doseMax:0.3,
-    voie:"IVD lente", remarques:"Dose d'induction : 0,3 mg/kg. Injection lente en 30-60s. Myoclonies fréquentes.",
+    voie:"IVD lente", remarques:"Dose d'induction : 0,3 mg/kg. Injection lente en 30-60s. Myoclonies fréquentes. NB : posologie pouvant être augmentée de 0,4 à 0,5 mg/kg.",
     color:"#0891B2",
   },
   {
