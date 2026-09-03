@@ -1565,21 +1565,22 @@ function HomeScreen({onNav}) {
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
     // ── Ligne 2 ──
+    {id:"checklists", icon:"📋", label:"Checklists",         color:"#2563EB", bg:"#DBEAFE"},
     {id:"antibioguide", icon:"🦠", label:"Antibioguide",    color:"#16A34A", bg:"#DCFCE7"},
     {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
     {id:"echo",       icon:"SONDE", label:"Échographie",       color:"#0E7490", bg:"#CFFAFE"},
-    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     // ── Ligne 3 ──
+    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     {id:"ecg",        icon:"❤️", label:"ECG",               color:C.red,     bg:C.redLight},
     {id:"imagerie",   icon:"🖼️", label:"Imagerie",          color:"#9B59B6", bg:"#F3E8FF"},
     {id:"retex",      icon:"🔬", label:"RETEX/cas",         color:C.green,   bg:C.greenLight},
-    {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
     // ── Ligne 4 ──
+    {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
     {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
-    {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
     // ── Ligne 5 ──
+    {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
     {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9"},
   ];
@@ -1969,6 +1970,1659 @@ function DerniersAjoutsWidget({ onNav }) {
     </div>
   );
 }
+
+// ─── CHECKLISTS ───────────────────────────────────────────────────────────────
+function playBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioCtx();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.55);
+    // second bip
+    setTimeout(() => {
+      const o2 = ctx.createOscillator(); const g2 = ctx.createGain();
+      o2.type = "sine"; o2.frequency.value = 1046;
+      g2.gain.setValueAtTime(0.001, ctx.currentTime);
+      g2.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.02);
+      g2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      o2.connect(g2); g2.connect(ctx.destination);
+      o2.start(); o2.stop(ctx.currentTime + 0.55);
+    }, 250);
+  } catch (e) { /* silencieux si non supporté */ }
+}
+
+function vibrateIfSupported(pattern = [200, 100, 200]) {
+  // ⚠️ Non supporté sur Safari iOS — dégradation silencieuse, le son reste le signal fiable
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Donnée factice — checklist de TEST uniquement, pour valider le moteur
+// (le contenu médical réel sera validé item par item avant intégration)
+// ────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// Checklists en cours de développement — contenu médical pas encore finalisé,
+// affichées mais non accessibles depuis l'accueil (voir ChecklistsHome)
+// ────────────────────────────────────────────────────────────────────────────
+const INTUBATION_PEDIATRIQUE_STUB = {
+  id: "isr-pediatrique", title: "Intubation Séquence Rapide — Pédiatrique",
+  icon: "🧸", color: "#D97706", category: "intubation", status: "draft", phases: [],
+};
+const ACCOUCHEMENT_STUB = {
+  id: "accouchement-inopine", title: "Accouchement inopiné",
+  icon: "👶", color: "#DB2777", category: "obstetrique", status: "draft", phases: [],
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// PONCTION LOMBAIRE — contenu médical validé par Jeremy (CHEG Aubagne, SAU/SMUR)
+// ────────────────────────────────────────────────────────────────────────────
+const PONCTION_LOMBAIRE_CHECKLIST = {
+  id: "ponction-lombaire",
+  title: "Ponction lombaire",
+  icon: "🧪",
+  color: "#0E7490",
+  category: "gestes",
+  phases: [
+    {
+      id: "avant",
+      label: "Avant le geste",
+      items: [
+        { id: "av-as1", label: "Installer le patient : position assise (dos rond, bras autour d'un coussin, hanches parallèles au lit) ou décubitus latéral (position fœtale, dos arrondi)", role: "as", critical: false },
+
+        { id: "av-ide1", label: "Glycémie capillaire concomitante (rapport glycorachie/glycémie)", role: "ide", critical: true },
+        { id: "av-ide2", label: "Préparer le matériel : kit PL, antiseptique, anesthésie locale, 4 tubes numérotés", role: "ide", critical: false },
+        { id: "av-ide3", label: "Asepsie : désinfection en 2 temps", role: "ide", critical: true },
+
+        { id: "av-med1", label: "Indication posée", role: "medecin", critical: true },
+        { id: "av-med2", label: "Rechercher des signes d'appel neurologique (déficit focal, trouble de conscience, œdème papillaire, crise convulsive récente) → TDM cérébrale si présents", role: "medecin", critical: true },
+        { id: "av-med3", label: "Vérifier plaquettes ≥ 50 000/mm³", role: "medecin", critical: true },
+        { id: "av-med4", label: "Vérifier traitement anticoagulant/antiagrégant (AVK, AOD, héparine, antiagrégants)", role: "medecin", critical: true },
+        { id: "av-med5", label: "Information et consentement du patient", role: "medecin", critical: false },
+      ],
+    },
+    {
+      id: "pendant",
+      label: "Pendant le geste",
+      items: [
+        { id: "pe-ide1", label: "Recueil du LCR dans les tubes numérotés : 1. bactériologie, 2. biochimie, 3. cytologie, 4. virologie (PCR)", role: "ide", critical: false },
+
+        { id: "pe-med1", label: "Repérage : ligne bi-iliaque → espace L3-L4 ou L4-L5", role: "medecin", critical: false,
+          image: null /* à renseigner : URL de votre propre schéma, ex. Supabase Storage bucket sau-media */ },
+        { id: "pe-med3", label: "Anesthésie locale", role: "medecin", critical: false },
+        { id: "pe-med4", label: "Ponction : aiguille + mandrin, ligne médiane, orientée vers le nombril", role: "medecin", critical: false },
+        { id: "pe-med5", label: "Franchissement : résistance puis ressaut (ligament jaune, dure-mère)", role: "medecin", critical: false },
+        { id: "pe-med6", label: "Retirer le mandrin → recueil du LCR goutte à goutte", role: "medecin", critical: false },
+        { id: "pe-med7", label: "Fin de geste : réinsérer le mandrin, retirer l'aiguille d'un coup sec, pansement", role: "medecin", critical: false },
+      ],
+    },
+    {
+      id: "apres",
+      label: "Après le geste",
+      items: [
+        { id: "ap-ide1", label: "Surveillance neurologique", role: "ide", critical: false },
+        { id: "ap-ide2", label: "Envoyer les prélèvements au laboratoire", role: "ide", critical: true },
+        { id: "ap-ide3", label: "Tracer le geste sur le DPI", role: "ide", critical: false },
+
+        { id: "ap-med1", label: "Repos allongé recommandé", role: "medecin", critical: false },
+        { id: "ap-med2", label: "Consignes de sortie : céphalées post-PL, quand reconsulter", role: "medecin", critical: false },
+      ],
+    },
+  ],
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// PONCTION D'ASCITE — contenu médical validé par Jeremy (CHEG Aubagne, SAU/SMUR)
+// ────────────────────────────────────────────────────────────────────────────
+const PONCTION_ASCITE_CHECKLIST = {
+  id: "ponction-ascite",
+  title: "Ponction d'ascite",
+  icon: "💧",
+  color: "#0891B2",
+  category: "gestes",
+  phases: [
+    {
+      id: "avant",
+      label: "Avant le geste",
+      items: [
+        { id: "av-med1", label: "Confirmer l'indication : diagnostique (1ère ascite, aggravation clinique, fièvre, douleur, encéphalopathie, IRA, choc) ou évacuatrice (ascite tendue, dyspnée, douleur)", role: "medecin", critical: false },
+        { id: "av-med2", label: "Évaluer les risques : instabilité hémodynamique, cicatrices, infection cutanée, vessie pleine, grossesse, anticoagulants/antiagrégants", role: "medecin", critical: true },
+        { id: "av-med3", label: "Information et consentement du patient", role: "medecin", critical: false },
+        { id: "av-med4", label: "Prescrire les examens du liquide", role: "medecin", critical: false },
+        { id: "av-med5", label: "Choisir le site, idéalement sous échographie", role: "medecin", critical: false },
+        { id: "av-med6", label: "Prescrire albumine si évacuation prévue ≥ 5L (8g/L évacué)", role: "medecin", critical: true },
+
+        { id: "av-ide1", label: "Vérifier identité, indication, prescriptions, allergies, traitements à risque hémorragique", role: "ide", critical: true },
+        { id: "av-ide2", label: "Mesurer et tracer les constantes : TA, FC, SpO2, T°, douleur, état neurologique", role: "ide", critical: false },
+        { id: "av-ide3", label: "Expliquer le déroulement, installer le patient, favoriser la vidange vésicale", role: "ide", critical: false },
+        { id: "av-ide4", label: "Préparer le matériel stérile : kit, flacons, système de drainage, antiseptique, gants stériles, pansement, albumine si prescrite", role: "ide", critical: false },
+        { id: "av-ide5", label: "Préparer les tubes : NFS, albumine/protéines, culture (infection évoquée dès 250 PNN/mm³)", role: "ide", critical: false },
+
+        { id: "av-as1", label: "Installer et rassurer le patient, préserver l'intimité", role: "as", critical: false },
+        { id: "av-as2", label: "Préparer l'environnement et le matériel non stérile", role: "as", critical: false },
+        { id: "av-as3", label: "Réaliser l'hygiène du patient si nécessaire", role: "as", critical: false },
+        { id: "av-as4", label: "Surveiller et signaler : douleur, malaise, pâleur, dyspnée, confusion, saignement", role: "as", critical: false },
+      ],
+    },
+    {
+      id: "pendant",
+      label: "Pendant le geste",
+      items: [
+        { id: "pe-med1", label: "Hygiène des mains, équipements de protection adaptés", role: "medecin", critical: false },
+        { id: "pe-med2", label: "Repérage du site, désinfection cutanée, anesthésie locale", role: "medecin", critical: false },
+        { id: "pe-med3", label: "Introduction de l'aiguille/cathéter en technique stérile", role: "medecin", critical: false },
+        { id: "pe-med4", label: "Prélèvement diagnostique avant le drainage", role: "medecin", critical: false },
+        { id: "pe-med5", label: "Mise en place du drainage si indication évacuatrice", role: "medecin", critical: false },
+        { id: "pe-med6", label: "Arrêter si douleur importante, malaise, hypotension, sang franc, absence de progression", role: "medecin", critical: true },
+
+        { id: "pe-ide1", label: "Assister le médecin, maintenir l'asepsie", role: "ide", critical: false },
+        { id: "pe-ide2", label: "Connecter et surveiller le système de drainage", role: "ide", critical: false },
+        { id: "pe-ide3", label: "Débit d'évacuation ≤ 2 L/heure", role: "ide", critical: true },
+        { id: "pe-ide4", label: "Noter l'heure de début, l'aspect du liquide, le volume évacué", role: "ide", critical: false },
+        { id: "pe-ide5", label: "Surveiller régulièrement constantes, douleur, tolérance hémodynamique", role: "ide", critical: false },
+        { id: "pe-ide6", label: "Étiqueter et envoyer les prélèvements au laboratoire immédiatement", role: "ide", critical: false },
+        { id: "pe-ide7", label: "Volume total évacué (L) — pour calcul de la dose d'albumine", role: "ide", critical: false,
+          type: "dose_calc_volume", gPerL: 8, threshold: 5 },
+        { id: "pe-ide8", label: "Administrer l'albumine sur prescription, surveiller perfusion et tolérance", role: "ide", critical: false },
+
+        { id: "pe-as1", label: "Rester auprès du patient, position confortable (sans toucher le champ stérile)", role: "as", critical: false },
+        { id: "pe-as2", label: "Surveiller l'état général, alerter l'IDE en cas d'anomalie", role: "as", critical: false },
+        { id: "pe-as3", label: "Aider au recueil du volume si organisation du service le prévoit (sans manipuler les connexions stériles)", role: "as", critical: false },
+      ],
+    },
+    {
+      id: "apres",
+      label: "Après le geste",
+      items: [
+        { id: "ap-med1", label: "Vérifier l'absence de complication, réévaluer l'état clinique", role: "medecin", critical: false },
+        { id: "ap-med2", label: "Interpréter les premiers résultats, organiser la suite (notamment si suspicion d'infection)", role: "medecin", critical: false },
+        { id: "ap-med3", label: "Décider : poursuite, arrêt du drainage, ou orientation spécialisée", role: "medecin", critical: false },
+
+        { id: "ap-ide1", label: "Retirer le cathéter, pansement compressif, vérifier absence de fuite/saignement", role: "ide", critical: false },
+        { id: "ap-ide2", label: "Surveiller constantes, douleur, point de ponction, diurèse, état de conscience", role: "ide", critical: false },
+        { id: "ap-ide3", label: "Tracer : indication, site, volume, aspect, tolérance, prélèvements, albumine, incidents", role: "ide", critical: false },
+        { id: "ap-ide4", label: "Alerter le médecin si hypotension, tachycardie, douleur croissante, fièvre, hémorragie, fuite persistante", role: "ide", critical: true },
+
+        { id: "ap-as1", label: "Réinstaller le patient, assurer le confort, aider à la mobilisation prudente", role: "as", critical: false },
+        { id: "ap-as2", label: "Surveiller le pansement, l'état général, les signes de malaise", role: "as", critical: false },
+        { id: "ap-as3", label: "Transmettre les observations à l'IDE, ranger et éliminer les déchets", role: "as", critical: false },
+      ],
+    },
+  ],
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// ISR ADULTE — contenu médical validé par Jeremy (CHEG Aubagne, SAU/SMUR)
+// ────────────────────────────────────────────────────────────────────────────
+const ISR_ADULTE_CHECKLIST = {
+  id: "isr-adulte",
+  title: "Intubation Séquence Rapide — Adulte",
+  icon: "🫁",
+  color: "#2E7EAD",
+  category: "intubation",
+  phases: [
+    {
+      id: "prep-patient",
+      label: "Préparation du patient",
+      items: [
+        { id: "pp-as1", label: "Vérifier la présence du bracelet", role: "as", critical: false },
+        { id: "pp-as2", label: "Déshabiller le patient", role: "as", critical: false },
+        { id: "pp-as3", label: "Placer le scope : 3 ou 5 brins + SpO2 + PNI/2min", role: "as", critical: false },
+        { id: "pp-as4", label: "Faire de la place à la tête", role: "as", critical: false },
+        { id: "pp-as5", label: "Mettre le brancard à la bonne hauteur", role: "as", critical: false },
+        { id: "pp-as6", label: "Ablation des prothèses dentaires", role: "as", critical: false },
+        { id: "pp-as7", label: "Fermer la porte de la SAUV", role: "as", critical: false },
+
+        { id: "pp-ide1", label: "Vérification VVP", role: "ide", critical: false },
+        { id: "pp-ide2", label: "Pose d'une 2ème VVP", role: "ide", critical: false },
+        { id: "pp-ide3", label: "Mise en place d'une rampe ou robinet supplémentaire", role: "ide", critical: false },
+        { id: "pp-ide4", label: "Soluté : NaCl 0,9% 500mL ou Ringer Lactate 250mL", role: "ide", critical: false },
+        { id: "pp-ide5", label: "Réglages des alarmes du scope", role: "ide", critical: false },
+        { id: "pp-ide6", label: "Éliminer une contre-indication à la Suxaméthonium : hyperkaliémie connue ou suspectée, brûlure étendue de plus de 24h, antécédent personnel ou familial d'hyperthermie maligne", role: "ide", critical: true },
+
+        { id: "pp-med1", label: "Évaluation des facteurs prédictifs d'IOT difficile", role: "medecin", critical: false },
+        { id: "pp-med2", label: "Prévenir réanimateur ou autre médecin de l'IOT", role: "medecin", critical: false },
+        { id: "pp-med3", label: "Éliminer une contre-indication à la Suxaméthonium : hyperkaliémie connue ou suspectée, brûlure étendue de plus de 24h, antécédent personnel ou familial d'hyperthermie maligne", role: "medecin", critical: true },
+        { id: "pp-med4", label: "Pré-oxygénation : VNI ou Optiflow FiO2 100% (ou MHC 15L/min si impossible)", role: "medecin", critical: true,
+          timer: { duration: 180, label: "Pré-oxygénation (3-5 min, objectif SpO2 = 100%)" } },
+        { id: "pp-med5", label: "Mettre le patient en position amendée de Jackson", role: "medecin", critical: false },
+        { id: "pp-med6", label: "Shock-index (FC/PAS) : si > 0,9, remplissage vasculaire ± noradrénaline", role: "medecin", critical: false },
+      ],
+    },
+    {
+      id: "prep-materiel",
+      label: "Préparation du matériel",
+      items: [
+        { id: "pm-as1", label: "BAVU raccordé à l'oxygène avec un filtre", role: "as", critical: false },
+        { id: "pm-as2", label: "Capteur d'EtCO2 branché sur BAVU", role: "as", critical: false },
+        { id: "pm-as3", label: "Aspiration prête (sonde gros calibre ou Yankauer)", role: "as", critical: false },
+        { id: "pm-as4", label: "Stéthoscope à disposition", role: "as", critical: false },
+        { id: "pm-as5", label: "Orienter le scope vers le médecin", role: "as", critical: false },
+
+        { id: "pm-ide1", label: "Préparer Induction : Étomidate 2mg/mL (ou Kétamine 10mg/mL), Suxaméthonium 10mg/mL", role: "ide", critical: false },
+        { id: "pm-ide2", label: "Préparer Entretien : Sufentanil 5µg/mL, Midazolam 1mg/mL, ± Cisatracurium 2mg/mL", role: "ide", critical: false },
+        { id: "pm-ide3", label: "Préparer Noradrénaline 0,2mg/mL (ou BabyNoradrénaline 0,01mg/mL) — sur voie unique", role: "ide", critical: false },
+
+        { id: "pm-med1", label: "Vidéolaryngoscope fonctionnel, manche + lame 3 ou 4 testés", role: "medecin", critical: false },
+        { id: "pm-med2", label: "Sonde d'intubation de taille adaptée, mandrin long béquillé ou stylet rigide", role: "medecin", critical: false },
+        { id: "pm-med3", label: "Pince de Magill, spray silicone, seringue 10mL et lac de fixation", role: "medecin", critical: false },
+        { id: "pm-med4", label: "Matériel d'intubation difficile à proximité : dispositif supra-glottique et crico-thyrotomie", role: "medecin", critical: true },
+        { id: "pm-med5", label: "Respirateur prêt à l'emploi, paramétré, en pause, circuit et filtres branchés", role: "medecin", critical: false },
+        { id: "pm-med6", label: "Annoncer à voix haute le plan et la stratégie en cas d'échec d'intubation", role: "medecin", critical: true },
+      ],
+    },
+    {
+      id: "realisation",
+      label: "Réalisation de l'IOT",
+      items: [
+        { id: "re-as1", label: "PNI/2min, FC, SpO2, EtCO2", role: "as", critical: false },
+        { id: "re-as2", label: "Maintenir l'atmosphère calme de la SAUV", role: "as", critical: false },
+
+        { id: "re-ide1a", label: "Étomidate (induction)", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 0.3, concentration: 2 },
+        { id: "re-ide1b", label: "ou Kétamine (induction, alternative)", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 3, concentration: 10 },
+        { id: "re-ide1c", label: "puis Suxaméthonium", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 1, concentration: 10 },
+        { id: "re-ide2a", label: "Sufentanil (entretien)", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 0.15, mgPerKgMax: 1, concentration: 5, unit: "µg", perHour: true },
+        { id: "re-ide2b", label: "Midazolam (entretien)", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 0.1, concentration: 1, perHour: true },
+
+        { id: "re-med1", label: "Pas plus de 2 tentatives d'intubation", role: "medecin", critical: true },
+        { id: "re-med2", label: "IOT au vidéolaryngoscope, manœuvre de BURP si besoin", role: "medecin", critical: false },
+        { id: "re-med3", label: "Si échec : oxygénation au BAVU, puis changer d'opérateur / dispositif supra-glottique / crico-thyrotomie", role: "medecin", critical: false },
+      ],
+    },
+    {
+      id: "verif-immediates",
+      label: "Vérifications immédiates",
+      items: [
+        { id: "vi-as1", label: "TA/2min, FC, SpO2, EtCO2", role: "as", critical: false },
+
+        { id: "vi-ide1", label: "Fixation correcte de la sonde avec lac + compresses aux commissures labiales", role: "ide", critical: false },
+        { id: "vi-ide2", label: "Vérifier la pression du ballonnet à 30 cmH2O", role: "ide", critical: true },
+        { id: "vi-ide3", label: "Mise en place de l'EtCO2", role: "ide", critical: false },
+        { id: "vi-ide4", label: "Mise en place d'une canule de Guedel si besoin", role: "ide", critical: false },
+
+        { id: "vi-med1", label: "Valeur stable de l'EtCO2 sur 5 cycles", role: "medecin", critical: true,
+          timer: { duration: 30, label: "EtCO2 stable sur 5 cycles (démo 30s)" } },
+        { id: "vi-med2", label: "Symétrie de l'auscultation pulmonaire, absence de bruits épigastriques", role: "medecin", critical: true },
+        { id: "vi-med3", label: "Si auscultation asymétrique : retrait sonde de 2cm", role: "medecin", critical: false },
+        { id: "vi-med4", label: "Repère arcade dentaire : Femme 21cm / Homme 23cm", role: "medecin", critical: false },
+      ],
+    },
+    {
+      id: "surveillance",
+      label: "Surveillance continue",
+      items: [
+        { id: "sc-ide1", label: "Discuter de la mise en place d'une sonde gastrique", role: "ide", critical: false },
+        { id: "sc-ide2", label: "Surveillance sédations", role: "ide", critical: false },
+        { id: "sc-ide3", label: "Surveillance circuit du respirateur", role: "ide", critical: false },
+        { id: "sc-ide4", label: "Sondage vésical à demeure", role: "ide", critical: false },
+        { id: "sc-ide5", label: "Protection oculaire", role: "ide", critical: false },
+        { id: "sc-ide6", label: "Tracer les équipements et surveillances sur le DPI", role: "ide", critical: false },
+
+        { id: "sc-med1", label: "Mise en place et optimisation des sédations ± bolus si bonne tolérance hémodynamique", role: "medecin", critical: false },
+        { id: "sc-med2", label: "Optimisation de la ventilation", role: "medecin", critical: false },
+        { id: "sc-med3", label: "Radio de contrôle", role: "medecin", critical: false },
+        { id: "sc-med4", label: "Optimisation hémodynamique (remplissage et NAD)", role: "medecin", critical: false },
+        { id: "sc-med5", label: "Régulariser les prescriptions médicales sur Axigate", role: "medecin", critical: false },
+      ],
+    },
+  ],
+};
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// SÉDATION PROCÉDURALE ADULTE — Kétamine/Propofol validés (doses, concentrations).
+// ⚠ Les critères des scores MASS et MPADSS ci-dessous sont une version DRAFT
+// standard (littérature) — à valider phrase par phrase avant usage clinique réel.
+// ────────────────────────────────────────────────────────────────────────────
+const SEDATION_PROCEDURALE_CHECKLIST = {
+  id: "sedation-procedurale-adulte",
+  title: "Sédation procédurale — Adulte",
+  icon: "💤",
+  color: "#7C3AED",
+  category: "sedation",
+  phases: [
+    {
+      id: "avant",
+      label: "Avant la sédation",
+      items: [
+        { id: "av-as1", label: "Installer le patient, scope (SpO2, PNI/2min, ECG)", role: "as", critical: false },
+        { id: "av-as2", label: "Vérifier la voie d'abord (VVP fonctionnelle)", role: "as", critical: false },
+
+        { id: "av-ide1", label: "Matériel d'aspiration prêt", role: "ide", critical: false },
+        { id: "av-ide2", label: "Chariot d'urgence à proximité", role: "ide", critical: true },
+        { id: "av-ide3", label: "Antagonistes disponibles : flumazénil (si benzo), naloxone (si morphinique)", role: "ide", critical: true },
+        { id: "av-ide4", label: "Préparer Kétamine 10mg/mL (seringue dédiée)", role: "ide", critical: false },
+        { id: "av-ide5", label: "Préparer Propofol 10mg/mL (seringue dédiée)", role: "ide", critical: false },
+
+        { id: "av-med1", label: "Indication posée et information/consentement du patient", role: "medecin", critical: true },
+        { id: "av-med2", label: "Recherche de contre-indications et allergies", role: "medecin", critical: true },
+        { id: "av-med3", label: "Score ASA", role: "medecin", critical: false,
+          type: "asa_calc" },
+        { id: "av-med3b", label: "Rechercher les critères de voie aérienne difficile", role: "medecin", critical: false },
+        { id: "av-med4", label: "Présence d'un second médecin ou opérateur dédié au geste (le sédateur ne réalise pas le geste)", role: "medecin", critical: true },
+        { id: "av-med5", label: "Matériel de ventilation vérifié et prêt (BAVU, O2, laryngoscope)", role: "medecin", critical: true },
+        { id: "av-med6", label: "Capnographie (EtCO2) en place", role: "medecin", critical: true },
+      ],
+    },
+    {
+      id: "pendant",
+      label: "Pendant la sédation / le geste",
+      items: [
+        { id: "pe-as1", label: "Surveillance scope continue, signaler toute anomalie", role: "as", critical: false },
+
+        { id: "pe-ide1", label: "Kétamine — bolus initial", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 0.5, concentration: 10 },
+        { id: "pe-ide2", label: "Propofol — bolus initial", role: "ide", critical: false,
+          type: "dose_calc", mgPerKg: 0.5, concentration: 10 },
+        { id: "pe-ide3", label: "Kétamine — titration par palier", role: "ide", critical: false,
+          type: "titration_calc", mgPerKg: 0.25, concentration: 10 },
+        { id: "pe-ide4", label: "Propofol — titration par palier", role: "ide", critical: false,
+          type: "titration_calc", mgPerKg: 0.25, concentration: 10 },
+
+        { id: "pe-med1", label: "Titration progressive selon effet observé", role: "medecin", critical: true },
+        { id: "pe-med2", label: "Surveillance continue de la conscience et de la ventilation", role: "medecin", critical: true },
+        { id: "pe-med3", label: "Réalisation du geste par l'opérateur dédié", role: "medecin", critical: false },
+      ],
+    },
+    {
+      id: "reveil",
+      label: "Réveil / Sortie",
+      items: [
+        { id: "rv-as1", label: "Surveillance jusqu'au réveil complet", role: "as", critical: false },
+
+        { id: "rv-ide1", label: "Constantes régulières, surveillance des signes de réveil", role: "ide", critical: false },
+
+        { id: "rv-med1", label: "Score MASS (Aldrete modifié) — DRAFT, à valider", role: "medecin", critical: true,
+          type: "score_calc", threshold: 9, maxScore: 10,
+          criteria: [
+            { label: "Activité motrice", options: [
+              { label: "4 membres sur commande", value: 2 }, { label: "2 membres sur commande", value: 1 }, { label: "Aucun mouvement", value: 0 },
+            ]},
+            { label: "Respiration", options: [
+              { label: "Ample, toux efficace", value: 2 }, { label: "Dyspnée / limitation", value: 1 }, { label: "Apnée", value: 0 },
+            ]},
+            { label: "Circulation (TA)", options: [
+              { label: "± 20% valeur de base", value: 2 }, { label: "± 20-50%", value: 1 }, { label: "± 50%", value: 0 },
+            ]},
+            { label: "Conscience", options: [
+              { label: "Complètement éveillé", value: 2 }, { label: "Réveillable à l'appel", value: 1 }, { label: "Ne répond pas", value: 0 },
+            ]},
+            { label: "SpO2", options: [
+              { label: "> 92% air ambiant", value: 2 }, { label: "O2 nécessaire pour > 90%", value: 1 }, { label: "< 90% même sous O2", value: 0 },
+            ]},
+          ],
+        },
+        { id: "rv-med2", label: "Score MPADSS — DRAFT, à valider", role: "medecin", critical: true,
+          type: "score_calc", threshold: 9, maxScore: 10,
+          criteria: [
+            { label: "Constantes vitales", options: [
+              { label: "Stables, proches valeurs de base", value: 2 }, { label: "Variations modérées (20-40%)", value: 1 }, { label: "Variations > 40%", value: 0 },
+            ]},
+            { label: "Déambulation", options: [
+              { label: "Marche stable", value: 2 }, { label: "Marche avec aide", value: 1 }, { label: "Ne peut pas déambuler", value: 0 },
+            ]},
+            { label: "Nausées / vomissements", options: [
+              { label: "Minimes", value: 2 }, { label: "Modérés", value: 1 }, { label: "Sévères", value: 0 },
+            ]},
+            { label: "Douleur", options: [
+              { label: "Minime", value: 2 }, { label: "Modérée", value: 1 }, { label: "Sévère", value: 0 },
+            ]},
+            { label: "Saignement", options: [
+              { label: "Minime", value: 2 }, { label: "Modéré", value: 1 }, { label: "Sévère", value: 0 },
+            ]},
+          ],
+        },
+        { id: "rv-med3", label: "Consignes de sortie données, accompagnant si sortie le jour même", role: "medecin", critical: false },
+      ],
+    },
+  ],
+};
+
+
+// (ex : MASS / Aldrete modifié, MPADSS) — chaque critère se sélectionne au tap
+// ────────────────────────────────────────────────────────────────────────────
+function ScoreCalcItem({ item, selections, onSelect, checked, onValidate, roleVisible }) {
+  const C = useC();
+  const allAnswered = selections.every(v => v !== null);
+  const total = allAnswered ? selections.reduce((a, b) => a + b, 0) : null;
+  const passed = total !== null && total >= item.threshold;
+
+  return (
+    <div style={{
+      background: checked ? C.greenLight : C.bg, borderRadius: 12, padding: "12px 14px",
+      border: `1.5px solid ${checked ? C.green : C.border}`,
+    }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.navy, marginBottom: 10 }}>
+        <RoleBadge role={item.role} visible={roleVisible} />
+        {item.critical && <span style={{ color: C.red }}>⚠ </span>}{item.label}
+      </div>
+
+      {item.criteria.map((crit, idx) => (
+        <div key={idx} style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 5 }}>{crit.label}</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {crit.options.map((opt, oIdx) => {
+              const isSelected = selections[idx] === opt.value;
+              return (
+                <button key={oIdx} onClick={() => onSelect(idx, opt.value)} style={{
+                  flex: "1 1 auto", minWidth: 90, border: `1.5px solid ${isSelected ? C.blue : C.border}`,
+                  background: isSelected ? C.blueLight : "#fff", color: isSelected ? C.blue : C.text,
+                  borderRadius: 8, padding: "6px 8px", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+                }}>{opt.label} ({opt.value})</button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: total === null ? C.sub : (passed ? C.green : C.red) }}>
+          {total === null ? "En cours…" : `Score : ${total} / ${item.maxScore}`}
+          {total !== null && (passed ? " ✅ Seuil atteint" : ` — seuil ${item.threshold} non atteint`)}
+        </div>
+        {allAnswered && !checked && (
+          <Btn onClick={onValidate} color={C.green} style={{ width: "auto", padding: "7px 14px" }}>Valider</Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// TitrationCalcItem — compteur de paliers de titration, dose recalculée à chaque palier
+// ────────────────────────────────────────────────────────────────────────────
+function TitrationCalcItem({ item, weight, count, onIncrement, onDecrement, checklistColor, roleVisible }) {
+  const C = useC();
+  const w = parseFloat(weight);
+  const hasWeight = weight !== "" && !isNaN(w) && w > 0;
+  const doseMgPerPalier = hasWeight ? w * item.mgPerKg : null;
+  const doseMlPerPalier = doseMgPerPalier !== null ? doseMgPerPalier / item.concentration : null;
+  const totalMg = doseMgPerPalier !== null ? doseMgPerPalier * count : null;
+
+  return (
+    <div style={{
+      background: count > 0 ? C.greenLight : C.bg, borderRadius: 12, padding: "12px 14px",
+      border: `1.5px solid ${count > 0 ? C.green : C.border}`,
+    }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+        <RoleBadge role={item.role} visible={roleVisible} />
+        {item.label} — {item.mgPerKg} mg/kg par palier
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: hasWeight ? checklistColor : C.sub, marginBottom: 10 }}>
+        {hasWeight
+          ? `→ ${doseMgPerPalier.toFixed(1)} mg soit ${doseMlPerPalier.toFixed(2)} mL par palier (seringue ${item.concentration}mg/mL)`
+          : "→ Entrer le poids du patient pour calculer la dose"}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onDecrement} disabled={count === 0} style={{
+            width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${C.border}`,
+            background: "#fff", fontSize: 16, fontWeight: 900, color: count === 0 ? C.border : C.text,
+            cursor: count === 0 ? "default" : "pointer",
+          }}>−</button>
+          <div style={{ fontSize: 14, fontWeight: 900, color: C.navy, minWidth: 70, textAlign: "center" }}>
+            {count} palier{count !== 1 ? "s" : ""}
+          </div>
+          <button onClick={onIncrement} style={{
+            width: 32, height: 32, borderRadius: 8, border: `1.5px solid ${checklistColor}`,
+            background: checklistColor, color: "#fff", fontSize: 16, fontWeight: 900, cursor: "pointer",
+          }}>+</button>
+        </div>
+        {totalMg !== null && count > 0 && (
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>Total : {totalMg.toFixed(1)} mg</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ASACalcItem — classification ASA interactive (I à VI, + option urgence "E")
+// ────────────────────────────────────────────────────────────────────────────
+const ASA_OPTIONS = [
+  { value: "I", desc: "Patient en bonne santé" },
+  { value: "II", desc: "Maladie systémique légère" },
+  { value: "III", desc: "Maladie systémique sévère" },
+  { value: "IV", desc: "Maladie systémique sévère, menace vitale constante" },
+  { value: "V", desc: "Patient moribond, survie improbable sans intervention" },
+  { value: "VI", desc: "État de mort cérébrale, donneur d'organes" },
+];
+
+function ASACalcItem({ selection, onSelect, urgent, onToggleUrgent, checked, onValidate, checklistColor, role, roleVisible }) {
+  const C = useC();
+  return (
+    <div style={{
+      background: checked ? C.greenLight : C.bg, borderRadius: 12, padding: "12px 14px",
+      border: `1.5px solid ${checked ? C.green : C.border}`,
+    }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: C.navy, marginBottom: 10 }}>
+        <RoleBadge role={role} visible={roleVisible} />Score ASA
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
+        {ASA_OPTIONS.map(opt => {
+          const isSelected = selection === opt.value;
+          return (
+            <button key={opt.value} onClick={() => onSelect(opt.value)} style={{
+              display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+              border: `1.5px solid ${isSelected ? checklistColor : C.border}`,
+              background: isSelected ? `${checklistColor}18` : "#fff",
+              borderRadius: 8, padding: "7px 10px", cursor: "pointer",
+            }}>
+              <span style={{ fontSize: 12.5, fontWeight: 900, color: isSelected ? checklistColor : C.navy, minWidth: 34 }}>
+                ASA {opt.value}
+              </span>
+              <span style={{ fontSize: 11.5, color: C.sub }}>{opt.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 10 }}>
+        <input type="checkbox" checked={urgent} onChange={(e) => onToggleUrgent(e.target.checked)} />
+        Geste réalisé en urgence (suffixe E)
+      </label>
+
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        paddingTop: 10, borderTop: `1px solid ${C.border}`,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: selection ? C.navy : C.sub }}>
+          {selection ? `Classification : ASA ${selection}${urgent ? "E" : ""}` : "Sélectionner une classe"}
+        </div>
+        {selection && !checked && (
+          <Btn onClick={onValidate} color={C.green} style={{ width: "auto", padding: "7px 14px" }}>Valider</Btn>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CompactDoneRow — ligne compacte pour un item déjà validé (repliée), tap pour déplier
+// ────────────────────────────────────────────────────────────────────────────
+function CompactDoneRow({ label, detail, critical, image, role, roleVisible, onExpand, onImage }) {
+  const C = useC();
+  return (
+    <div onClick={onExpand} style={{
+      display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+      background: C.greenLight, borderRadius: 12, padding: "9px 14px",
+      border: `1.5px solid ${C.green}`, touchAction: "manipulation",
+    }}>
+      <span style={{
+        width: 20, height: 20, borderRadius: 6, flexShrink: 0, background: C.green,
+        display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+        fontSize: 12, fontWeight: 900,
+      }}>✓</span>
+      <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <RoleBadge role={role} visible={roleVisible} />
+        {label}{detail ? ` — ${detail}` : ""}
+      </span>
+      {image && (
+        <button onClick={(e) => { e.stopPropagation(); onImage(image); }} style={{
+          border: "none", background: "none", fontSize: 15, cursor: "pointer", flexShrink: 0, padding: 0,
+        }}>🖼</button>
+      )}
+      <span style={{ fontSize: 11, color: C.sub, flexShrink: 0 }}>▾</span>
+    </div>
+  );
+}
+
+function TimerItem({ item, state }) {
+  const C = useC();
+  const remaining = state ? state.remaining : item.timer.duration;
+  const running = state ? state.running : false;
+  const finished = state ? state.finished : false;
+  const notStarted = !state;
+
+  return (
+    <div style={{
+      background: finished ? C.greenLight : notStarted ? C.bg : C.blueLight, borderRadius: 12, padding: "10px 12px",
+      marginTop: 8, border: `1px solid ${finished ? C.green : notStarted ? C.border : C.blue}44`,
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.sub, marginBottom: 6 }}>
+        ⏱ {item.timer.label}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          fontSize: 22, fontWeight: 900, color: finished ? C.green : notStarted ? C.sub : C.navy, minWidth: 50,
+        }}>
+          {String(Math.floor(remaining / 60)).padStart(2, "0")}:{String(remaining % 60).padStart(2, "0")}
+        </div>
+        {notStarted && <div style={{ fontSize: 12, color: C.sub, fontWeight: 600 }}>démarre à la validation de l'item</div>}
+        {running && <div style={{ fontSize: 12, color: C.blue, fontWeight: 700 }}>en cours… (continue en changeant de phase)</div>}
+        {finished && <div style={{ fontSize: 12, color: C.green, fontWeight: 800 }}>✅ Terminé</div>}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Rôles disponibles pour le filtre d'affichage
+// ────────────────────────────────────────────────────────────────────────────
+const ROLES = [
+  { id: "tous", label: "Tous", icon: "👥" },
+  { id: "medecin", label: "Médecin", icon: "🩺", color: "#2563EB" },
+  { id: "ide", label: "IDE", icon: "💉", color: "#D97706" },
+  { id: "as", label: "AS / Ambulancier", icon: "🚑", color: "#0D9488" },
+];
+const ROLE_COLORS = { medecin: "#2563EB", ide: "#D97706", as: "#0D9488" };
+const ROLE_SHORT = { medecin: "MED", ide: "IDE", as: "AS" };
+
+// Petit badge coloré indiquant le rôle concerné — affiché uniquement en vue "Tous"
+function RoleBadge({ role, visible }) {
+  if (!visible || !role || role === "tous" || !ROLE_COLORS[role]) return null;
+  const color = ROLE_COLORS[role];
+  return (
+    <span style={{
+      display: "inline-block", fontSize: 9.5, fontWeight: 900, color,
+      background: `${color}1E`, borderRadius: 5, padding: "1px 5px", marginRight: 6,
+      verticalAlign: "middle", letterSpacing: 0.3,
+    }}>{ROLE_SHORT[role]}</span>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ChecklistRunner — moteur générique, réutilisable pour toute checklist
+// ────────────────────────────────────────────────────────────────────────────
+function ChecklistRunner({ checklist, onBack, onFinish }) {
+  const C = useC();
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  const [checked, setChecked] = useState({});
+  const [startTime] = useState(() => Date.now());
+  const [roleFilter, setRoleFilter] = useState("tous");
+  const [weight, setWeight] = useState("");
+  const [volume, setVolume] = useState("");
+  const [paused, setPaused] = useState(false);
+  const [showOverview, setShowOverview] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [timers, setTimers] = useState({}); // itemId -> { remaining, running, finished, label }
+  const [scoreSelections, setScoreSelections] = useState({}); // itemId -> [valeurs par critère]
+  const [titrationCounts, setTitrationCounts] = useState({}); // itemId -> nombre de paliers administrés
+  const [asaSelections, setAsaSelections] = useState({}); // itemId -> { value, urgent }
+  const [lastAction, setLastAction] = useState(null); // { itemId, prevChecked, label } — pour "Annuler"
+  const [expandedItems, setExpandedItems] = useState({}); // itemId -> true si on force le détail malgré validation
+  const [imageViewer, setImageViewer] = useState(null); // url de l'image actuellement affichée en plein écran
+
+  // Intervalle unique pour tous les minuteurs — tourne tant que le Runner est monté,
+  // indépendamment de la phase affichée, pour que les minuteurs survivent au changement de phase
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimers(prev => {
+        let changed = false;
+        let anyFinishedNow = false;
+        const next = {};
+        Object.entries(prev).forEach(([id, t]) => {
+          if (t.running && t.remaining > 0) {
+            changed = true;
+            const remaining = t.remaining - 1;
+            if (remaining <= 0) {
+              next[id] = { ...t, remaining: 0, running: false, finished: true };
+              anyFinishedNow = true;
+            } else {
+              next[id] = { ...t, remaining };
+            }
+          } else {
+            next[id] = t;
+          }
+        });
+        if (anyFinishedNow) { playBeep(); vibrateIfSupported(); }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  function startTimer(item) {
+    setTimers(prev => ({
+      ...prev,
+      [item.id]: { remaining: item.timer.duration, running: true, finished: false, label: item.timer.label },
+    }));
+  }
+
+  const allItems = checklist.phases.flatMap(p => p.items);
+  const totalItems = allItems.length;
+  const checkedCount = Object.values(checked).filter(Boolean).length;
+  const needsWeight = allItems.some(it => it.type === "dose_calc" || it.type === "titration_calc");
+  const needsVolume = allItems.some(it => it.type === "dose_calc_volume");
+
+  const phase = checklist.phases[phaseIndex];
+  const isLastPhase = phaseIndex === checklist.phases.length - 1;
+  const phaseComplete = phase.items.every(it => checked[it.id]);
+
+  function toggleItem(item) {
+    const prevChecked = !!checked[item.id];
+    setLastAction({ itemId: item.id, prevChecked, label: item.label });
+    if (prevChecked) {
+      setChecked(prev => ({ ...prev, [item.id]: false }));
+      return;
+    }
+    setChecked(prev => ({ ...prev, [item.id]: true }));
+    if (item.timer && !timers[item.id]) {
+      startTimer(item);
+    }
+  }
+
+  function undoLast() {
+    if (!lastAction) return;
+    setChecked(prev => ({ ...prev, [lastAction.itemId]: lastAction.prevChecked }));
+    setLastAction(null);
+  }
+
+  function goNextPhase() {
+    if (isLastPhase) {
+      setReviewMode(true);
+    } else {
+      setPhaseIndex(i => i + 1);
+    }
+  }
+
+  function finalizeChecklist() {
+    onFinish({ checked, weight, volume, scoreSelections, titrationCounts, asaSelections, durationSec: Math.round((Date.now() - startTime) / 1000) });
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack} />
+
+      {/* Barre de progression globale */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy }}>
+            {checklist.icon} {checklist.title}
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginLeft: 8 }}>
+              Phase {phaseIndex + 1}/{checklist.phases.length}
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>{checkedCount}/{totalItems}</div>
+          </div>
+        </div>
+        <div style={{ height: 8, background: C.border, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{
+            height: "100%", width: `${(checkedCount / totalItems) * 100}%`,
+            background: checklist.color, transition: "width .25s",
+          }} />
+        </div>
+      </div>
+
+      {/* Poids patient (si la checklist utilise des calculs au poids) + filtre rôle, sur une seule ligne compacte */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, overflowX: "auto", paddingBottom: 2 }}>
+        {needsWeight && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+            background: C.white, border: `1px solid ${C.border}`, borderRadius: 20, padding: "5px 10px",
+          }}>
+            <span style={{ fontSize: 12 }}>⚖️</span>
+            <input
+              type="number" inputMode="decimal" value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              placeholder="kg"
+              style={{
+                width: 44, border: "none", padding: 0,
+                fontSize: 12.5, fontWeight: 700, color: C.navy, background: "transparent",
+              }}
+            />
+            <span style={{ fontSize: 11, color: C.sub }}>kg</span>
+          </div>
+        )}
+        {needsVolume && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+            background: C.white, border: `1px solid ${C.border}`, borderRadius: 20, padding: "5px 10px",
+          }}>
+            <span style={{ fontSize: 12 }}>💧</span>
+            <input
+              type="number" inputMode="decimal" value={volume}
+              onChange={(e) => setVolume(e.target.value)}
+              placeholder="L"
+              style={{
+                width: 40, border: "none", padding: 0,
+                fontSize: 12.5, fontWeight: 700, color: C.navy, background: "transparent",
+              }}
+            />
+            <span style={{ fontSize: 11, color: C.sub }}>L évacués</span>
+          </div>
+        )}
+        {ROLES.map(r => {
+          const roleColor = r.color || C.sub;
+          const isSelected = roleFilter === r.id;
+          return (
+            <button key={r.id} onClick={() => setRoleFilter(r.id)} style={{
+              flexShrink: 0, borderRadius: 20, padding: "6px 11px",
+              fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+              background: isSelected ? roleColor : `${roleColor}18`,
+              color: isSelected ? "#fff" : roleColor,
+              border: `1px solid ${roleColor}${isSelected ? "" : "66"}`,
+              touchAction: "manipulation",
+            }}>{r.icon} {r.label}</button>
+          );
+        })}
+      </div>
+
+      {/* Menu "⋯" : Vue d'ensemble / Pause / Annuler */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <button onClick={() => setShowMenu(true)} style={{
+          border: `1px solid ${C.border}`, background: C.white, borderRadius: 20,
+          padding: "6px 14px", fontSize: 13, fontWeight: 900, color: C.navy, cursor: "pointer",
+        }}>⋯</button>
+      </div>
+
+      {/* Rappel discret des minuteurs actifs ou terminés, visible depuis n'importe quelle phase */}
+      {Object.values(timers).some(t => t.running || t.finished) && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {Object.entries(timers).filter(([, t]) => t.running || t.finished).map(([id, t]) => (
+            <div key={id} style={{
+              fontSize: 11, fontWeight: 800, padding: "5px 10px", borderRadius: 20,
+              background: t.finished ? C.greenLight : C.blueLight,
+              color: t.finished ? C.green : C.blue,
+              border: `1px solid ${t.finished ? C.green : C.blue}55`,
+            }}>
+              {t.finished
+                ? `✅ ${t.label} terminé`
+                : `⏱ ${t.label} ${String(Math.floor(t.remaining / 60)).padStart(2, "0")}:${String(t.remaining % 60).padStart(2, "0")}`}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reviewMode ? (
+        <ChecklistReviewPanel
+          checklist={checklist}
+          checked={checked}
+          onBackToChecklist={() => setReviewMode(false)}
+          onConfirm={finalizeChecklist}
+        />
+      ) : (
+        <>
+      {/* Phase active */}
+      <Card style={{ borderLeft: `4px solid ${checklist.color}`, marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, color: C.navy, marginBottom: 12 }}>
+          {phase.label}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {phase.items
+            .filter(item => roleFilter === "tous" || item.role === "tous" || item.role === roleFilter)
+            .map(item => {
+            const isChecked = !!checked[item.id];
+            const isExpanded = !!expandedItems[item.id];
+
+            // Item validé et non explicitement déplié → ligne compacte
+            if (isChecked && !isExpanded) {
+              let detail = null;
+              if (item.type === "dose_calc") {
+                const w = parseFloat(weight);
+                const hasWeight = weight !== "" && !isNaN(w) && w > 0;
+                if (hasWeight) {
+                  const unit = item.unit || "mg"; const perHour = !!item.perHour;
+                  const doseMin = w * item.mgPerKg;
+                  const doseMax = item.mgPerKgMax ? w * item.mgPerKgMax : null;
+                  const doseText = doseMax !== null ? `${doseMin.toFixed(2)}-${doseMax.toFixed(2)}` : doseMin.toFixed(2);
+                  detail = `${doseText} ${unit}${perHour ? "/h" : ""}`;
+                }
+              } else if (item.type === "dose_calc_volume") {
+                const v = parseFloat(volume);
+                const hasVolume = volume !== "" && !isNaN(v) && v > 0;
+                if (hasVolume) {
+                  detail = v < (item.threshold || 0) ? "non recommandée" : `${(v * item.gPerL).toFixed(0)} g`;
+                }
+              } else if (item.type === "score_calc") {
+                const sel = scoreSelections[item.id] || [];
+                if (sel.length && sel.every(v => v !== null && v !== undefined)) {
+                  detail = `${sel.reduce((a, b) => a + b, 0)}/${item.maxScore}`;
+                }
+              } else if (item.type === "asa_calc") {
+                const sel = asaSelections[item.id];
+                if (sel && sel.value) detail = `ASA ${sel.value}${sel.urgent ? "E" : ""}`;
+              } else if (item.type === "titration_calc") {
+                const count = titrationCounts[item.id] || 0;
+                detail = `${count} palier${count !== 1 ? "s" : ""}`;
+              }
+              return (
+                <CompactDoneRow
+                  key={item.id}
+                  label={item.label}
+                  detail={detail}
+                  image={item.image}
+                  role={item.role}
+                  roleVisible={roleFilter === "tous"}
+                  onImage={(url) => setImageViewer(url)}
+                  onExpand={() => setExpandedItems(prev => ({ ...prev, [item.id]: true }))}
+                />
+              );
+            }
+
+            // Item de type "score_calc" — calculateur de score interactif (MASS, MPADSS...)
+            if (item.type === "score_calc") {
+              return (
+                <ScoreCalcItem
+                  key={item.id}
+                  item={item}
+                  selections={scoreSelections[item.id] || Array(item.criteria.length).fill(null)}
+                  onSelect={(critIdx, value) => {
+                    setScoreSelections(prev => {
+                      const current = prev[item.id] || Array(item.criteria.length).fill(null);
+                      const next = [...current]; next[critIdx] = value;
+                      return { ...prev, [item.id]: next };
+                    });
+                  }}
+                  checked={isChecked}
+                  onValidate={() => toggleItem(item)}
+                  roleVisible={roleFilter === "tous"}
+                />
+              );
+            }
+
+            // Item de type "asa_calc" — classification ASA interactive
+            if (item.type === "asa_calc") {
+              const sel = asaSelections[item.id] || { value: null, urgent: false };
+              return (
+                <ASACalcItem
+                  key={item.id}
+                  selection={sel.value}
+                  urgent={sel.urgent}
+                  checked={isChecked}
+                  checklistColor={checklist.color}
+                  onSelect={(value) => setAsaSelections(prev => ({ ...prev, [item.id]: { ...sel, value } }))}
+                  onToggleUrgent={(urgent) => setAsaSelections(prev => ({ ...prev, [item.id]: { ...sel, urgent } }))}
+                  onValidate={() => toggleItem(item)}
+                  role={item.role}
+                  roleVisible={roleFilter === "tous"}
+                />
+              );
+            }
+
+            // Item de type "titration_calc" — compteur de paliers avec dose recalculée
+            if (item.type === "titration_calc") {
+              const count = titrationCounts[item.id] || 0;
+              return (
+                <TitrationCalcItem
+                  key={item.id}
+                  item={item}
+                  weight={weight}
+                  count={count}
+                  checklistColor={checklist.color}
+                  roleVisible={roleFilter === "tous"}
+                  onIncrement={() => {
+                    const next = count + 1;
+                    setTitrationCounts(prev => ({ ...prev, [item.id]: next }));
+                    if (next > 0 && !checked[item.id]) setChecked(prev => ({ ...prev, [item.id]: true }));
+                  }}
+                  onDecrement={() => {
+                    const next = Math.max(0, count - 1);
+                    setTitrationCounts(prev => ({ ...prev, [item.id]: next }));
+                    if (next === 0 && checked[item.id]) setChecked(prev => ({ ...prev, [item.id]: false }));
+                  }}
+                />
+              );
+            }
+
+            // Item de type "dose_calc_volume" — calcule la dose (ex. albumine) à partir du volume évacué saisi
+            if (item.type === "dose_calc_volume") {
+              const v = parseFloat(volume);
+              const hasVolume = volume !== "" && !isNaN(v) && v > 0;
+              const belowThreshold = hasVolume && item.threshold && v < item.threshold;
+              const doseG = hasVolume && !belowThreshold ? v * item.gPerL : null;
+              return (
+                <div key={item.id}
+                  onClick={() => toggleItem(item)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+                    background: isChecked ? C.greenLight : (item.critical ? C.redLight : C.bg),
+                    borderRadius: 12, padding: "12px 14px",
+                    border: `1.5px solid ${isChecked ? C.green : (item.critical ? C.red : C.border)}`,
+                    touchAction: "manipulation",
+                  }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 7, flexShrink: 0, marginTop: 1,
+                    background: isChecked ? C.green : "#fff",
+                    border: `2px solid ${isChecked ? C.green : C.border}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 14, fontWeight: 900,
+                  }}>{isChecked ? "✓" : ""}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, lineHeight: 1.4 }}>
+                      <RoleBadge role={item.role} visible={roleFilter === "tous"} />
+                      {item.label}
+                    </div>
+                    <div style={{
+                      fontSize: 13, fontWeight: 800, marginTop: 4,
+                      color: hasVolume ? checklist.color : C.sub,
+                    }}>
+                      {!hasVolume && "→ Entrer le volume évacué pour calculer la dose d'albumine"}
+                      {hasVolume && belowThreshold && `→ Albumine non recommandée (< ${item.threshold}L évacués)`}
+                      {hasVolume && !belowThreshold && `→ ${doseG.toFixed(0)} g d'albumine (${item.gPerL}g/L × ${v}L)`}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Item de type "dose_calc" — calcule la dose exacte à partir du poids saisi
+            if (item.type === "dose_calc") {
+              const w = parseFloat(weight);
+              const hasWeight = weight !== "" && !isNaN(w) && w > 0;
+              const unit = item.unit || "mg";
+              const perHour = !!item.perHour;
+              const doseMin = hasWeight ? w * item.mgPerKg : null;
+              const doseMax = hasWeight && item.mgPerKgMax ? w * item.mgPerKgMax : null;
+              const mlMin = doseMin !== null ? doseMin / item.concentration : null;
+              const mlMax = doseMax !== null ? doseMax / item.concentration : null;
+              const perKgLabel = `${item.mgPerKg}${item.mgPerKgMax ? `-${item.mgPerKgMax}` : ""} ${unit}/kg${perHour ? "/h" : ""}`;
+              let resultLabel = null;
+              if (hasWeight) {
+                const doseText = doseMax !== null ? `${doseMin.toFixed(2)}-${doseMax.toFixed(2)}` : doseMin.toFixed(2);
+                const mlText = mlMax !== null ? `${mlMin.toFixed(2)}-${mlMax.toFixed(2)}` : mlMin.toFixed(2);
+                resultLabel = `→ ${doseText} ${unit}${perHour ? "/h" : ""} soit ${mlText} mL${perHour ? "/h" : ""} (seringue ${item.concentration}${unit}/mL)`;
+              }
+              return (
+                <div key={item.id}
+                  onClick={() => toggleItem(item)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+                    background: isChecked ? C.greenLight : (item.critical ? C.redLight : C.bg),
+                    borderRadius: 12, padding: "12px 14px",
+                    border: `1.5px solid ${isChecked ? C.green : (item.critical ? C.red : C.border)}`,
+                    touchAction: "manipulation",
+                  }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 7, flexShrink: 0, marginTop: 1,
+                    background: isChecked ? C.green : "#fff",
+                    border: `2px solid ${isChecked ? C.green : C.border}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 14, fontWeight: 900,
+                  }}>{isChecked ? "✓" : ""}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, lineHeight: 1.4 }}>
+                      <RoleBadge role={item.role} visible={roleFilter === "tous"} />
+                      {item.critical && !isChecked && <span style={{ color: C.red }}>⚠ </span>}
+                      {item.label} — {perKgLabel}
+                    </div>
+                    <div style={{
+                      fontSize: 13, fontWeight: 800, marginTop: 4,
+                      color: hasWeight ? checklist.color : C.sub,
+                    }}>
+                      {resultLabel || "→ Entrer le poids du patient pour calculer la dose"}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Item standard
+            return (
+              <div key={item.id}>
+                <div
+                  onClick={() => toggleItem(item)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+                    background: isChecked ? C.greenLight : (item.critical ? C.redLight : C.bg),
+                    borderRadius: 12, padding: "12px 14px",
+                    border: `1.5px solid ${isChecked ? C.green : (item.critical ? C.red : C.border)}`,
+                    touchAction: "manipulation",
+                  }}>
+                  <div style={{
+                    width: 24, height: 24, borderRadius: 7, flexShrink: 0, marginTop: 1,
+                    background: isChecked ? C.green : "#fff",
+                    border: `2px solid ${isChecked ? C.green : C.border}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "#fff", fontSize: 14, fontWeight: 900,
+                  }}>{isChecked ? "✓" : ""}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, lineHeight: 1.4 }}>
+                      <RoleBadge role={item.role} visible={roleFilter === "tous"} />
+                      {item.critical && !isChecked && <span style={{ color: C.red }}>⚠ </span>}
+                      {item.label}
+                    </div>
+                  </div>
+                  {item.image && (
+                    <button onClick={(e) => { e.stopPropagation(); setImageViewer(item.image); }} style={{
+                      border: "none", background: "none", fontSize: 17, cursor: "pointer", flexShrink: 0, padding: 2,
+                    }}>🖼</button>
+                  )}
+                  {isChecked && isExpanded && (
+                    <button onClick={(e) => { e.stopPropagation(); setExpandedItems(prev => ({ ...prev, [item.id]: false })); }} style={{
+                      border: "none", background: "none", color: C.sub, fontSize: 11, cursor: "pointer", flexShrink: 0,
+                    }}>▴ réduire</button>
+                  )}
+                </div>
+                {item.timer && (
+                  <TimerItem item={item} state={timers[item.id]} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Espace réservé pour ne pas masquer le contenu sous la barre fixe */}
+      <div style={{ height: 72 }} />
+        </>
+      )}
+
+      {/* Barre de navigation fixe en bas d'écran — accessible au pouce */}
+      {!reviewMode && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 2500,
+          background: C.bg, borderTop: `1px solid ${C.border}`,
+          padding: "10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",
+        }}>
+          <div style={{ maxWidth: 420, margin: "0 auto", display: "flex", gap: 8 }}>
+            {phaseIndex > 0 && (
+              <Btn onClick={() => setPhaseIndex(i => i - 1)} color={C.sub} outline style={{ flex: 1 }}>
+                ‹ Précédent
+              </Btn>
+            )}
+            <Btn onClick={goNextPhase} color={checklist.color} style={{ flex: 2 }}>
+              {isLastPhase ? "Terminer la checklist" : "Suivant ›"}
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Visionneuse d'image plein écran */}
+      {imageViewer && (
+        <div onClick={() => setImageViewer(null)} style={{
+          position: "fixed", inset: 0, background: "rgba(15,23,42,.9)", zIndex: 4500,
+          display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        }}>
+          <img src={imageViewer} alt="Schéma" style={{ maxWidth: "100%", maxHeight: "85vh", borderRadius: 12 }} />
+          <button onClick={() => setImageViewer(null)} style={{
+            position: "absolute", top: 20, right: 20, border: "none", borderRadius: "50%",
+            width: 36, height: 36, background: "rgba(255,255,255,.15)", color: "#fff",
+            fontSize: 18, cursor: "pointer",
+          }}>✕</button>
+        </div>
+      )}
+
+      {/* Menu ⋯ : Vue d'ensemble / Pause / Annuler */}
+      {showMenu && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15,23,42,.45)",
+          display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 3800,
+        }} onClick={() => setShowMenu(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: C.card, borderRadius: "18px 18px 0 0", padding: 16, width: "100%", maxWidth: 420,
+            display: "flex", flexDirection: "column", gap: 8,
+          }}>
+            <button onClick={() => { setShowMenu(false); setShowOverview(true); }} style={{
+              display: "flex", alignItems: "center", gap: 10, border: `1px solid ${C.border}`,
+              background: C.white, borderRadius: 10, padding: "12px 14px", fontSize: 13.5,
+              fontWeight: 700, color: C.navy, cursor: "pointer", textAlign: "left",
+            }}>🗂 Vue d'ensemble des phases</button>
+            <button onClick={() => { setShowMenu(false); setPaused(true); }} style={{
+              display: "flex", alignItems: "center", gap: 10, border: `1px solid ${C.border}`,
+              background: C.white, borderRadius: 10, padding: "12px 14px", fontSize: 13.5,
+              fontWeight: 700, color: C.navy, cursor: "pointer", textAlign: "left",
+            }}>⏸ Mettre en pause</button>
+            <button onClick={() => { if (lastAction) { undoLast(); setShowMenu(false); } }} disabled={!lastAction} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              border: `1px solid ${lastAction ? C.red : C.border}`,
+              background: lastAction ? C.redLight : C.white, borderRadius: 10, padding: "12px 14px",
+              fontSize: 13.5, fontWeight: 700, color: lastAction ? C.red : C.sub,
+              cursor: lastAction ? "pointer" : "default", textAlign: "left",
+            }}>↩ Annuler la dernière action{lastAction ? ` (${lastAction.label})` : ""}</button>
+            <Btn onClick={() => setShowMenu(false)} color={C.sub} outline>Fermer</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay Pause */}
+      {paused && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15,23,42,.85)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 4000, padding: 20,
+        }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 320, textAlign: "center" }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>⏸</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: C.navy, marginBottom: 6 }}>Checklist en pause</div>
+            <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 18, lineHeight: 1.5 }}>
+              Votre progression est conservée ({checkedCount}/{totalItems} points).
+              {Object.values(timers).some(t => t.running) && " Les minuteurs continuent en arrière-plan."}
+            </div>
+            <Btn onClick={() => setPaused(false)} color={checklist.color}>▶ Reprendre</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Overlay Vue d'ensemble */}
+      {showOverview && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(15,23,42,.55)",
+          display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3500, padding: 20,
+        }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 20, maxWidth: 360, width: "100%" }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: C.navy, marginBottom: 14 }}>🗂 Vue d'ensemble</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              {checklist.phases.map((p, idx) => {
+                const status = reviewMode ? "done" : idx < phaseIndex ? "done" : idx === phaseIndex ? "current" : "upcoming";
+                const reachable = reviewMode || idx <= phaseIndex;
+                return (
+                  <div key={p.id}
+                    onClick={() => { if (reachable) { setPhaseIndex(idx); setReviewMode(false); setShowOverview(false); } }}
+                    style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "10px 12px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+                      cursor: reachable ? "pointer" : "default",
+                      background: status === "current" ? C.blueLight : status === "done" ? C.greenLight : C.bg,
+                      color: status === "upcoming" ? C.sub : C.text,
+                      border: `1px solid ${status === "current" ? C.blue : status === "done" ? C.green : C.border}44`,
+                    }}>
+                    <span>
+                      {status === "done" ? "✅" : status === "current" ? "🔵" : "⚪"} {p.label}
+                    </span>
+                    {status === "current" && <span style={{ fontSize: 11, color: C.blue }}>en cours</span>}
+                  </div>
+                );
+              })}
+            </div>
+            <Btn onClick={() => setShowOverview(false)} color={C.sub} outline>Fermer</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Popup de confirmation pour item critique non coché */}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ChecklistReviewPanel — synthèse finale avant génération du compte-rendu PDF
+// ────────────────────────────────────────────────────────────────────────────
+function ChecklistReviewPanel({ checklist, checked, onBackToChecklist, onConfirm }) {
+  const C = useC();
+  const allItems = checklist.phases.flatMap(p => p.items);
+  const missed = allItems.filter(it => !checked[it.id]);
+  const missedCritical = missed.filter(it => it.critical);
+  const hasIssues = missed.length > 0;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 15, fontWeight: 900, color: C.navy, marginBottom: 4 }}>
+        📋 Synthèse avant compte-rendu
+      </div>
+      <div style={{ fontSize: 12, color: C.sub, marginBottom: 14 }}>
+        Dernier coup d'œil avant de générer le document pour le dossier.
+      </div>
+
+      {hasIssues ? (
+        <div style={{
+          background: C.redLight, border: `1px solid ${C.red}44`, borderRadius: 12,
+          padding: "12px 14px", marginBottom: 14,
+        }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: C.red, marginBottom: 8 }}>
+            ⚠️ {missed.length} point{missed.length > 1 ? "s" : ""} non coché{missed.length > 1 ? "s" : ""}
+            {missedCritical.length > 0 && ` (dont ${missedCritical.length} critique${missedCritical.length > 1 ? "s" : ""})`}
+          </div>
+          {missed.map(it => (
+            <div key={it.id} style={{
+              fontSize: 12.5, padding: "3px 0",
+              color: it.critical ? C.red : C.text,
+              fontWeight: it.critical ? 800 : 500,
+            }}>
+              ☐ {it.critical && "⚠ "}{it.label}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{
+          background: C.greenLight, border: `1px solid ${C.green}44`, borderRadius: 12,
+          padding: "12px 14px", marginBottom: 14, fontSize: 12.5, fontWeight: 700, color: C.green,
+        }}>
+          ✅ Tous les points ont été validés
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn onClick={onBackToChecklist} color={C.sub} outline style={{ flex: 1 }}>
+          ‹ Revenir
+        </Btn>
+        <Btn onClick={onConfirm} color={checklist.color} style={{ flex: 2 }}>
+          Générer le compte-rendu
+        </Btn>
+      </div>
+    </Card>
+  );
+}
+
+
+// Génère une version texte brut du compte-rendu, pour copier/coller (dossier informatisé, messagerie...)
+function buildPlainTextReport(checklist, result) {
+  const minutes = Math.floor(result.durationSec / 60);
+  const seconds = result.durationSec % 60;
+  const dateStr = new Date().toLocaleString("fr-FR");
+  let lines = [];
+  lines.push(`CHEG Aubagne — SAU / SMUR`);
+  lines.push(`${checklist.title}`);
+  lines.push(`Réalisée le ${dateStr} — durée : ${minutes} min ${seconds}s`);
+  if (result.weight) lines.push(`Poids patient : ${result.weight} kg`);
+  if (result.volume) lines.push(`Volume évacué : ${result.volume} L`);
+  lines.push("");
+  checklist.phases.forEach(p => {
+    lines.push(`— ${p.label} —`);
+    p.items.forEach(item => {
+      const isChecked = !!result.checked[item.id];
+      if (item.type === "dose_calc_volume") {
+        const v = parseFloat(result.volume);
+        const hasVolume = result.volume && !isNaN(v) && v > 0;
+        let line = `${isChecked ? "[x]" : "[ ]"} ${item.label}`;
+        if (hasVolume) {
+          line += v < (item.threshold || 0)
+            ? " — albumine non recommandée"
+            : ` — ${(v * item.gPerL).toFixed(0)} g d'albumine`;
+        }
+        lines.push(line);
+        return;
+      }
+      if (item.type === "score_calc") {
+        const sel = (result.scoreSelections && result.scoreSelections[item.id]) || [];
+        const total = sel.every(v => v !== null && v !== undefined) ? sel.reduce((a, b) => a + b, 0) : null;
+        let line = `${isChecked ? "[x]" : "[ ]"} ${item.label}`;
+        if (total !== null) line += ` — Score obtenu : ${total}/${item.maxScore} (seuil ${item.threshold})`;
+        lines.push(line);
+        return;
+      }
+      if (item.type === "titration_calc") {
+        const count = (result.titrationCounts && result.titrationCounts[item.id]) || 0;
+        const w = parseFloat(result.weight);
+        const hasWeight = result.weight && !isNaN(w) && w > 0;
+        const totalMg = hasWeight ? (w * item.mgPerKg * count).toFixed(1) : null;
+        let line = `${count > 0 ? "[x]" : "[ ]"} ${item.label} — ${count} palier${count !== 1 ? "s" : ""}`;
+        if (totalMg !== null) line += ` (${totalMg} mg au total)`;
+        lines.push(line);
+        return;
+      }
+      if (item.type === "asa_calc") {
+        const sel = (result.asaSelections && result.asaSelections[item.id]) || {};
+        let line = `${isChecked ? "[x]" : "[ ]"} ${item.label}`;
+        if (sel.value) line += ` — ASA ${sel.value}${sel.urgent ? "E" : ""}`;
+        lines.push(line);
+        return;
+      }
+      let line = `${isChecked ? "[x]" : "[ ]"} ${item.label}`;
+      if (!isChecked && item.critical) line += "  (point critique non validé)";
+      lines.push(line);
+    });
+    lines.push("");
+  });
+  lines.push("Document généré depuis l'application SAU/SMUR Aubagne.");
+  return lines.join("\n");
+}
+
+function ChecklistPrintView({ checklist, result, onBack }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!document.getElementById("checklist-print-style")) {
+      const style = document.createElement("style");
+      style.id = "checklist-print-style";
+      style.textContent = `
+        @media print {
+          body * { visibility: hidden; }
+          #checklist-print-area, #checklist-print-area * { visibility: visible; }
+          #checklist-print-area { position: absolute; top: 0; left: 0; width: 100%; }
+          .no-print { display: none !important; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }, []);
+
+  const minutes = Math.floor(result.durationSec / 60);
+  const seconds = result.durationSec % 60;
+  const dateStr = new Date().toLocaleString("fr-FR");
+
+  function handleCopy() {
+    const text = buildPlainTextReport(checklist, result);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true); setTimeout(() => setCopied(false), 2000);
+        });
+      } else {
+        // Repli si l'API Clipboard n'est pas disponible
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        setCopied(true); setTimeout(() => setCopied(false), 2000);
+      }
+    } catch (e) { /* silencieux */ }
+  }
+
+  return (
+    <div>
+      <div className="no-print">
+        <BackBtn onClick={onBack} />
+      </div>
+
+      <div id="checklist-print-area" style={{
+        background: "#fff", borderRadius: 16, overflow: "hidden", color: "#1A2B3C",
+        fontFamily: "'Segoe UI', system-ui, sans-serif",
+        boxShadow: "0 4px 24px rgba(26,58,92,.10)", border: "1px solid #E2E8F0",
+      }}>
+        {/* Bandeau entité */}
+        <div style={{
+          background: `linear-gradient(135deg, ${checklist.color} 0%, #1A3A5C 100%)`,
+          padding: "16px 20px", color: "#fff",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.4, opacity: 0.95 }}>
+            🏥 CHEG AUBAGNE — SAU / SMUR
+          </div>
+          <div style={{ fontSize: 19, fontWeight: 900, marginTop: 4 }}>
+            {checklist.icon} {checklist.title}
+          </div>
+        </div>
+
+        <div style={{ padding: "18px 20px" }}>
+          {/* Étiquette + infos de réalisation */}
+          <div style={{
+            display: "flex", gap: 16, marginBottom: 20, paddingBottom: 16,
+            borderBottom: "1.5px dashed #DCE8F0",
+          }}>
+            <div style={{
+              width: "6cm", height: "4cm", border: `1.5px dashed #94A3B8`, borderRadius: 8,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 11, color: "#94A3B8", flexShrink: 0, textAlign: "center", padding: 6,
+              background: "#F8FAFC",
+            }}>
+              Emplacement étiquette patient
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 6 }}>
+              <div style={{ fontSize: 12.5, color: "#5A7184" }}>
+                📅 <b style={{ color: "#1A2B3C" }}>{dateStr}</b>
+              </div>
+              <div style={{ fontSize: 12.5, color: "#5A7184" }}>
+                ⏱ Durée : <b style={{ color: "#1A2B3C" }}>{minutes} min {seconds}s</b>
+              </div>
+              <div style={{ fontSize: 12.5, color: "#5A7184" }}>
+                ✅ Points validés : <b style={{ color: "#1A2B3C" }}>
+                  {Object.values(result.checked).filter(Boolean).length} / {checklist.phases.flatMap(p => p.items).length}
+                </b>
+              </div>
+              {result.weight && (
+                <div style={{ fontSize: 12.5, color: "#5A7184" }}>
+                  ⚖️ Poids patient : <b style={{ color: "#1A2B3C" }}>{result.weight} kg</b>
+                </div>
+              )}
+              {result.volume && (
+                <div style={{ fontSize: 12.5, color: "#5A7184" }}>
+                  💧 Volume évacué : <b style={{ color: "#1A2B3C" }}>{result.volume} L</b>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Détail des phases */}
+          {checklist.phases.map(p => (
+            <div key={p.id} style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 12, fontWeight: 800, color: "#fff", background: checklist.color,
+                borderRadius: 6, padding: "5px 12px", display: "inline-block", marginBottom: 8,
+              }}>{p.label}</div>
+              <div style={{ background: "#F8FAFC", borderRadius: 10, padding: "4px 12px" }}>
+                {p.items.map((item, idx) => {
+                  const isChecked = !!result.checked[item.id];
+                  const isMissedCritical = !isChecked && item.critical;
+                  let scoreLabel = null;
+                  if (item.type === "score_calc") {
+                    const sel = (result.scoreSelections && result.scoreSelections[item.id]) || [];
+                    const total = sel.length && sel.every(v => v !== null && v !== undefined) ? sel.reduce((a, b) => a + b, 0) : null;
+                    if (total !== null) scoreLabel = `Score obtenu : ${total}/${item.maxScore} (seuil ${item.threshold})`;
+                  }
+                  if (item.type === "titration_calc") {
+                    const count = (result.titrationCounts && result.titrationCounts[item.id]) || 0;
+                    const w = parseFloat(result.weight);
+                    const hasWeight = result.weight && !isNaN(w) && w > 0;
+                    const totalMg = hasWeight ? (w * item.mgPerKg * count).toFixed(1) : null;
+                    scoreLabel = `${count} palier${count !== 1 ? "s" : ""}` + (totalMg !== null ? ` — ${totalMg} mg au total` : "");
+                  }
+                  if (item.type === "asa_calc") {
+                    const sel = (result.asaSelections && result.asaSelections[item.id]) || {};
+                    if (sel.value) scoreLabel = `ASA ${sel.value}${sel.urgent ? "E" : ""}`;
+                  }
+                  if (item.type === "dose_calc_volume") {
+                    const v = parseFloat(result.volume);
+                    const hasVolume = result.volume && !isNaN(v) && v > 0;
+                    if (hasVolume) {
+                      scoreLabel = v < (item.threshold || 0)
+                        ? "albumine non recommandée"
+                        : `${(v * item.gPerL).toFixed(0)} g d'albumine`;
+                    }
+                  }
+                  return (
+                    <div key={item.id} style={{
+                      display: "flex", alignItems: "center", gap: 8, padding: "7px 0",
+                      fontSize: 12.5, color: isMissedCritical ? "#DC2626" : "#1A2B3C",
+                      borderTop: idx > 0 ? "1px solid #E9EFF4" : "none",
+                    }}>
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                        background: isChecked ? "#2E9E6B" : "#fff",
+                        border: `1.5px solid ${isChecked ? "#2E9E6B" : "#CBD5E1"}`,
+                        color: "#fff", fontSize: 11, fontWeight: 900,
+                      }}>{isChecked ? "✓" : ""}</span>
+                      <span style={{ fontWeight: isMissedCritical ? 800 : 500 }}>
+                        {isMissedCritical && "⚠ "}{item.label}
+                        {isMissedCritical && "  — point critique non validé"}
+                        {scoreLabel && `  — ${scoreLabel}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 16, borderTop: "1px solid #DCE8F0", paddingTop: 10, fontSize: 10.5, color: "#94A3B8" }}>
+            Document généré depuis l'application SAU/SMUR Aubagne — à insérer dans le dossier patient.
+          </div>
+        </div>
+      </div>
+
+      <div className="no-print" style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+        <Btn onClick={() => window.print()} color={LIGHT.navy}>🖨️ Imprimer / Enregistrer en PDF</Btn>
+        <Btn onClick={handleCopy} color={checklist.color} outline>
+          {copied ? "✓ Copié !" : "📋 Copier le texte"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// ChecklistsHome — écran d'accueil du module (liste des checklists)
+// ────────────────────────────────────────────────────────────────────────────
+function ChecklistsHome({ checklists, onSelect, onBack }) {
+  const C = useC();
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+      <div style={{ fontSize: 18, fontWeight: 900, color: C.navy, marginBottom: 4 }}>📋 Checklists</div>
+      <div style={{ fontSize: 12, color: C.sub, marginBottom: 16 }}>
+        Aide cognitive pour sécuriser les gestes et procédures à risque.
+      </div>
+      {checklists.map(cl => {
+        const isDraft = cl.status === "draft";
+        return (
+          <div key={cl.id} onClick={() => { if (!isDraft) onSelect(cl); }} style={{
+            display: "flex", alignItems: "center", gap: 12, background: C.white,
+            borderRadius: 14, padding: "14px 16px", marginBottom: 10,
+            cursor: isDraft ? "default" : "pointer", opacity: isDraft ? 0.55 : 1,
+            border: `1px solid ${C.border}`, borderLeft: `4px solid ${cl.color}`,
+          }}>
+            <div style={{ fontSize: 26 }}>{cl.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{cl.title}</div>
+              {isDraft ? (
+                <div style={{
+                  fontSize: 10.5, fontWeight: 800, color: cl.color, marginTop: 3,
+                  display: "inline-block", background: `${cl.color}18`, borderRadius: 6, padding: "2px 7px",
+                }}>🚧 En cours de développement</div>
+              ) : (
+                <div style={{ fontSize: 11, color: C.sub }}>{cl.phases.length} phases · {cl.phases.flatMap(p => p.items).length} points</div>
+              )}
+            </div>
+            {!isDraft && <div style={{ color: C.sub, fontSize: 18 }}>›</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ChecklistScreen — écran du module, intégré à la navigation de l'app
+// Suit le thème global (jour/nuit) via useC(), pas de gestion de thème locale
+// ────────────────────────────────────────────────────────────────────────────
+function ChecklistScreen({ onBack }) {
+  const C = useC();
+  const [screen, setScreen] = useState("home"); // home | run | print
+  const [result, setResult] = useState(null);
+  const [activeChecklist, setActiveChecklist] = useState(null);
+
+  if (screen === "home") {
+    return (
+      <ChecklistsHome
+        checklists={[ISR_ADULTE_CHECKLIST, SEDATION_PROCEDURALE_CHECKLIST, PONCTION_LOMBAIRE_CHECKLIST, PONCTION_ASCITE_CHECKLIST, INTUBATION_PEDIATRIQUE_STUB, ACCOUCHEMENT_STUB]}
+        onSelect={(cl) => { setActiveChecklist(cl); setScreen("run"); }}
+        onBack={onBack}
+      />
+    );
+  }
+  if (screen === "run" && activeChecklist) {
+    return (
+      <ChecklistRunner
+        checklist={activeChecklist}
+        onBack={() => setScreen("home")}
+        onFinish={(res) => { setResult(res); setScreen("print"); }}
+      />
+    );
+  }
+  if (screen === "print" && result && activeChecklist) {
+    return <ChecklistPrintView checklist={activeChecklist} result={result} onBack={() => setScreen("run")}/>;
+  }
+  return null;
+}
+
 
 // ─── RETEX PÉDAGOGIQUE ────────────────────────────────────────────────────────
 
@@ -33231,6 +34885,7 @@ function AppInner() {
       >
         {screen==="home"       && <HomeScreen onNav={navigate}/>}
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
+        {screen==="checklists" && <ChecklistScreen key={"checklists-"+navVersion} onBack={goBack}/>}
         {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack} pushNotif={pushNotif}/>}
         {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
