@@ -11680,6 +11680,278 @@ function WellsEpCalculator({ onBack }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// WellsTvpCalculator : Score de Wells pour thrombose veineuse profonde (TVP)
+// 9 items à +1 pt + 1 item à -2 pts (diagnostic alternatif) — total de -2 à 9
+// Interprétation à 3 niveaux : faible ≤0 · modéré 1-2 · fort ≥3
+// ────────────────────────────────────────────────────────────────────────────
+function WellsTvpCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#0891B2";
+
+  // 9 items à +1 point
+  const ITEMS = [
+    { key: "cancer", title: "Cancer actif", help: "Traitement en cours, dans les 6 derniers mois, ou soins palliatifs", points: 1 },
+    { key: "paralysie", title: "Paralysie, parésie ou immobilisation plâtrée récente d'un membre inférieur", points: 1 },
+    { key: "alitement", title: "Alitement ≥ 3 jours ou chirurgie majeure < 12 semaines", help: "Chirurgie avec anesthésie générale ou locorégionale", points: 1 },
+    { key: "douleur_trajet", title: "Douleur localisée sur le trajet veineux profond", points: 1 },
+    { key: "oedeme_jambe", title: "Œdème de toute la jambe", points: 1 },
+    { key: "oedeme_mollet", title: "Œdème du mollet > 3 cm par rapport au côté opposé", help: "Mesuré 10 cm sous la tubérosité tibiale", points: 1 },
+    { key: "oedeme_godet", title: "Œdème prenant le godet, limité au membre symptomatique", points: 1 },
+    { key: "veines_collaterales", title: "Veines superficielles collatérales (non variqueuses)", points: 1 },
+    { key: "atcd_tvp", title: "Antécédent documenté de TVP", points: 1 },
+  ];
+  // Item négatif (diagnostic alternatif au moins aussi probable)
+  const ITEM_NEGATIF = { key: "diag_alternatif", title: "Diagnostic alternatif au moins aussi probable que la TVP", help: "Critère subjectif : kyste poplité, cellulite, lésion musculaire...", points: -2 };
+
+  // État
+  const initialState = [...ITEMS, ITEM_NEGATIF].reduce((acc, it) => { acc[it.key] = false; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function toggle(key) {
+    setScores(s => ({ ...s, [key]: !s[key] }));
+  }
+
+  // Total
+  const total = [...ITEMS, ITEM_NEGATIF].reduce((acc, it) => acc + (scores[it.key] ? it.points : 0), 0);
+
+  // Probabilité clinique à 3 niveaux
+  let sevColor, sevBg, sevLabel, probability, interpText, action;
+  if (total <= 0) {
+    sevColor = C.green;
+    sevBg = C.greenLight;
+    sevLabel = "Faible";
+    probability = "~ 5%";
+    interpText = "Probabilité clinique faible de TVP.";
+    action = "D-dimères : si négatifs → TVP exclue, pas d'imagerie nécessaire. Si positifs → écho-doppler veineux des membres inférieurs.";
+  } else if (total <= 2) {
+    sevColor = C.amber;
+    sevBg = C.amberLight;
+    sevLabel = "Modéré";
+    probability = "~ 17%";
+    interpText = "Probabilité clinique modérée de TVP.";
+    action = "D-dimères : si négatifs → TVP exclue. Si positifs → écho-doppler veineux des membres inférieurs.";
+  } else {
+    sevColor = COLOR;
+    sevBg = "#CFFAFE";
+    sevLabel = "Fort";
+    probability = "~ 53%";
+    interpText = "Probabilité clinique forte de TVP.";
+    action = "Écho-doppler veineux des membres inférieurs d'emblée (les D-dimères ne permettent pas d'exclure la TVP en cas de probabilité forte). Anticoagulation préemptive à dose curative en attendant l'imagerie si pas de contre-indication.";
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  // Bouton case à cocher (identique au Wells EP)
+  function ItemCheckbox({ item, checked, onToggle }) {
+    return (
+      <button
+        onClick={onToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 14px",
+          marginBottom: 6,
+          border: `1.5px solid ${checked ? COLOR : C.border}`,
+          background: checked ? COLOR + "12" : C.white,
+          borderRadius: 11,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24, height: 24,
+          borderRadius: 6,
+          background: checked ? COLOR : "transparent",
+          border: `2px solid ${checked ? COLOR : C.border}`,
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 900,
+          flexShrink: 0,
+        }}>{checked ? "✓" : ""}</span>
+
+        <div style={{flex: 1, minWidth: 0}}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: checked ? 800 : 600,
+            color: checked ? COLOR : C.text,
+            lineHeight: 1.3,
+          }}>{item.title}</div>
+          {item.help && (
+            <div style={{fontSize: 10, color: C.sub, fontStyle: "italic", marginTop: 2, lineHeight: 1.35}}>
+              {item.help}
+            </div>
+          )}
+        </div>
+
+        <span style={{
+          background: checked ? COLOR : C.border,
+          color: checked ? "#fff" : C.sub,
+          borderRadius: 14,
+          padding: "3px 10px",
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}>{item.points > 0 ? `+${item.points}` : item.points}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #0E7490 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🦵</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score de Wells (TVP)</div>
+            <div style={{fontSize: 11, opacity: .85}}>Probabilité clinique de thrombose veineuse profonde</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Items à +1 point */}
+      {ITEMS.map(it => (
+        <ItemCheckbox
+          key={it.key}
+          item={it}
+          checked={scores[it.key]}
+          onToggle={() => toggle(it.key)}
+        />
+      ))}
+
+      {/* Item négatif, séparé visuellement */}
+      <div style={{marginTop: 10, marginBottom: 4, fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .5}}>
+        CRITÈRE NÉGATIF
+      </div>
+      <ItemCheckbox
+        item={ITEM_NEGATIF}
+        checked={scores[ITEM_NEGATIF.key]}
+        onToggle={() => toggle(ITEM_NEGATIF.key)}
+      />
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 12,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE WELLS</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 9</span>
+            </div>
+            <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+              Prévalence TVP : <b style={{color: sevColor}}>{probability}</b>
+            </div>
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpText}</div>
+
+        {/* Conduite à tenir */}
+        <div style={{
+          marginTop: 10,
+          padding: "10px 12px",
+          background: C.white,
+          border: `1.5px solid ${sevColor}`,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>
+          <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+            ➜ CONDUITE À TENIR
+          </div>
+          {action}
+        </div>
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>Interprétation à 3 niveaux</b> : ≤ 0 faible · 1-2 modéré · ≥ 3 fort<br/>
+        • <b>D-dimères</b> : utiles seulement si probabilité faible ou modérée (VPN élevée) — inutiles si probabilité forte<br/>
+        • <b>Écho-doppler veineux</b> : examen de référence pour confirmer/infirmer la TVP<br/>
+        • <b>TVP bilatérale ou atypique</b> : penser à un syndrome de compression (May-Thurner) ou une cause néoplasique sous-jacente<br/>
+        • En cas de forte suspicion clinique malgré un score faible, ne pas hésiter à approfondir (jugement clinique prime sur le score)
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // GbsCalculator : Glasgow-Blatchford Score (hémorragie digestive haute)
 // Tri SAU : GBS = 0 → sortie possible · GBS ≥ 1 → endoscopie en hospitalisation
 // 8 critères, total /23
@@ -15795,6 +16067,15 @@ const SCORES_LIST = [
     icon: "🩺",
     color: "#6366F1",
     tags: ["#EP", "#embolie", "#dyspnée", "#thrombose"],
+  },
+  {
+    id: "wells-tvp",
+    category: "cardio",
+    title: "Score de Wells (TVP)",
+    subtitle: "Probabilité clinique de thrombose veineuse profonde",
+    icon: "🦵",
+    color: "#0891B2",
+    tags: ["#TVP", "#phlébite", "#thrombose", "#jambe"],
   },
   {
     id: "gbs",
@@ -25208,6 +25489,7 @@ function ScoresScreen({ deepLinkId, onBack }) {
     if (selected.id === "qsofa") return <QsofaCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "geneve-ep") return <GeneveEpCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "wells-ep") return <WellsEpCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "wells-tvp") return <WellsTvpCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "gbs") return <GbsCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "avpu") return <AvpuCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "ramsay") return <RamsayCalculator onBack={() => setSelected(null)}/>;
