@@ -347,6 +347,7 @@ function LoginScreen() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState(null);
+  const [mode, setMode] = useState("login"); // login | request
 
   async function handleSubmit(e) {
     e?.preventDefault?.();
@@ -355,6 +356,10 @@ function LoginScreen() {
     setBusy(true);
     await signIn(email.trim(), password);
     setBusy(false);
+  }
+
+  if (mode === "request") {
+    return <RequestAccountScreen onBack={()=>setMode("login")}/>;
   }
 
   return (
@@ -399,8 +404,117 @@ function LoginScreen() {
           }}>{busy ? "Connexion..." : "Se connecter"}</button>
         </form>
 
-        <div style={{textAlign:"center", fontSize:12, color:C.sub, marginTop:16}}>
-          Pas encore de compte ? Contacte l'administrateur de l'application.
+        <button onClick={()=>setMode("request")} style={{
+          display:"block", width:"100%", textAlign:"center", fontSize:12, color:C.blue, fontWeight:700,
+          marginTop:16, background:"none", border:"none", cursor:"pointer",
+        }}>
+          Pas encore de compte ? Faire une demande d'accès
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RequestAccountScreen({ onBack }) {
+  const C = useC();
+  const [nom, setNom] = useState("");
+  const [prenom, setPrenom] = useState("");
+  const [email, setEmail] = useState("");
+  const [profession, setProfession] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+
+  const PROFESSIONS = [
+    { v:"medecin", l:"Médecin" }, { v:"interne", l:"Interne" }, { v:"infirmier", l:"Infirmier" },
+    { v:"aide_soignant", l:"Aide-soignant" }, { v:"ambulancier", l:"Ambulancier" },
+    { v:"cadre", l:"Cadre" }, { v:"autre", l:"Autre" },
+  ];
+
+  async function handleSubmit() {
+    setError(null);
+    if (!nom.trim() || !prenom.trim() || !email.trim()) { setError("Nom, prénom et email sont obligatoires."); return; }
+    setBusy(true);
+    try {
+      await supaFetch("/account_requests", "POST", {
+        nom: nom.trim(), prenom: prenom.trim(), email: email.trim(),
+        profession: profession || null, status: "pending",
+      });
+      setSuccess(true);
+    } catch (e) {
+      setError("Une erreur est survenue, réessaie dans un instant.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (success) {
+    return (
+      <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, padding:20}}>
+        <div style={{width:"100%", maxWidth:380, background:C.white, borderRadius:16, padding:26, border:`1px solid ${C.border}`, textAlign:"center"}}>
+          <div style={{fontSize:36, marginBottom:10}}>✓</div>
+          <div style={{fontSize:15, fontWeight:800, color:C.navy, marginBottom:8}}>Demande envoyée</div>
+          <div style={{fontSize:13, color:C.sub, lineHeight:1.5}}>
+            Un administrateur va examiner ta demande et créer ton compte. Tu recevras tes identifiants une fois validée.
+          </div>
+          <button onClick={onBack} style={{
+            marginTop:20, width:"100%", background:C.navy, color:"#fff", border:"none",
+            borderRadius:10, padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer",
+          }}>Retour à la connexion</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, padding:20}}>
+      <div style={{width:"100%", maxWidth:380}}>
+        <div style={{textAlign:"center", marginBottom:22}}>
+          <div style={{fontSize:32, marginBottom:6}}>📝</div>
+          <div style={{fontSize:17, fontWeight:900, color:C.navy}}>Demande d'accès</div>
+          <div style={{fontSize:12, color:C.sub, marginTop:2}}>Un administrateur validera ta demande</div>
+        </div>
+
+        <div style={{background:C.white, borderRadius:16, padding:22, border:`1px solid ${C.border}`, boxShadow:"0 2px 12px rgba(26,58,92,.08)"}}>
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Prénom</label>
+          <input value={prenom} onChange={e=>setPrenom(e.target.value)} placeholder="Jean"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:14}}/>
+
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Nom</label>
+          <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Dupont"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:14}}/>
+
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Email</label>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="prenom.nom@exemple.fr"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:14}}/>
+
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Profession</label>
+          <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:6}}>
+            {PROFESSIONS.map(p=>(
+              <button key={p.v} onClick={()=>setProfession(p.v)} style={{
+                border:`1.5px solid ${profession===p.v?C.navy:C.border}`, borderRadius:16, padding:"6px 12px",
+                fontSize:12, fontWeight:600, cursor:"pointer",
+                background:profession===p.v?C.navy:C.white, color:profession===p.v?"#fff":C.sub,
+              }}>{p.l}</button>
+            ))}
+          </div>
+
+          {error && (
+            <div style={{background:C.redLight, color:C.red, borderRadius:8, padding:"9px 12px", fontSize:12, fontWeight:600, marginTop:10}}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={handleSubmit} disabled={busy} style={{
+            width:"100%", marginTop:16, background:busy?C.border:C.navy, color:"#fff",
+            border:"none", borderRadius:10, padding:"13px", fontSize:14, fontWeight:800,
+            cursor:busy?"default":"pointer",
+          }}>{busy ? "Envoi..." : "Envoyer la demande"}</button>
+
+          <button onClick={onBack} style={{
+            width:"100%", marginTop:10, background:"none", color:C.sub,
+            border:"none", padding:"8px", fontSize:12, fontWeight:600, cursor:"pointer",
+          }}>← Retour à la connexion</button>
         </div>
       </div>
     </div>
@@ -483,6 +597,33 @@ function CompleteProfileScreen() {
   );
 }
 
+// Petite explication affichée une seule fois, avant la vraie demande système de permission.
+// Le but : donner le contexte ("pourquoi") avant la popup native, pour éviter un refus par réflexe.
+function BadgePermissionPrompt({ onAccept, onDismiss }) {
+  const C = useC();
+  return (
+    <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:300, display:"flex", alignItems:"flex-end", justifyContent:"center"}}>
+      <div style={{width:"100%", maxWidth:420, background:C.white, borderRadius:"20px 20px 0 0", padding:24, paddingBottom:32}}>
+        <div style={{fontSize:32, textAlign:"center", marginBottom:10}}>🔔</div>
+        <div style={{fontSize:15, fontWeight:800, color:C.navy, textAlign:"center", marginBottom:8}}>
+          Voir les nouveautés en un coup d'œil
+        </div>
+        <div style={{fontSize:13, color:C.sub, textAlign:"center", lineHeight:1.5, marginBottom:20}}>
+          Active les notifications pour afficher un badge sur l'icône de l'app quand un nouveau cas, ECG ou imagerie est publié.
+        </div>
+        <button onClick={onAccept} style={{
+          width:"100%", background:C.navy, color:"#fff", border:"none", borderRadius:10,
+          padding:"13px", fontSize:14, fontWeight:800, cursor:"pointer", marginBottom:10,
+        }}>Activer</button>
+        <button onClick={onDismiss} style={{
+          width:"100%", background:"none", color:C.sub, border:"none",
+          padding:"8px", fontSize:12, fontWeight:600, cursor:"pointer",
+        }}>Plus tard</button>
+      </div>
+    </div>
+  );
+}
+
 function AccountModal({ onClose }) {
   const C = useC();
   const { profile, roleLabel, professionLabel, changePassword, signOut } = useAuth();
@@ -491,6 +632,17 @@ function AccountModal({ onClose }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [notifPerm, setNotifPerm] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported"
+  );
+  const badgeSupported = typeof navigator !== "undefined" && "setAppBadge" in navigator;
+
+  async function handleEnableBadge() {
+    if (typeof Notification === "undefined") return;
+    const result = await Notification.requestPermission();
+    setNotifPerm(result);
+    try { window.localStorage.setItem("badge_prompt_seen", "1"); } catch(e) {}
+  }
 
   async function handleSubmit() {
     setError(null);
@@ -524,6 +676,26 @@ function AccountModal({ onClose }) {
             {professionLabel && <span style={{background:C.border, color:C.sub, borderRadius:14, padding:"3px 10px", fontSize:11, fontWeight:700}}>{professionLabel}</span>}
           </div>
         </div>
+
+        {badgeSupported && (
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Badge de notifications</div>
+            {notifPerm === "granted" ? (
+              <div style={{background:C.greenLight, color:C.green, borderRadius:10, padding:"10px 12px", fontSize:12, fontWeight:600}}>
+                ✓ Activé — le badge s'affiche sur l'icône de l'app
+              </div>
+            ) : notifPerm === "denied" ? (
+              <div style={{background:C.redLight, color:C.red, borderRadius:10, padding:"10px 12px", fontSize:11.5, lineHeight:1.5}}>
+                Refusé. Pour l'activer, va dans les réglages Notifications de ton téléphone pour cette app.
+              </div>
+            ) : (
+              <button onClick={handleEnableBadge} style={{
+                width:"100%", background:C.blueLight, color:C.blue, border:`1px solid ${C.blue}44`,
+                borderRadius:10, padding:"10px 12px", fontSize:12, fontWeight:700, cursor:"pointer",
+              }}>🔔 Activer le badge sur l'icône</button>
+            )}
+          </div>
+        )}
 
         <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Changer de mot de passe</div>
         <input type="password" value={pwd1} onChange={e=>setPwd1(e.target.value)} placeholder="Nouveau mot de passe"
@@ -2566,6 +2738,12 @@ function DerniersAjoutsWidget({ onNav }) {
 }
 
 // ─── CHECKLISTS ───────────────────────────────────────────────────────────────
+// Normalise une chaîne pour la recherche : minuscules + accents retirés
+// (ex: "Osmothérapie" et "osmotherapie" donnent le même résultat)
+function normSearch(str) {
+  return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 function playBeep() {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -30138,10 +30316,10 @@ function PediaDoses({ onBack }) {
 
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
 
-  // Filtrage
-  const q = search.toLowerCase();
+  // Filtrage (insensible aux accents et à la casse)
+  const q = normSearch(search);
   const filtered = medicaments.filter(m =>
-    !q || (m.nom+(m.indication||"")+(m.categorie||"")).toLowerCase().includes(q)
+    !q || normSearch(m.nom+(m.indication||"")+(m.categorie||"")).includes(q)
   );
 
   // Groupement par catégorie dans l'ordre PEDIA_DOSE_CATS, puis "Autre" pour le reste
@@ -32297,10 +32475,17 @@ function CalcAdulteScreen({ onBack }) {
   const C = useC();
   const [poids, setPoids] = useState("");
   const [openCats, setOpenCats] = useState({});
+  const [search, setSearch] = useState("");
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
 
   const poidsNum = parseFloat(poids) || null;
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
+
+  // Recherche insensible aux accents et à la casse
+  const q = normSearch(search);
+  const searchResults = q
+    ? CALC_ADULTE_MEDICAMENTS.filter(m => normSearch(m.nom+(m.indication||"")+(m.groupe||"")).includes(q))
+    : null;
 
   return (
     <div style={{maxWidth:"100%", overflowX:"hidden"}}>
@@ -32358,12 +32543,35 @@ function CalcAdulteScreen({ onBack }) {
         )}
       </div>
 
+      {/* Recherche */}
+      {poidsNum && poidsNum >= 50 && (
+        <input value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="🔍 Rechercher un médicament..."
+          style={{width:"100%", padding:"10px 14px", borderRadius:10,
+            border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
+            background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
+        />
+      )}
+
       {!poidsNum ? (
         <div style={{textAlign:"center", padding:"24px 20px", color:C.sub}}>
           <div style={{fontSize:36, marginBottom:8}}>⚖️</div>
           <div style={{fontSize:13, fontWeight:600}}>Saisissez le poids pour voir les doses</div>
         </div>
-      ) : poidsNum < 50 ? null : (
+      ) : poidsNum < 50 ? null : searchResults ? (
+        // Résultats de recherche : liste plate, sans regroupement par catégorie
+        searchResults.length === 0 ? (
+          <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
+            Aucun médicament ne correspond à « {search} »
+          </div>
+        ) : (
+          <div>
+            {searchResults.map(m => (
+              <CalcAdulteCard key={m.id} medic={m} poids={poidsNum}/>
+            ))}
+          </div>
+        )
+      ) : (
         <div>
           {CALC_ADULTE_CATS.map(cat => {
             const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key);
@@ -35352,6 +35560,41 @@ function AppInner() {
   const { profile, roleLabel } = useAuth();
   const unreadCount = unread;
 
+  // Badge natif sur l'icône de l'app (écran d'accueil du téléphone)
+  // iOS : nécessite la permission "Notifications" (même sans envoyer de vraie notification)
+  // Android/Chrome : l'API n'est pas utilisée nativement, mais on l'appelle quand même
+  // (sans effet si non supportée — aucun risque)
+  const [showBadgePrompt, setShowBadgePrompt] = useState(false);
+
+  // Affiche l'explication une seule fois, à la première connexion (mémorisé en local)
+  useEffect(() => {
+    if (!("setAppBadge" in navigator) || typeof Notification === "undefined") return;
+    if (Notification.permission !== "default") return; // déjà répondu (accepté/refusé) → rien à faire
+    const already = window.localStorage.getItem("badge_prompt_seen");
+    if (!already) setShowBadgePrompt(true);
+  }, []);
+
+  async function handleAcceptBadgePrompt() {
+    setShowBadgePrompt(false);
+    window.localStorage.setItem("badge_prompt_seen", "1");
+    try { await Notification.requestPermission(); } catch(e) {}
+  }
+  function handleDismissBadgePrompt() {
+    setShowBadgePrompt(false);
+    window.localStorage.setItem("badge_prompt_seen", "1");
+  }
+
+  // Met à jour le badge à chaque changement du nombre de non-lus (sans redemander de permission)
+  useEffect(() => {
+    if (!("setAppBadge" in navigator)) return;
+    (async () => {
+      try {
+        if (unreadCount > 0) await navigator.setAppBadge(unreadCount);
+        else await navigator.clearAppBadge();
+      } catch(e) { /* silencieux : API non supportée ou refusée */ }
+    })();
+  }, [unreadCount]);
+
   function navigate(screenId, favoriItem) {
     // Pousser l'écran courant dans l'historique sauf si c'est déjà le même ou si on va sur home
     setScreenHistory(h => {
@@ -35495,6 +35738,7 @@ function AppInner() {
             }}>{(profile?.prenom?.[0]||profile?.email?.[0]||"?").toUpperCase()}</span>
           </button>
           {accountOpen && <AccountModal onClose={()=>setAccountOpen(false)}/>}
+          {showBadgePrompt && <BadgePermissionPrompt onAccept={handleAcceptBadgePrompt} onDismiss={handleDismissBadgePrompt}/>}
         </div>
       </div>
 
