@@ -545,6 +545,271 @@ function AccountModal({ onClose }) {
   );
 }
 
+// Appelle la fonction serveur "admin-users" (création/suppression de comptes, côté serveur avec clé secrète)
+async function adminUsersFn(method, body, accessToken) {
+  const res = await fetch(SUPA_URL + "/functions/v1/admin-users", {
+    method,
+    headers: { "apikey": SUPA_KEY, "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Erreur");
+  return data;
+}
+
+function genTempPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 10; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+const ROLE_OPTIONS = [
+  { v:"admin", l:"Administrateur" }, { v:"medecin", l:"Médecin" }, { v:"consultatif", l:"Consultatif" },
+];
+const PROFESSION_OPTIONS = [
+  { v:"medecin", l:"Médecin" }, { v:"interne", l:"Interne" }, { v:"infirmier", l:"Infirmier" },
+  { v:"aide_soignant", l:"Aide-soignant" }, { v:"ambulancier", l:"Ambulancier" },
+  { v:"cadre", l:"Cadre" }, { v:"autre", l:"Autre" },
+];
+
+function AccountsAdminScreen({ onBack }) {
+  const C = useC();
+  const { isAdmin } = useAuth();
+
+  if (!isAdmin) {
+    return (
+      <div>
+        <BackBtn onClick={onBack}/>
+        <div style={{textAlign:"center", padding:40, color:C.sub, fontSize:13}}>
+          Cette section est réservée aux administrateurs.
+        </div>
+      </div>
+    );
+  }
+  return <AccountsAdminScreenInner onBack={onBack}/>;
+}
+
+function AccountsAdminScreenInner({ onBack }) {
+  const C = useC();
+  const { session } = useAuth();
+  const [profiles, setProfiles] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [savingId, setSavingId] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState(null);
+  const [lastCreated, setLastCreated] = useState(null); // { email, password } à afficher une fois
+
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newNom, setNewNom] = useState("");
+  const [newPrenom, setNewPrenom] = useState("");
+  const [newRole, setNewRole] = useState("consultatif");
+  const [newProfession, setNewProfession] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [p, r] = await Promise.all([
+        supaFetch("/profiles?select=*&order=created_at.desc"),
+        supaFetch("/account_requests?status=eq.pending&select=*&order=created_at.asc"),
+      ]);
+      setProfiles(p);
+      setRequests(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function updateProfile(id, patch) {
+    setSavingId(id);
+    setError(null);
+    try {
+      await supaFetch("/profiles?id=eq." + id, "PATCH", patch);
+      setProfiles(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function createAccount(email, nom, prenom, role, profession, requestId) {
+    setError(null);
+    const password = genTempPassword();
+    await adminUsersFn("POST", { email, password, role, profession: profession || null, nom, prenom }, session.access_token);
+    if (requestId) {
+      await supaFetch("/account_requests?id=eq." + requestId, "PATCH", {
+        status: "approved", handled_at: new Date().toISOString(), handled_by: session?.user?.id,
+      });
+    }
+    setLastCreated({ email, password });
+    await load();
+  }
+
+  async function handleApprove(r) {
+    setBusyId(r.id);
+    try {
+      await createAccount(r.email, r.nom, r.prenom, "consultatif", r.profession, r.id);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleReject(r) {
+    setBusyId(r.id);
+    setError(null);
+    try {
+      await supaFetch("/account_requests?id=eq." + r.id, "PATCH", {
+        status: "rejected", handled_at: new Date().toISOString(), handled_by: session?.user?.id,
+      });
+      setRequests(rs => rs.filter(x => x.id !== r.id));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleCreateManual() {
+    if (!newEmail.trim() || !newNom.trim() || !newPrenom.trim()) { setError("Email, nom et prénom sont obligatoires."); return; }
+    setCreating(true);
+    setError(null);
+    try {
+      await createAccount(newEmail.trim(), newNom.trim(), newPrenom.trim(), newRole, newProfession, null);
+      setNewEmail(""); setNewNom(""); setNewPrenom(""); setNewRole("consultatif"); setNewProfession("");
+      setShowNewForm(false);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleDelete(p) {
+    if (!window.confirm("Supprimer définitivement le compte de " + (p.email || p.id) + " ? Cette action est irréversible.")) return;
+    setBusyId(p.id);
+    setError(null);
+    try {
+      await adminUsersFn("DELETE", { id: p.id }, session.access_token);
+      setProfiles(ps => ps.filter(x => x.id !== p.id));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const selectStyle = { border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 8px", fontSize:12, background:C.white, color:C.text };
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+      <div style={{fontSize:18, fontWeight:900, color:C.navy, marginBottom:4}}>👥 Comptes utilisateurs</div>
+      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Gestion des accès à l'application.</div>
+
+      {error && (
+        <div style={{background:C.redLight, color:C.red, borderRadius:10, padding:"10px 14px", fontSize:12, fontWeight:600, marginBottom:14}}>
+          {error}
+        </div>
+      )}
+
+      {lastCreated && (
+        <div style={{background:C.greenLight, border:`1.5px solid ${C.green}`, borderRadius:12, padding:14, marginBottom:16}}>
+          <div style={{fontSize:12, fontWeight:800, color:C.green, marginBottom:6}}>✓ Compte créé — transmets ces identifiants</div>
+          <div style={{fontSize:13, color:C.text}}>Email : <b>{lastCreated.email}</b></div>
+          <div style={{fontSize:13, color:C.text, marginTop:2}}>Mot de passe temporaire : <b style={{fontFamily:"monospace"}}>{lastCreated.password}</b></div>
+          <div style={{fontSize:10, color:C.sub, marginTop:6}}>La personne devra le changer à sa première connexion.</div>
+          <button onClick={()=>setLastCreated(null)} style={{marginTop:8, background:"none", border:"none", color:C.sub, fontSize:11, fontWeight:700, cursor:"pointer"}}>Fermer</button>
+        </div>
+      )}
+
+      {/* Demandes de compte en attente */}
+      {requests.length > 0 && (
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:12, fontWeight:800, color:C.amber, marginBottom:8}}>⏳ Demandes en attente ({requests.length})</div>
+          {requests.map(r => (
+            <div key={r.id} style={{background:C.amberLight, border:`1px solid ${C.amber}`, borderRadius:12, padding:12, marginBottom:8}}>
+              <div style={{fontSize:13, fontWeight:700, color:C.text}}>{r.prenom} {r.nom}</div>
+              <div style={{fontSize:11, color:C.sub, marginTop:2}}>{r.email} — {PROFESSION_OPTIONS.find(p=>p.v===r.profession)?.l || r.profession}</div>
+              <div style={{display:"flex", gap:8, marginTop:8}}>
+                <button disabled={busyId===r.id} onClick={()=>handleApprove(r)} style={{flex:1, background:C.green, color:"#fff", border:"none", borderRadius:8, padding:"8px", fontSize:12, fontWeight:700, cursor:"pointer"}}>Approuver</button>
+                <button disabled={busyId===r.id} onClick={()=>handleReject(r)} style={{flex:1, background:C.white, color:C.red, border:`1px solid ${C.red}`, borderRadius:8, padding:"8px", fontSize:12, fontWeight:700, cursor:"pointer"}}>Refuser</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Création manuelle */}
+      {!showNewForm ? (
+        <button onClick={()=>setShowNewForm(true)} style={{
+          width:"100%", background:C.navy, color:"#fff", border:"none", borderRadius:10,
+          padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer", marginBottom:20,
+        }}>+ Créer un compte</button>
+      ) : (
+        <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:14, marginBottom:20}}>
+          <div style={{fontSize:12, fontWeight:800, color:C.navy, marginBottom:10}}>Nouveau compte</div>
+          <input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="Email" type="email"
+            style={{width:"100%", boxSizing:"border-box", padding:"9px 12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13, marginBottom:8}}/>
+          <div style={{display:"flex", gap:8, marginBottom:8}}>
+            <input value={newPrenom} onChange={e=>setNewPrenom(e.target.value)} placeholder="Prénom"
+              style={{flex:1, boxSizing:"border-box", padding:"9px 12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13}}/>
+            <input value={newNom} onChange={e=>setNewNom(e.target.value)} placeholder="Nom"
+              style={{flex:1, boxSizing:"border-box", padding:"9px 12px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13}}/>
+          </div>
+          <div style={{display:"flex", gap:8, marginBottom:12}}>
+            <select value={newRole} onChange={e=>setNewRole(e.target.value)} style={{...selectStyle, flex:1}}>
+              {ROLE_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+            <select value={newProfession} onChange={e=>setNewProfession(e.target.value)} style={{...selectStyle, flex:1}}>
+              <option value="">Profession</option>
+              {PROFESSION_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </div>
+          <div style={{display:"flex", gap:8}}>
+            <button disabled={creating} onClick={handleCreateManual} style={{flex:1, background:C.green, color:"#fff", border:"none", borderRadius:8, padding:"10px", fontSize:13, fontWeight:700, cursor:"pointer"}}>{creating?"...":"Créer"}</button>
+            <button onClick={()=>setShowNewForm(false)} style={{flex:1, background:C.white, color:C.sub, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px", fontSize:13, fontWeight:700, cursor:"pointer"}}>Annuler</button>
+          </div>
+        </div>
+      )}
+
+      {/* Liste des comptes existants */}
+      <div style={{fontSize:12, fontWeight:800, color:C.sub, marginBottom:8}}>Comptes ({profiles.length})</div>
+      {loading ? (
+        <div style={{textAlign:"center", padding:20, color:C.sub, fontSize:13}}>Chargement...</div>
+      ) : profiles.map(p => (
+        <div key={p.id} style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:12, marginBottom:8}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+            <div>
+              <div style={{fontSize:13, fontWeight:700, color:C.text}}>{p.prenom || "?"} {p.nom || ""}</div>
+              <div style={{fontSize:11, color:C.sub, marginTop:2}}>{p.email}</div>
+            </div>
+            <button disabled={busyId===p.id} onClick={()=>handleDelete(p)} style={{background:"none", border:"none", color:C.red, fontSize:16, cursor:"pointer"}}>🗑️</button>
+          </div>
+          <div style={{display:"flex", gap:8, marginTop:10}}>
+            <select disabled={savingId===p.id} value={p.role||"consultatif"} onChange={e=>updateProfile(p.id, {role:e.target.value})} style={{...selectStyle, flex:1}}>
+              {ROLE_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+            <select disabled={savingId===p.id} value={p.profession||""} onChange={e=>updateProfile(p.id, {profession:e.target.value})} style={{...selectStyle, flex:1}}>
+              <option value="">Profession</option>
+              {PROFESSION_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+            </select>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DataProvider({ children }) {
   const [store, setStore] = React.useState({
     ecgs: [], imagerie: [], agenda: [],
@@ -1904,7 +2169,11 @@ function HomeScreen({onNav}) {
     {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
     {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9"},
+    {id:"comptes",    icon:"👥", label:"Comptes",           color:"#0F172A", bg:"#F1F5F9", adminOnly:true},
   ];
+
+  const { isAdmin } = useAuth();
+  const visibleShortcuts = shortcuts.filter(s => !s.adminOnly || isAdmin);
 
   const isSearching = searchFocused && query.trim().length>0;
 
@@ -2052,7 +2321,7 @@ function HomeScreen({onNav}) {
         <>
           <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:12, letterSpacing:.5}}>ACCES RAPIDE</div>
           <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:24}}>
-            {shortcuts.map(s => (
+            {visibleShortcuts.map(s => (
               <button key={s.id} onClick={()=>onNav(s.id)} style={{background:s.bg, border:"none", borderRadius:12, padding:"12px 4px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:5}}>
                 <span style={{fontSize:22}}>{s.icon === "SONDE" ? <IconeSonde size={24} color="#0891B2"/> : s.icon}</span>
                 <span style={{fontSize:9, fontWeight:700, color:s.color, textAlign:"center", lineHeight:1.2}}>{s.label}</span>
@@ -35075,6 +35344,8 @@ function AppInner() {
 
   const { notifs, pushNotif, clearAll, markSeen, unread } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const { profile, roleLabel } = useAuth();
   const unreadCount = unread;
 
   function navigate(screenId, favoriItem) {
@@ -35205,6 +35476,21 @@ function AppInner() {
               />
             )}
           </div>
+
+          {/* Bouton Mon compte */}
+          <button onClick={()=>setAccountOpen(true)} title={roleLabel} style={{
+            background: "rgba(255,255,255,.12)",
+            border: "1.5px solid rgba(255,255,255,.25)",
+            borderRadius:10, height:36, minWidth:36, padding:"0 10px", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+            fontSize:13, fontWeight:800, color:"#fff", transition:"all .2s"
+          }}>
+            <span style={{
+              width:22, height:22, borderRadius:"50%", background:"rgba(255,255,255,.25)",
+              display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:900,
+            }}>{(profile?.prenom?.[0]||profile?.email?.[0]||"?").toUpperCase()}</span>
+          </button>
+          {accountOpen && <AccountModal onClose={()=>setAccountOpen(false)}/>}
         </div>
       </div>
 
@@ -35233,6 +35519,7 @@ function AppInner() {
       >
         {screen==="home"       && <HomeScreen onNav={navigate}/>}
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
+        {screen==="comptes"    && <AccountsAdminScreen key={"comptes-"+navVersion} onBack={goBack}/>}
         {screen==="checklists" && <ChecklistScreen key={"checklists-"+navVersion} onBack={goBack}/>}
         {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack} pushNotif={pushNotif}/>}
         {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
