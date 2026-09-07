@@ -1011,6 +1011,8 @@ const DARK = {
 
 const ThemeCtx = React.createContext(LIGHT);
 const useC = () => React.useContext(ThemeCtx);
+const ThemeToggleCtx = React.createContext({ dark:false, toggleDark:()=>{} });
+const useThemeToggle = () => React.useContext(ThemeToggleCtx);
 
 // Alias module-level C = LIGHT (pour rétrocompatibilité hors composants)
 const C = LIGHT;
@@ -34983,6 +34985,47 @@ function EchoAtlasEditor() {
 }
 
 export default function App() {
+  const [dark, setDark] = useState(()=> window._darkMode || false);
+  const theme = dark ? DARK : LIGHT;
+
+  function toggleDark() {
+    setDark(d => {
+      const next = !d;
+      window._darkMode = next;
+      return next;
+    });
+  }
+
+  useEffect(()=>{
+    document.body.style.background = theme.bg;
+    document.body.style.transition = "background .25s";
+  },[dark]);
+
+  return (
+    <ThemeCtx.Provider value={theme}>
+      <ThemeToggleCtx.Provider value={{dark, toggleDark}}>
+        <AuthProvider>
+          <AuthGate/>
+        </AuthProvider>
+      </ThemeToggleCtx.Provider>
+    </ThemeCtx.Provider>
+  );
+}
+
+function AuthGate() {
+  const C = useC();
+  const { session, profile, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, color:C.sub, fontSize:14}}>
+        Chargement…
+      </div>
+    );
+  }
+  if (!session) return <LoginScreen/>;
+  if (profile && (!profile.nom || !profile.prenom)) return <CompleteProfileScreen/>;
+
   return (
     <DataProvider>
       <AppInner/>
@@ -35027,16 +35070,8 @@ function AppInner() {
   const [deepLink, setDeepLink] = useState(null);
   const [navVersion, setNavVersion] = useState(0);
   const [retexCount, setRetexCount] = useState(0);
-  const [dark, setDark] = useState(()=> window._darkMode || false);
-  const theme = dark ? DARK : LIGHT;
-
-  function toggleDark() {
-    setDark(d => {
-      const next = !d;
-      window._darkMode = next;
-      return next;
-    });
-  }
+  const { dark, toggleDark } = useThemeToggle();
+  const theme = useC();
 
   const { notifs, pushNotif, clearAll, markSeen, unread } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -35108,13 +35143,7 @@ function AppInner() {
     if(contentRef.current) contentRef.current.scrollTop = 0;
   },[screen, navVersion]);
 
-  useEffect(()=>{
-    document.body.style.background = theme.bg;
-    document.body.style.transition = "background .25s";
-  },[dark]);
-
   return (
-    <ThemeCtx.Provider value={theme}>
     <div style={{maxWidth:420, margin:"0 auto", minHeight:"100vh", background:theme.bg, display:"flex", flexDirection:"column", position:"relative", transition:"background .25s"}}>
       {/* Barre du haut — tous écrans */}
       <div style={{background:theme.navy, padding:"8px 16px", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0, transition:"background .25s"}}>
@@ -35245,6 +35274,5 @@ function AppInner() {
         ))}
       </div>
     </div>
-    </ThemeCtx.Provider>
   );
 }
