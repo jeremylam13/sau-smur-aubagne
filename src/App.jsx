@@ -28,12 +28,17 @@ const TABLE_MAP = {
 };
 
 // Requête REST Supabase générique
+// Variable globale : mise à jour par AuthProvider à chaque changement de session,
+// pour que supaFetch() envoie le bon token (utilisateur connecté ou clé anonyme).
+let _currentAccessToken = null;
+
 async function supaFetch(path, method = "GET", body = null) {
+  const token = _currentAccessToken || SUPA_KEY;
   const opts = {
     method,
     headers: {
       "apikey": SUPA_KEY,
-      "Authorization": "Bearer " + SUPA_KEY,
+      "Authorization": "Bearer " + token,
       "Content-Type": "application/json",
       "Prefer": method === "POST" ? "return=representation" : "",
     },
@@ -257,6 +262,8 @@ function AuthProvider({ children }) {
     } catch (e) {
       console.error("Erreur chargement profil", e);
       setProfile(null);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -265,6 +272,7 @@ function AuthProvider({ children }) {
     // Récupère la session existante (persistée) au démarrage
     supabaseAuth.auth.getSession().then(({ data }) => {
       if (!active) return;
+      _currentAccessToken = data.session?.access_token || null;
       setSession(data.session || null);
       if (data.session) loadProfile(data.session.user.id);
       else setLoading(false);
@@ -272,17 +280,13 @@ function AuthProvider({ children }) {
     // Écoute les changements de session (login, logout, refresh de token)
     const { data: sub } = supabaseAuth.auth.onAuthStateChange((_event, newSession) => {
       if (!active) return;
+      _currentAccessToken = newSession?.access_token || null;
       setSession(newSession || null);
       if (newSession) loadProfile(newSession.user.id);
       else { setProfile(null); setLoading(false); }
     });
     return () => { active = false; sub?.subscription?.unsubscribe(); };
   }, []);
-
-  // Une fois le profil chargé (ou son absence confirmée), on arrête le chargement
-  useEffect(() => {
-    if (session !== undefined) setLoading(false);
-  }, [profile]);
 
   async function signIn(email, password) {
     setAuthError(null);
