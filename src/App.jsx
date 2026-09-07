@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import React from "react";
+import { createClient } from "@supabase/supabase-js";
 
 // ─── Client Supabase ──────────────────────────────────────────────────────────
 const SUPA_URL  = "https://dlkijqwatohfggqqosqu.supabase.co";
 const SUPA_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsa2lqcXdhdG9oZmdncXFvc3F1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2ODI1OTUsImV4cCI6MjA5MDI1ODU5NX0.bYXW7nobQZZksqty4AdEEMdZW-QYf6D_IglYEBwHv2g";
+
+// Client officiel pour l'authentification (session, refresh de token automatique).
+// Les appels aux tables continuent d'utiliser supaFetch() (REST direct) comme avant,
+// sauf le token d'accès qui provient désormais de ce client une fois connecté.
+const supabaseAuth = createClient(SUPA_URL, SUPA_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: "sau-smur-auth" }
+});
 
 // Mapping clé-stockage → table Supabase + champ camelCase→snake_case
 const TABLE_MAP = {
@@ -225,6 +233,317 @@ const LOGO_HOSP = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAfQAAADjCAYAAAB
 const DataCtx = React.createContext(null);
 
 function useData() { return React.useContext(DataCtx); }
+
+// ─── Authentification ──────────────────────────────────────────────────────────
+const AuthCtx = React.createContext(null);
+const useAuth = () => React.useContext(AuthCtx);
+
+const ROLE_LABELS = { admin: "Administrateur", medecin: "Médecin", consultatif: "Consultatif" };
+const PROFESSION_LABELS = {
+  medecin: "Médecin", interne: "Interne", infirmier: "Infirmier",
+  aide_soignant: "Aide-soignant", ambulancier: "Ambulancier", cadre: "Cadre", autre: "Autre",
+};
+
+function AuthProvider({ children }) {
+  const [session, setSession] = useState(undefined); // undefined = pas encore vérifié, null = pas connecté
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
+
+  async function loadProfile(userId) {
+    try {
+      const rows = await supaFetch(`/profiles?id=eq.${userId}`, "GET");
+      setProfile(Array.isArray(rows) && rows[0] ? rows[0] : null);
+    } catch (e) {
+      console.error("Erreur chargement profil", e);
+      setProfile(null);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    // Récupère la session existante (persistée) au démarrage
+    supabaseAuth.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setSession(data.session || null);
+      if (data.session) loadProfile(data.session.user.id);
+      else setLoading(false);
+    });
+    // Écoute les changements de session (login, logout, refresh de token)
+    const { data: sub } = supabaseAuth.auth.onAuthStateChange((_event, newSession) => {
+      if (!active) return;
+      setSession(newSession || null);
+      if (newSession) loadProfile(newSession.user.id);
+      else { setProfile(null); setLoading(false); }
+    });
+    return () => { active = false; sub?.subscription?.unsubscribe(); };
+  }, []);
+
+  // Une fois le profil chargé (ou son absence confirmée), on arrête le chargement
+  useEffect(() => {
+    if (session !== undefined) setLoading(false);
+  }, [profile]);
+
+  async function signIn(email, password) {
+    setAuthError(null);
+    const { error } = await supabaseAuth.auth.signInWithPassword({ email, password });
+    if (error) { setAuthError(error.message === "Invalid login credentials" ? "Email ou mot de passe incorrect." : error.message); return false; }
+    return true;
+  }
+
+  async function signOut() {
+    await supabaseAuth.auth.signOut();
+    setSession(null);
+    setProfile(null);
+  }
+
+  async function changePassword(newPassword) {
+    const { error } = await supabaseAuth.auth.updateUser({ password: newPassword });
+    if (error) return { ok: false, error: error.message };
+    // Une fois le mot de passe changé, on lève le flag must_change_password
+    if (profile) {
+      try {
+        await supaFetch(`/profiles?id=eq.${profile.id}`, "PATCH", { must_change_password: false });
+        setProfile(p => ({ ...p, must_change_password: false }));
+      } catch (e) { console.error("Erreur mise à jour must_change_password", e); }
+    }
+    return { ok: true };
+  }
+
+  async function updateProfile(fields) {
+    if (!profile) return { ok: false };
+    try {
+      await supaFetch(`/profiles?id=eq.${profile.id}`, "PATCH", fields);
+      setProfile(p => ({ ...p, ...fields }));
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e.message }; }
+  }
+
+  const role = profile?.role || "consultatif";
+  const roleLabel = ROLE_LABELS[role] || ROLE_LABELS.consultatif;
+  const professionLabel = profile?.profession ? (PROFESSION_LABELS[profile.profession] || profile.profession) : null;
+
+  return (
+    <AuthCtx.Provider value={{
+      session, profile, role, roleLabel, professionLabel, loading, authError,
+      signIn, signOut, changePassword, updateProfile,
+      isAdmin: role === "admin",
+      isMedecin: role === "medecin",
+      canPublish: role === "admin" || role === "medecin",
+    }}>
+      {children}
+    </AuthCtx.Provider>
+  );
+}
+
+function LoginScreen() {
+  const C = useC();
+  const { signIn, authError } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState(null);
+
+  async function handleSubmit(e) {
+    e?.preventDefault?.();
+    setLocalError(null);
+    if (!email.trim() || !password) { setLocalError("Renseigne ton email et ton mot de passe."); return; }
+    setBusy(true);
+    await signIn(email.trim(), password);
+    setBusy(false);
+  }
+
+  return (
+    <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, padding:20}}>
+      <div style={{width:"100%", maxWidth:380}}>
+        <div style={{textAlign:"center", marginBottom:28}}>
+          <div style={{fontSize:40, marginBottom:8}}>🏥</div>
+          <div style={{fontSize:20, fontWeight:900, color:C.navy}}>SAU / SMUR Aubagne</div>
+          <div style={{fontSize:12, color:C.sub, marginTop:2}}>Connexion à votre espace</div>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{background:C.white, borderRadius:16, padding:22, border:`1px solid ${C.border}`, boxShadow:"0 2px 12px rgba(26,58,92,.08)"}}>
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={e=>setEmail(e.target.value)}
+            placeholder="prenom.nom@exemple.fr"
+            autoComplete="username"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:14}}
+          />
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Mot de passe</label>
+          <input
+            type="password"
+            value={password}
+            onChange={e=>setPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete="current-password"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:6}}
+          />
+
+          {(localError || authError) && (
+            <div style={{background:C.redLight, color:C.red, borderRadius:8, padding:"9px 12px", fontSize:12, fontWeight:600, marginTop:8, marginBottom:4}}>
+              {localError || authError}
+            </div>
+          )}
+
+          <button type="submit" disabled={busy} style={{
+            width:"100%", marginTop:14, background:busy?C.border:C.navy, color:"#fff",
+            border:"none", borderRadius:10, padding:"13px", fontSize:14, fontWeight:800,
+            cursor:busy?"default":"pointer",
+          }}>{busy ? "Connexion..." : "Se connecter"}</button>
+        </form>
+
+        <div style={{textAlign:"center", fontSize:12, color:C.sub, marginTop:16}}>
+          Pas encore de compte ? Contacte l'administrateur de l'application.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompleteProfileScreen() {
+  const C = useC();
+  const { profile, updateProfile, signOut } = useAuth();
+  const [nom, setNom] = useState(profile?.nom || "");
+  const [prenom, setPrenom] = useState(profile?.prenom || "");
+  const [profession, setProfession] = useState(profile?.profession || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const PROFESSIONS = [
+    { v:"medecin", l:"Médecin" }, { v:"interne", l:"Interne" }, { v:"infirmier", l:"Infirmier" },
+    { v:"aide_soignant", l:"Aide-soignant" }, { v:"ambulancier", l:"Ambulancier" },
+    { v:"cadre", l:"Cadre" }, { v:"autre", l:"Autre" },
+  ];
+
+  async function handleSubmit() {
+    setError(null);
+    if (!nom.trim() || !prenom.trim()) { setError("Le nom et le prénom sont obligatoires."); return; }
+    if (!profession) { setError("Sélectionne ta profession."); return; }
+    setBusy(true);
+    const res = await updateProfile({ nom: nom.trim(), prenom: prenom.trim(), profession });
+    setBusy(false);
+    if (!res.ok) setError("Une erreur est survenue, réessaie.");
+  }
+
+  return (
+    <div style={{minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:C.bg, padding:20}}>
+      <div style={{width:"100%", maxWidth:380}}>
+        <div style={{textAlign:"center", marginBottom:22}}>
+          <div style={{fontSize:36, marginBottom:6}}>👋</div>
+          <div style={{fontSize:18, fontWeight:900, color:C.navy}}>Bienvenue !</div>
+          <div style={{fontSize:12, color:C.sub, marginTop:2}}>Complète ton profil avant de continuer</div>
+        </div>
+
+        <div style={{background:C.white, borderRadius:16, padding:22, border:`1px solid ${C.border}`, boxShadow:"0 2px 12px rgba(26,58,92,.08)"}}>
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Prénom</label>
+          <input value={prenom} onChange={e=>setPrenom(e.target.value)} placeholder="Jean"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:14}}/>
+
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Nom</label>
+          <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Dupont"
+            style={{width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:14}}/>
+
+          <label style={{fontSize:12, fontWeight:700, color:C.sub, display:"block", marginBottom:6}}>Profession</label>
+          <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:6}}>
+            {PROFESSIONS.map(p=>(
+              <button key={p.v} onClick={()=>setProfession(p.v)} style={{
+                border:`1.5px solid ${profession===p.v?C.navy:C.border}`, borderRadius:16, padding:"6px 12px",
+                fontSize:12, fontWeight:600, cursor:"pointer",
+                background:profession===p.v?C.navy:C.white, color:profession===p.v?"#fff":C.sub,
+              }}>{p.l}</button>
+            ))}
+          </div>
+
+          {error && (
+            <div style={{background:C.redLight, color:C.red, borderRadius:8, padding:"9px 12px", fontSize:12, fontWeight:600, marginTop:10}}>
+              {error}
+            </div>
+          )}
+
+          <button onClick={handleSubmit} disabled={busy} style={{
+            width:"100%", marginTop:16, background:busy?C.border:C.navy, color:"#fff",
+            border:"none", borderRadius:10, padding:"13px", fontSize:14, fontWeight:800,
+            cursor:busy?"default":"pointer",
+          }}>{busy ? "Enregistrement..." : "Continuer"}</button>
+
+          <button onClick={signOut} style={{
+            width:"100%", marginTop:10, background:"none", color:C.sub,
+            border:"none", padding:"8px", fontSize:12, fontWeight:600, cursor:"pointer",
+          }}>Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountModal({ onClose }) {
+  const C = useC();
+  const { profile, roleLabel, professionLabel, changePassword, signOut } = useAuth();
+  const [pwd1, setPwd1] = useState("");
+  const [pwd2, setPwd2] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit() {
+    setError(null);
+    if (pwd1.length < 8) { setError("8 caractères minimum."); return; }
+    if (pwd1 !== pwd2) { setError("Les deux mots de passe ne correspondent pas."); return; }
+    setBusy(true);
+    const res = await changePassword(pwd1);
+    setBusy(false);
+    if (!res.ok) { setError("Une erreur est survenue, réessaie."); return; }
+    setSuccess(true);
+    setPwd1(""); setPwd2("");
+    setTimeout(()=>setSuccess(false), 3000);
+  }
+
+  const roleColor = profile?.role === "admin" ? C.red : profile?.role === "medecin" ? C.green : C.blue;
+  const roleBg = profile?.role === "admin" ? C.redLight : profile?.role === "medecin" ? C.greenLight : C.blueLight;
+
+  return (
+    <div onClick={onClose} style={{position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%", maxWidth:380, background:C.white, borderRadius:18, padding:22, maxHeight:"85vh", overflowY:"auto"}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
+          <div style={{fontSize:16, fontWeight:900, color:C.navy}}>Mon compte</div>
+          <button onClick={onClose} style={{background:"none", border:"none", fontSize:20, color:C.sub, cursor:"pointer"}}>✕</button>
+        </div>
+
+        <div style={{background:C.bg, borderRadius:12, padding:14, marginBottom:18}}>
+          <div style={{fontSize:14, fontWeight:800, color:C.text}}>{profile?.prenom} {profile?.nom}</div>
+          <div style={{fontSize:12, color:C.sub, marginTop:2}}>{profile?.email}</div>
+          <div style={{display:"flex", gap:6, marginTop:8}}>
+            <span style={{background:roleBg, color:roleColor, borderRadius:14, padding:"3px 10px", fontSize:11, fontWeight:800}}>{roleLabel}</span>
+            {professionLabel && <span style={{background:C.border, color:C.sub, borderRadius:14, padding:"3px 10px", fontSize:11, fontWeight:700}}>{professionLabel}</span>}
+          </div>
+        </div>
+
+        <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Changer de mot de passe</div>
+        <input type="password" value={pwd1} onChange={e=>setPwd1(e.target.value)} placeholder="Nouveau mot de passe"
+          style={{width:"100%", boxSizing:"border-box", padding:"11px 13px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:10}}/>
+        <input type="password" value={pwd2} onChange={e=>setPwd2(e.target.value)} placeholder="Confirmer le mot de passe"
+          style={{width:"100%", boxSizing:"border-box", padding:"11px 13px", borderRadius:10, border:`1px solid ${C.border}`, background:C.bg, color:C.text, fontSize:14, marginBottom:6}}/>
+
+        {error && <div style={{background:C.redLight, color:C.red, borderRadius:8, padding:"9px 12px", fontSize:12, fontWeight:600, marginTop:6}}>{error}</div>}
+        {success && <div style={{background:C.greenLight, color:C.green, borderRadius:8, padding:"9px 12px", fontSize:12, fontWeight:600, marginTop:6}}>Mot de passe mis à jour ✓</div>}
+
+        <button onClick={handleSubmit} disabled={busy} style={{
+          width:"100%", marginTop:12, background:busy?C.border:C.navy, color:"#fff",
+          border:"none", borderRadius:10, padding:"12px", fontSize:13, fontWeight:800,
+          cursor:busy?"default":"pointer",
+        }}>{busy ? "..." : "Mettre à jour"}</button>
+
+        <button onClick={signOut} style={{
+          width:"100%", marginTop:14, background:C.redLight, color:C.red,
+          border:"none", borderRadius:10, padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer",
+        }}>Se déconnecter</button>
+      </div>
+    </div>
+  );
+}
 
 function DataProvider({ children }) {
   const [store, setStore] = React.useState({
