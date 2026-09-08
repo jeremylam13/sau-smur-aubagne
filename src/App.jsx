@@ -31415,6 +31415,39 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#DC2626",
   },
   {
+    id:"flecaine_adulte", cat:"cardio", groupe:"Antiarythmique",
+    nom:"Flécaïne", amp:"150 mg / 15 mL", concentration:10, unite:"mg",
+    doseMin:1, doseMax:2,
+    voie:"IV / 10 min", preparation:"Prélever la dose selon le poids et compléter à 30 mL avec du G5%.",
+    indication:"Réduction de FA mal tolérée, sans cardiopathie sous-jacente.",
+    remarques:"1 à 2 mg/kg en IV, à passer sur 10 min. Vérifier l'absence de cardiopathie avant utilisation.",
+    color:"#DC2626",
+  },
+  {
+    id:"furosemide_adulte", cat:"cardio", groupe:"Diurétique",
+    nom:"Furosémide (Lasilix)", amp:"20 mg / 2 mL", concentration:10,
+    voie:"IVD", isDoseFixe:true,
+    variantes:[
+      { label:"Patient naïf de furosémide", prepa:"Pure.", dose:40, unite:"mg", volume:4 },
+      { label:"Patient déjà traité par furosémide", texteLibre:"Administrer la dose journalière habituelle en IV (max 120 mg)." },
+    ],
+    indication:"Insuffisance cardiaque aiguë.",
+    remarques:"Naïf : 40 mg IVD. Déjà traité : dose journalière habituelle en IV, sans dépasser 120 mg.",
+    color:"#DC2626",
+  },
+  {
+    id:"risordan_adulte", cat:"cardio", groupe:"Vasodilatateur",
+    nom:"Isosorbide dinitrate (Risordan)", amp:"10 mg / 10 mL", concentration:1,
+    voie:"IVD puis IVSE", isDoseFixe:true,
+    variantes:[
+      { label:"Bolus (si PAS > 140 mmHg)", prepa:"Pure.", doseMin:2, doseMax:4, unite:"mg", volumeMin:2, volumeMax:4 },
+      { label:"Entretien IVSE", prepa:"Pure.", texteLibre:"Débuter à 1 mg/h (= 1 mL/h), puis adapter toutes les 5 min par palier de 1 mg selon la PAS." },
+    ],
+    indication:"Insuffisance cardiaque aiguë / OAP hypertensif.",
+    remarques:"Bolus 2 à 4 mg en IVD si PAS > 140 mmHg. Entretien IVSE : débuter à 1 mg/h, titrer par palier de 1 mg toutes les 5 min selon la PAS.",
+    color:"#DC2626",
+  },
+  {
     id:"bicarbonate_84_adulte", cat:"cardio", groupe:"Réanimation",
     nom:"Bicarbonate de sodium 8,4%", amp:"Flacon 250 mL (1 mL = 1 mmol)",
     voie:"IVDL", isDoseFixe:true,
@@ -31436,6 +31469,29 @@ const CALC_ADULTE_MEDICAMENTS = [
     ],
     indication:"Hyperkaliémie menaçante, arrêt cardiaque sur hyperkaliémie, transfusion massive, hypocalcémie aiguë.",
     remarques:"Hors ACR : 3 g diluées dans 100 mL NaCl, IVL sur 10 min, à renouveler tant que les anomalies ne disparaissent pas. ACR : 3 g en IVD (bolus pur).",
+    color:"#DC2626",
+  },
+  {
+    id:"insuline_rapide_adulte", cat:"cardio", groupe:"Réanimation",
+    nom:"Insuline rapide", amp:"Flacon 10 mL (100 UI/mL)", concentration:100, unite:"UI",
+    voie:"IVL", isDoseFixe:true,
+    variantes:[
+      { label:"Dose unique", prepa:"Prélever 10 UI et diluer dans une poche de 250 mL de G10%.", dose:10, unite:"UI", volume:0.1 },
+    ],
+    indication:"Hyperkaliémie.",
+    remarques:"10 UI à passer en 15-20 min.",
+    color:"#DC2626",
+  },
+  {
+    id:"sulfate_magnesium_adulte", cat:"cardio", groupe:"Réanimation",
+    nom:"Sulfate de magnésium", amp:"1 g / 10 mL",
+    voie:"IVL / IVDL selon contexte", isDoseFixe:true,
+    variantes:[
+      { label:"Asthme aigu grave / Hypokaliémie sévère / Torsades de pointes", prepa:"Prélever 2 ampoules (2 g) et diluer dans 100 mL de NaCl 0,9%. IVL sur 15 min.", dose:2, unite:"g" },
+      { label:"Arrêt cardiaque sur hypokaliémie (IVDL sur 1 min)", prepa:"2 ampoules pures.", dose:2, unite:"g", volume:20 },
+    ],
+    indication:"Asthme aigu grave, hypokaliémie sévère, torsades de pointes, arrêt cardiaque sur hypokaliémie.",
+    remarques:"Hors ACR : 2 g diluées dans 100 mL NaCl, IVL sur 15 min. ACR sur hypokaliémie : 2 g en IVDL sur 1 min.",
     color:"#DC2626",
   },
   {
@@ -31599,6 +31655,31 @@ const CALC_ADULTE_MEDICAMENTS = [
     ],
     indication:"Hémorragie traumatique (CRASH-2, dans les 3h du traumatisme).",
     remarques:"1 g IVL sur 10 min.",
+    color:"#059669",
+  },
+  {
+    id:"glucagon_adulte", cat:"antidote", groupe:"Hypoglycémie / Antidote bêtabloquant",
+    nom:"Glucagon (Glucagen)", amp:"Flacon 1 mg + solvant",
+    voie:"IM / SC / IV selon contexte", isDoseFixe:true,
+    variantes:[
+      { label:"Hypoglycémie (diabétique sous insuline)", prepa:"Diluer le flacon avec le solvant fourni.", dose:1, unite:"mg" },
+      { label:"Intoxication bêtabloquant — Bolus", prepa:"Diluer le(s) flacon(s) avec le solvant fourni. IVDL sur 1 à 2 min.", doseMin:2, doseMax:10, unite:"mg" },
+      { label:"Intoxication bêtabloquant — Entretien PSE (si bolus efficace)", prepa:"Reconstituer 10 flacons (10 mg) dans 10 mL, mettre dans une seringue de 50 mL et compléter à 50 mL avec du G5% → 0,2 mg/mL.", debitMgHMin:1, debitMgHMax:15, concentration:0.2 },
+    ],
+    indication:"Hypoglycémie chez le patient diabétique sous insuline, intoxication au bêtabloquant.",
+    remarques:"Hypoglycémie : 1 mg en IM ou sous-cutanée. Intoxication bêtabloquant : bolus 2 à 10 mg IVDL sur 1-2 min, puis si efficace relais IVSE 1 à 15 mg/h.",
+    color:"#059669",
+  },
+  {
+    id:"cyanokit_adulte", cat:"antidote", groupe:"Antidote cyanure",
+    nom:"Hydroxocobalamine (Cyanokit)", amp:"Poudre pour perfusion 5 g",
+    voie:"Perfusion IV", isDoseFixe:true,
+    variantes:[
+      { label:"Trouble de la conscience", prepa:"Reconstituer 1 flacon (5 g) dans 200 mL de NaCl 0,9%. Perfuser sur 15 min.", dose:5, unite:"g", volume:200 },
+      { label:"Arrêt cardiaque / instabilité hémodynamique — d'emblée", prepa:"Reconstituer 2 flacons (10 g) dans 400 mL de NaCl 0,9% (200 mL par flacon). Perfuser sur 15 min.", dose:10, unite:"g", volume:400 },
+    ],
+    indication:"Intoxication aux cyanures avec trouble de la conscience, instabilité hémodynamique ou arrêt cardiaque.",
+    remarques:"Trouble de la conscience isolé : 5 g sur 15 min. Arrêt cardiaque ou instabilité hémodynamique : 10 g d'emblée sur 15 min. Colore les urines/téguments en rouge (normal).",
     color:"#059669",
   },
   {
@@ -32189,7 +32270,15 @@ function CalcAdulteDoseFixeCard({ medic, poids, color }) {
           <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>{v.label}</div>
           <div style={{padding:"10px 12px"}}>
             {v.prepa && <div style={{fontSize:11.5, color:C.text, lineHeight:1.5, marginBottom:8}}>🧪 {v.prepa}</div>}
-            {v.mgKgHMin != null ? (
+            {v.debitMgHMin != null ? (
+              <div>
+                <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VITESSE PSE</div>
+                <div style={{fontSize:20, fontWeight:900, color:C.text}}>
+                  {Math.round((v.debitMgHMin/v.concentration)*100)/100} – {Math.round((v.debitMgHMax/v.concentration)*100)/100} <span style={{fontSize:12}}>mL/h</span>
+                </div>
+                <div style={{fontSize:9, color:C.sub, marginTop:2}}>{v.debitMgHMin}-{v.debitMgHMax} mg/h</div>
+              </div>
+            ) : v.mgKgHMin != null ? (
               <div>
                 <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DÉBIT D'ENTRETIEN (pour {poids} kg)</div>
                 <div style={{fontSize:20, fontWeight:900, color:C.text}}>
@@ -32215,6 +32304,21 @@ function CalcAdulteDoseFixeCard({ medic, poids, color }) {
                   </div>
                 )}
               </div>
+            ) : v.doseMin != null ? (
+              <div style={{display:"flex", gap:16}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE</div>
+                  <div style={{fontSize:20, fontWeight:900, color:C.text}}>{v.doseMin} – {v.doseMax} <span style={{fontSize:12}}>{v.unite}</span></div>
+                </div>
+                {v.volumeMin != null && (
+                  <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+                    <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+                    <div style={{fontSize:20, fontWeight:900, color}}>{v.volumeMin} – {v.volumeMax} <span style={{fontSize:12}}>mL</span></div>
+                  </div>
+                )}
+              </div>
+            ) : v.texteLibre ? (
+              <div style={{fontSize:13, fontWeight:700, color:C.text, lineHeight:1.5}}>{v.texteLibre}</div>
             ) : (
               <div style={{display:"flex", gap:16}}>
                 <div style={{flex:1}}>
