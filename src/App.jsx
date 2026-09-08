@@ -32,7 +32,7 @@ const TABLE_MAP = {
 // pour que supaFetch() envoie le bon token (utilisateur connecté ou clé anonyme).
 let _currentAccessToken = null;
 
-async function supaFetch(path, method = "GET", body = null) {
+async function supaFetch(path, method = "GET", body = null, noReturn = false) {
   const token = _currentAccessToken || SUPA_KEY;
   const opts = {
     method,
@@ -40,7 +40,7 @@ async function supaFetch(path, method = "GET", body = null) {
       "apikey": SUPA_KEY,
       "Authorization": "Bearer " + token,
       "Content-Type": "application/json",
-      "Prefer": method === "POST" ? "return=representation" : "",
+      "Prefer": (method === "POST" && !noReturn) ? "return=representation" : "",
     },
   };
   if (body !== null) opts.body = JSON.stringify(body);
@@ -439,9 +439,10 @@ function RequestAccountScreen({ onBack }) {
       await supaFetch("/account_requests", "POST", {
         nom: nom.trim(), prenom: prenom.trim(), email: email.trim(),
         profession: profession || null, status: "pending",
-      });
+      }, true); // noReturn : l'utilisateur anonyme n'a pas le droit de relire la ligne créée
       setSuccess(true);
     } catch (e) {
+      console.error("Erreur demande de compte:", e);
       setError("Une erreur est survenue, réessaie dans un instant.");
     } finally {
       setBusy(false);
