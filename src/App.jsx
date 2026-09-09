@@ -788,6 +788,7 @@ function AccountsAdminScreenInner({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [filtreProfession, setFiltreProfession] = useState("tous");
   const [error, setError] = useState(null);
   const [lastCreated, setLastCreated] = useState(null); // { email, password } à afficher une fois
 
@@ -972,11 +973,30 @@ function AccountsAdminScreenInner({ onBack }) {
         </div>
       )}
 
+      {/* Filtres par profession */}
+      <div style={{display:"flex", gap:6, overflowX:"auto", paddingBottom:8, marginBottom:8, WebkitOverflowScrolling:"touch"}}>
+        {[{v:"tous", l:"Tous"}, ...PROFESSION_OPTIONS].map(opt => {
+          const count = opt.v === "tous" ? profiles.length : profiles.filter(p => p.profession === opt.v).length;
+          const on = filtreProfession === opt.v;
+          return (
+            <button key={opt.v} onClick={()=>setFiltreProfession(opt.v)} style={{
+              flexShrink:0, border:`1.5px solid ${on?C.navy:C.border}`, borderRadius:16,
+              padding:"6px 12px", fontSize:12, fontWeight:700, cursor:"pointer",
+              background:on?C.navy:C.white, color:on?"#fff":C.sub, whiteSpace:"nowrap",
+            }}>{opt.l} ({count})</button>
+          );
+        })}
+      </div>
+
       {/* Liste des comptes existants */}
-      <div style={{fontSize:12, fontWeight:800, color:C.sub, marginBottom:8}}>Comptes ({profiles.length})</div>
+      <div style={{fontSize:12, fontWeight:800, color:C.sub, marginBottom:8}}>
+        Comptes ({filtreProfession === "tous" ? profiles.length : profiles.filter(p => p.profession === filtreProfession).length})
+      </div>
       {loading ? (
         <div style={{textAlign:"center", padding:20, color:C.sub, fontSize:13}}>Chargement...</div>
-      ) : profiles.map(p => (
+      ) : (filtreProfession === "tous" ? profiles : profiles.filter(p => p.profession === filtreProfession)).length === 0 ? (
+        <div style={{textAlign:"center", padding:20, color:C.sub, fontSize:13}}>Aucun compte dans cette catégorie.</div>
+      ) : (filtreProfession === "tous" ? profiles : profiles.filter(p => p.profession === filtreProfession)).map(p => (
         <div key={p.id} style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:12, marginBottom:8}}>
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
             <div>
