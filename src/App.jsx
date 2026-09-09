@@ -789,6 +789,10 @@ function AccountsAdminScreenInner({ onBack }) {
   const [savingId, setSavingId] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [filtreProfession, setFiltreProfession] = useState("tous");
+  const [editingId, setEditingId] = useState(null);
+  const [editNom, setEditNom] = useState("");
+  const [editPrenom, setEditPrenom] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null); // le profil à confirmer, ou null
   const [error, setError] = useState(null);
   const [lastCreated, setLastCreated] = useState(null); // { email, password } à afficher une fois
 
@@ -885,8 +889,14 @@ function AccountsAdminScreenInner({ onBack }) {
     }
   }
 
-  async function handleDelete(p) {
-    if (!window.confirm("Supprimer définitivement le compte de " + (p.email || p.id) + " ? Cette action est irréversible.")) return;
+  function handleDelete(p) {
+    setConfirmDelete(p);
+  }
+
+  async function confirmDeleteAction() {
+    const p = confirmDelete;
+    if (!p) return;
+    setConfirmDelete(null);
     setBusyId(p.id);
     setError(null);
     try {
@@ -897,6 +907,18 @@ function AccountsAdminScreenInner({ onBack }) {
     } finally {
       setBusyId(null);
     }
+  }
+
+  function startEdit(p) {
+    setEditingId(p.id);
+    setEditNom(p.nom || "");
+    setEditPrenom(p.prenom || "");
+  }
+
+  async function saveEdit(id) {
+    if (!editNom.trim() || !editPrenom.trim()) { setError("Nom et prénom ne peuvent pas être vides."); return; }
+    await updateProfile(id, { nom: editNom.trim(), prenom: editPrenom.trim() });
+    setEditingId(null);
   }
 
   const selectStyle = { border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 8px", fontSize:12, background:C.white, color:C.text };
@@ -998,13 +1020,32 @@ function AccountsAdminScreenInner({ onBack }) {
         <div style={{textAlign:"center", padding:20, color:C.sub, fontSize:13}}>Aucun compte dans cette catégorie.</div>
       ) : (filtreProfession === "tous" ? profiles : profiles.filter(p => p.profession === filtreProfession)).map(p => (
         <div key={p.id} style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:12, marginBottom:8}}>
-          <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+          {editingId === p.id ? (
             <div>
-              <div style={{fontSize:13, fontWeight:700, color:C.text}}>{p.prenom || "?"} {p.nom || ""}</div>
-              <div style={{fontSize:11, color:C.sub, marginTop:2}}>{p.email}</div>
+              <div style={{display:"flex", gap:8, marginBottom:8}}>
+                <input value={editPrenom} onChange={e=>setEditPrenom(e.target.value)} placeholder="Prénom"
+                  style={{flex:1, boxSizing:"border-box", padding:"8px 10px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13}}/>
+                <input value={editNom} onChange={e=>setEditNom(e.target.value)} placeholder="Nom"
+                  style={{flex:1, boxSizing:"border-box", padding:"8px 10px", borderRadius:8, border:`1px solid ${C.border}`, fontSize:13}}/>
+              </div>
+              <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{p.email}</div>
+              <div style={{display:"flex", gap:8}}>
+                <button disabled={savingId===p.id} onClick={()=>saveEdit(p.id)} style={{flex:1, background:C.green, color:"#fff", border:"none", borderRadius:8, padding:"8px", fontSize:12, fontWeight:700, cursor:"pointer"}}>{savingId===p.id?"...":"Enregistrer"}</button>
+                <button onClick={()=>setEditingId(null)} style={{flex:1, background:C.white, color:C.sub, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px", fontSize:12, fontWeight:700, cursor:"pointer"}}>Annuler</button>
+              </div>
             </div>
-            <button disabled={busyId===p.id} onClick={()=>handleDelete(p)} style={{background:"none", border:"none", color:C.red, fontSize:16, cursor:"pointer"}}>🗑️</button>
-          </div>
+          ) : (
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontSize:13, fontWeight:700, color:C.text}}>{p.prenom || "?"} {p.nom || ""}</div>
+                <div style={{fontSize:11, color:C.sub, marginTop:2}}>{p.email}</div>
+              </div>
+              <div style={{display:"flex", gap:10, flexShrink:0}}>
+                <button onClick={()=>startEdit(p)} style={{background:"none", border:"none", color:C.blue, fontSize:15, cursor:"pointer"}}>✏️</button>
+                <button disabled={busyId===p.id} onClick={()=>handleDelete(p)} style={{background:"none", border:"none", color:C.red, fontSize:16, cursor:"pointer"}}>🗑️</button>
+              </div>
+            </div>
+          )}
           <div style={{display:"flex", gap:8, marginTop:10}}>
             <select disabled={savingId===p.id} value={p.role||"consultatif"} onChange={e=>updateProfile(p.id, {role:e.target.value})} style={{...selectStyle, flex:1}}>
               {ROLE_OPTIONS.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
@@ -1016,6 +1057,23 @@ function AccountsAdminScreenInner({ onBack }) {
           </div>
         </div>
       ))}
+
+      {/* Modale de confirmation de suppression */}
+      {confirmDelete && (
+        <div onClick={()=>setConfirmDelete(null)} style={{position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%", maxWidth:360, background:C.white, borderRadius:16, padding:22}}>
+            <div style={{fontSize:32, textAlign:"center", marginBottom:10}}>⚠️</div>
+            <div style={{fontSize:15, fontWeight:800, color:C.navy, textAlign:"center", marginBottom:8}}>Supprimer ce compte ?</div>
+            <div style={{fontSize:13, color:C.sub, textAlign:"center", lineHeight:1.5, marginBottom:20}}>
+              {confirmDelete.prenom} {confirmDelete.nom} ({confirmDelete.email}) perdra définitivement l'accès à l'application. Cette action est irréversible.
+            </div>
+            <div style={{display:"flex", gap:10}}>
+              <button onClick={()=>setConfirmDelete(null)} style={{flex:1, background:C.white, color:C.sub, border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", fontSize:13, fontWeight:700, cursor:"pointer"}}>Annuler</button>
+              <button onClick={confirmDeleteAction} style={{flex:1, background:C.red, color:"#fff", border:"none", borderRadius:10, padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer"}}>Supprimer</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
