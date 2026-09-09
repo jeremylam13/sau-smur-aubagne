@@ -33,18 +33,30 @@ const TABLE_MAP = {
 let _currentAccessToken = null;
 
 async function supaFetch(path, method = "GET", body = null, noReturn = false) {
+  async function attempt(useToken) {
+    const opts = {
+      method,
+      headers: {
+        "apikey": SUPA_KEY,
+        "Authorization": "Bearer " + useToken,
+        "Content-Type": "application/json",
+        "Prefer": (method === "POST" && !noReturn) ? "return=representation" : "",
+      },
+    };
+    if (body !== null) opts.body = JSON.stringify(body);
+    return fetch(SUPA_URL + "/rest/v1" + path, opts);
+  }
+
   const token = _currentAccessToken || SUPA_KEY;
-  const opts = {
-    method,
-    headers: {
-      "apikey": SUPA_KEY,
-      "Authorization": "Bearer " + token,
-      "Content-Type": "application/json",
-      "Prefer": (method === "POST" && !noReturn) ? "return=representation" : "",
-    },
-  };
-  if (body !== null) opts.body = JSON.stringify(body);
-  const res = await fetch(SUPA_URL + "/rest/v1" + path, opts);
+  let res = await attempt(token);
+
+  // Si le jeton en mémoire est invalide/expiré (401) alors qu'on en avait un,
+  // on l'efface et on retente une fois avec la clé anonyme (comportement transparent).
+  if (res.status === 401 && token !== SUPA_KEY) {
+    _currentAccessToken = null;
+    res = await attempt(SUPA_KEY);
+  }
+
   if (!res.ok) {
     const err = await res.text();
     throw new Error("Supabase " + method + " " + path + " → " + res.status + " " + err);
@@ -297,6 +309,7 @@ function AuthProvider({ children }) {
 
   async function signOut() {
     await supabaseAuth.auth.signOut();
+    _currentAccessToken = null; // immédiat, sans attendre l'événement onAuthStateChange
     setSession(null);
     setProfile(null);
   }
