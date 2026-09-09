@@ -988,6 +988,7 @@ function AccountsAdminScreenInner({ onBack }) {
 }
 
 function DataProvider({ children }) {
+  const { session } = useAuth();
   const [store, setStore] = React.useState({
     ecgs: [], imagerie: [], agenda: [],
     divers: [], dilutions: [], gestes: [], retex: [],
@@ -1303,7 +1304,11 @@ function DataProvider({ children }) {
     await saveFiles(item, fileFields);
     // Si la clé pointe vers une table Supabase → vrai INSERT POST
     if (TABLE_MAP[storageKey]) {
-      const row = itemToRow(TABLE_MAP[storageKey], item);
+      // Renseigne automatiquement l'auteur (utile pour les permissions "mes propres publications")
+      const itemWithAuthor = (session?.user?.id && item.created_by === undefined)
+        ? { ...item, created_by: session.user.id }
+        : item;
+      const row = itemToRow(TABLE_MAP[storageKey], itemWithAuthor);
       console.log("[addItem] POST /" + TABLE_MAP[storageKey], row);
       try {
         const rows = await supaFetch("/" + TABLE_MAP[storageKey], "POST", row);
@@ -2345,12 +2350,14 @@ function HomeScreen({onNav}) {
     // ── Ligne 5 ──
     {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
     {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
-    {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9"},
+    {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9", hideForConsultatif:true},
     {id:"comptes",    icon:"👥", label:"Comptes",           color:"#0F172A", bg:"#F1F5F9", adminOnly:true},
   ];
 
-  const { isAdmin } = useAuth();
-  const visibleShortcuts = shortcuts.filter(s => !s.adminOnly || isAdmin);
+  const { isAdmin, role } = useAuth();
+  const visibleShortcuts = shortcuts.filter(s =>
+    (!s.adminOnly || isAdmin) && (!s.hideForConsultatif || role !== "consultatif")
+  );
 
   const isSearching = searchFocused && query.trim().length>0;
 
@@ -7185,6 +7192,23 @@ function DilutionScreen({ deepLinkId, onBack }) {
 
 // ─── AdminScreen ───────────────────────────────────────────────────────────────
 function AdminScreen({ onNewItem, onBack }) {
+  const C = useC();
+  const { role } = useAuth();
+
+  if (role === "consultatif") {
+    return (
+      <div>
+        <BackBtn onClick={onBack}/>
+        <div style={{textAlign:"center", padding:40, color:C.sub, fontSize:13}}>
+          🔒 L'éditeur de fiches est réservé aux médecins et administrateurs.
+        </div>
+      </div>
+    );
+  }
+  return <AdminScreenInner onNewItem={onNewItem} onBack={onBack}/>;
+}
+
+function AdminScreenInner({ onNewItem, onBack }) {
   const C = useC();
   const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("home");
