@@ -2485,8 +2485,52 @@ function HomeScreen({onNav}) {
         </div>
       </div>
 
+      {/* Barre de recherche globale — en tête, pour rester visible au-dessus du clavier */}
+      <div ref={searchRef} style={{position:"relative", marginBottom:20}}>
+        <div style={{
+          display:"flex", alignItems:"center", gap:10,
+          background:C.white,
+          border:`1.5px solid ${searchFocused ? C.blue : C.border}`,
+          borderRadius: isSearching ? "14px 14px 0 0" : 14,
+          padding:"11px 14px",
+          boxShadow: searchFocused ? `0 0 0 3px ${C.blue}18` : "0 2px 8px rgba(26,58,92,.06)",
+          transition:"border-color .15s, box-shadow .15s, border-radius .1s",
+        }}>
+          <span style={{fontSize:16, opacity:.5, flexShrink:0}}>{"🔍"}</span>
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={e=>setQuery(e.target.value)}
+            onFocus={()=>setSearchFocused(true)}
+            placeholder="Rechercher un ECG, contact, RETEX, geste..."
+            style={{
+              flex:1, border:"none", outline:"none", fontSize:13,
+              color:C.text, background:"transparent",
+              fontFamily:"inherit",
+            }}
+          />
+          {query.length>0 && (
+            <button onClick={()=>{ setQuery(""); inputRef.current?.focus(); }}
+              style={{background:"none", border:"none", cursor:"pointer", color:C.sub,
+                fontSize:16, lineHeight:1, padding:0, flexShrink:0}}>
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Résultats */}
+        {searchFocused && (
+          <GlobalSearch
+            query={query}
+            allData={allData}
+            onNav={onNav}
+            onClose={()=>{ setSearchFocused(false); setQuery(""); }}
+          />
+        )}
+      </div>
+
       {/* ★ Paire Formation : Quiz du Jour + Entraînement ECG (50/50) ★ */}
-      {(() => {
+      {!isSearching && (() => {
         const ecgPool = [...ECGS, ...(store.ecgs||[])].filter(e => e && (e.imageData || e.imageUrl));
         const hasEcg = ecgPool.length >= 3;
         if (!quizOfTheDay && !hasEcg) return null;
@@ -2563,50 +2607,6 @@ function HomeScreen({onNav}) {
           </div>
         );
       })()}
-
-      {/* Barre de recherche globale */}
-      <div ref={searchRef} style={{position:"relative", marginBottom:24}}>
-        <div style={{
-          display:"flex", alignItems:"center", gap:10,
-          background:C.white,
-          border:`1.5px solid ${searchFocused ? C.blue : C.border}`,
-          borderRadius: isSearching ? "14px 14px 0 0" : 14,
-          padding:"11px 14px",
-          boxShadow: searchFocused ? `0 0 0 3px ${C.blue}18` : "0 2px 8px rgba(26,58,92,.06)",
-          transition:"border-color .15s, box-shadow .15s, border-radius .1s",
-        }}>
-          <span style={{fontSize:16, opacity:.5, flexShrink:0}}>{"🔍"}</span>
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={e=>setQuery(e.target.value)}
-            onFocus={()=>setSearchFocused(true)}
-            placeholder="Rechercher un ECG, contact, RETEX, geste..."
-            style={{
-              flex:1, border:"none", outline:"none", fontSize:13,
-              color:C.text, background:"transparent",
-              fontFamily:"inherit",
-            }}
-          />
-          {query.length>0 && (
-            <button onClick={()=>{ setQuery(""); inputRef.current?.focus(); }}
-              style={{background:"none", border:"none", cursor:"pointer", color:C.sub,
-                fontSize:16, lineHeight:1, padding:0, flexShrink:0}}>
-              ✕
-            </button>
-          )}
-        </div>
-
-        {/* Résultats */}
-        {searchFocused && (
-          <GlobalSearch
-            query={query}
-            allData={allData}
-            onNav={onNav}
-            onClose={()=>{ setSearchFocused(false); setQuery(""); }}
-          />
-        )}
-      </div>
 
       {/* Accès rapide — masqué pendant la recherche */}
       {!isSearching && (
