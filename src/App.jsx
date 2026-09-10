@@ -1724,7 +1724,8 @@ function NotifPanel({ notifs, onNav, onClear, onClose, theme }) {
   }
 
   return (
-    <div style={{position:"absolute", top:52, right:0, width:"min(360px,100vw)", zIndex:2000,
+    <div style={{position:"fixed", top:60, left:"50%", transform:"translateX(-50%)",
+      width:"min(360px, calc(100vw - 24px))", maxWidth:420, zIndex:2000,
       background:C.card, borderRadius:16, boxShadow:"0 8px 32px rgba(0,0,0,.25)",
       border:`1px solid ${C.border}`, overflow:"hidden", animation:"fadeIn .15s ease"}}>
 
@@ -2249,13 +2250,13 @@ function useGlobalSearch() {
 function GlobalSearch({query, allData, onNav, onClose}) {
   const C = useC();
   if(!query.trim() || !allData) return null;
-  const q = query.toLowerCase().trim();
+  const q = normSearch(query);
 
   const results = [];
 
   // ECG
   allData.ecgs.forEach(e=>{
-    if((e.title+(e.context||"")+(e.diagnosis||"")).toLowerCase().includes(q))
+    if(matchSearch(e.title+(e.context||"")+(e.diagnosis||""), query))
       results.push({type:"ecg", icon:"❤️", color:C.red, bg:C.redLight,
         title:e.title, sub:e.diagnosis||"ECG", nav:"ecg", id:e.id});
   });
@@ -2263,7 +2264,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // RETEX
   allData.retex.forEach(r=>{
     const hay=[r.title,r.author,r.lieu,r.contexte,r.situation,r.bien,r.recit,r.takehome].filter(Boolean).join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"retex", icon:"🔬", color:C.green, bg:C.greenLight,
         title:r.title, sub:(r.author||"")+(r.date?" - "+r.date:""), nav:"retex", id:r.id});
   });
@@ -2271,7 +2272,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // Divers
   allData.divers.forEach(d=>{
     const hay=[d.title,d.content,...(Array.isArray(d.tags)?d.tags:[])].filter(Boolean).join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"divers", icon:"⚡", color:C.navy, bg:C.blueLight,
         title:d.title, sub:(Array.isArray(d.tags)?d.tags:[]).join(" ")||"Base de connaissances", nav:"divers", id:d.id});
   });
@@ -2279,7 +2280,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // Dilutions
   (allData.dilutions||[]).forEach(d=>{
     const hay=[d.title,d.subtitle,...(Array.isArray(d.tags)?d.tags:[])].filter(Boolean).join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"dilution", icon:"💉", color:"#E05260", bg:"#FDF0F1",
         title:d.title, sub:d.subtitle||"Dilution", nav:"dilutions", id:d.id});
   });
@@ -2287,14 +2288,14 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // Gestes
   (allData.gestes||[]).forEach(g=>{
     const hay=[g.title,(Array.isArray(g.tags)?g.tags:[]).join(" "),g.indications||""].join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"geste", icon:"✂️", color:"#C0392B", bg:"#FDECEA",
         title:g.title, sub:(Array.isArray(g.tags)?g.tags:[]).join(" ")||"Geste technique", nav:"gestes", id:g.id});
   });
 
   // Agenda
   allData.agenda.forEach(ev=>{
-    if((ev.title+(ev.lieu||"")+(ev.description||"")).toLowerCase().includes(q))
+    if(matchSearch(ev.title+(ev.lieu||"")+(ev.description||""), query))
       results.push({type:"agenda", icon:"📅", color:C.amber, bg:C.amberLight,
         title:ev.title, sub:ev.date+(ev.lieu?" — "+ev.lieu:""), nav:"agenda", id:ev.id});
   });
@@ -2303,14 +2304,14 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   allData.annuaire.forEach(p=>{
     const tels = (p.telephones||[]).map(t=>t.numero).join(" ");
     const tel1 = p.telephones?.[0]?.numero || "";
-    if((p.nom+(p.role||"")+(p.categorie||"")+tels).toLowerCase().includes(q))
+    if(matchSearch(p.nom+(p.role||"")+(p.categorie||"")+tels, query))
       results.push({type:"annuaire", icon:"📒", color:"#2E6EA6", bg:"#E8F0FA",
         title:p.nom, sub:(p.role||p.categorie||"")+(tel1?" · "+tel1:""), nav:"annuaire", id:p.id});
   });
 
   // Imagerie
   allData.imagerie.forEach(c=>{
-    if((c.title+(c.context||"")+(c.type||"")).toLowerCase().includes(q))
+    if(matchSearch(c.title+(c.context||"")+(c.type||""), query))
       results.push({type:"imagerie", icon:"🖼️", color:"#9B59B6", bg:"#F3E8FF",
         title:c.title, sub:c.type||"Imagerie", nav:"imagerie", id:c.id});
   });
@@ -2318,7 +2319,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // Scores
   (allData.scores||[]).forEach(s=>{
     const hay=[s.title,s.subtitle,...(Array.isArray(s.tags)?s.tags:[])].filter(Boolean).join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"score", icon:s.icon||"🧮", color:s.color||"#0D9488", bg:(s.color||"#0D9488")+"22",
         title:s.title, sub:s.subtitle||"Score clinique", nav:"scores", id:s.id});
   });
@@ -2326,7 +2327,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // Quiz
   (allData.quizzes||[]).forEach(qz=>{
     const hay=[qz.title,qz.description,qz.theme,...(Array.isArray(qz.tags)?qz.tags:[])].filter(Boolean).join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"quiz", icon:"🧠", color:"#6366F1", bg:"#EEF2FF",
         title:qz.title, sub:qz.description||qz.theme||"Quiz", nav:"quiz", id:qz.id});
   });
@@ -2334,9 +2335,25 @@ function GlobalSearch({query, allData, onNav, onClose}) {
   // Reco Flash
   (allData.recoflash||[]).forEach(rf=>{
     const hay=[rf.title,rf.subtitle,rf.source,...(Array.isArray(rf.tags)?rf.tags:[])].filter(Boolean).join(" ");
-    if(hay.toLowerCase().includes(q))
+    if(matchSearch(hay, query))
       results.push({type:"reco", icon:"📋", color:"#0891B2", bg:"#CFFAFE",
         title:rf.title, sub:rf.subtitle||rf.source||"Recommandation", nav:"recoflash", id:rf.id});
+  });
+
+  // Médicaments — calculateur de doses adulte
+  CALC_ADULTE_MEDICAMENTS.forEach(m=>{
+    const hay=[m.nom,m.indication,m.groupe].filter(Boolean).join(" ");
+    if(matchSearch(hay, query))
+      results.push({type:"medic_adulte", icon:"💊", color:"#DC2626", bg:"#FEE2E2",
+        title:m.nom, sub:(m.groupe||"Calc. doses adulte"), nav:"calcAdulte", id:m.nom});
+  });
+
+  // Médicaments — calculateur de doses pédiatrique
+  PEDIA_MEDICAMENTS_DATA.forEach(m=>{
+    const hay=[m.nom,m.indication,m.categorie].filter(Boolean).join(" ");
+    if(matchSearch(hay, query))
+      results.push({type:"medic_pedia", icon:"👶", color:"#EC4899", bg:"#FCE7F3",
+        title:m.nom, sub:(m.categorie||"Calc. doses pédiatrie"), nav:"pedia", id:m.nom});
   });
 
   return (
@@ -2841,6 +2858,16 @@ function DerniersAjoutsWidget({ onNav }) {
 // (ex: "Osmothérapie" et "osmotherapie" donnent le même résultat)
 function normSearch(str) {
   return (str || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// Vérifie que TOUS les mots de la requête apparaissent dans le texte (peu importe l'ordre
+// et la ponctuation autour). Insensible aux accents et à la casse.
+// Ex : matchSearch("Kétamine (low dose — analgésie)", "ketamine low dose") → true
+function matchSearch(haystack, query) {
+  const h = normSearch(haystack);
+  const words = normSearch(query).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  return words.every(w => h.includes(w));
 }
 
 function playBeep() {
@@ -7304,6 +7331,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const { store, addItem, updateItem, removeItem } = useData();
   const [tab, setTab] = useState("home");
   const [saved, setSaved] = useState(null);
+  const [submittingKey, setSubmittingKey] = useState(null); // anti double-clic sur les boutons "Ajouter"
   const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
   const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[], tags:"" });
   const [ecgConfirmed, setEcgConfirmed] = useState(false);
@@ -7364,18 +7392,24 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addImagerie() {
     if(!iForm.title.trim()) return;
-    const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    if(editingI !== null) {
-      const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
-      await updateItem("imagerie","admin_imagerie",item,["image"]);
-      setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""});
-      showSaved("Cas modifié !");
-    } else {
-      const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
-      await addItem("imagerie","admin_imagerie",item,["image"]);
-      setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""}); setImagerieConfirmed(false);
-      showSaved("Cas ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
+    if(submittingKey === "imagerie") return; // déjà en cours d'envoi
+    setSubmittingKey("imagerie");
+    try {
+      const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
+      if(editingI !== null) {
+        const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
+        await updateItem("imagerie","admin_imagerie",item,["image"]);
+        setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""});
+        showSaved("Cas modifié !");
+      } else {
+        const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
+        await addItem("imagerie","admin_imagerie",item,["image"]);
+        setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""}); setImagerieConfirmed(false);
+        showSaved("Cas ajouté !");
+        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
+      }
+    } finally {
+      setSubmittingKey(null);
     }
   }
 
@@ -7893,7 +7927,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                 Je certifie que cette imagerie est anonymisée et que sa publication est conforme au règlement du service.
               </span>
             </div>
-            <Btn onClick={addImagerie} disabled={!imagerieConfirmed} color="#9B59B6" style={{width:"100%"}}>{editingI ? "✅ Enregistrer les modifications" : "Ajouter le cas"}</Btn>
+            <Btn onClick={addImagerie} disabled={!imagerieConfirmed || submittingKey==="imagerie"} color="#9B59B6" style={{width:"100%"}}>{submittingKey==="imagerie" ? "Envoi..." : (editingI ? "✅ Enregistrer les modifications" : "Ajouter le cas")}</Btn>
           </Card>
           {customImagerie.length>0 && (
             <div>
@@ -29531,9 +29565,9 @@ function PediaScoreCalc({ score, onBack }) {
 // ────────────────────────────────────────────────────────────────────────────
 // PediaScreen : module pédiatrie (4 sections)
 // ────────────────────────────────────────────────────────────────────────────
-function PediaScreen({ onBack }) {
+function PediaScreen({ onBack, deepLinkId }) {
   const C = useC();
-  const [section, setSection] = useState("home"); // home | cartes | doses | normes | fiches | scores
+  const [section, setSection] = useState(deepLinkId ? "doses" : "home"); // home | cartes | doses | normes | fiches | scores
   const [scoreSel, setScoreSel] = useState(null);
   const [ficheSel, setFicheSel] = useState(null);
   const [carteSel, setCarteSel] = useState(null);
@@ -29618,7 +29652,7 @@ function PediaScreen({ onBack }) {
   if (section === "scores" && dedieSel === "silverman") return <SilvermanCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
-  if (section === "doses")  return <PediaDoses onBack={()=>setSection("home")}/>;
+  if (section === "doses")  return <PediaDoses onBack={()=>setSection("home")} deepLinkId={deepLinkId}/>;
   if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
   if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
   if (section === "scores") return (
@@ -30412,12 +30446,12 @@ function PediaDoseCard({ medic, poids }) {
   );
 }
 
-function PediaDoses({ onBack }) {
+function PediaDoses({ onBack, deepLinkId }) {
   const C = useC();
   const [mode, setMode] = useState("poids");
   const [poids, setPoids] = useState("");
   const [age, setAge] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(deepLinkId || "");
   const [openCats, setOpenCats] = useState({}); // toutes repliées par défaut
 
   // Données codées en dur — hors ligne garanti
@@ -30432,10 +30466,10 @@ function PediaDoses({ onBack }) {
 
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
 
-  // Filtrage (insensible aux accents et à la casse)
+  // Filtrage (insensible aux accents et à la casse, mots-clés indépendants)
   const q = normSearch(search);
   const filtered = medicaments.filter(m =>
-    !q || normSearch(m.nom+(m.indication||"")+(m.categorie||"")).includes(q)
+    !q || matchSearch(m.nom+(m.indication||"")+(m.categorie||""), search)
   );
 
   // Groupement par catégorie dans l'ordre PEDIA_DOSE_CATS, puis "Autre" pour le reste
@@ -32691,20 +32725,20 @@ function CalcAdulteCard({ medic, poids }) {
 }
 
 // ── Écran principal ──
-function CalcAdulteScreen({ onBack }) {
+function CalcAdulteScreen({ onBack, deepLinkId }) {
   const C = useC();
   const [poids, setPoids] = useState("");
   const [openCats, setOpenCats] = useState({});
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(deepLinkId || "");
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
 
   const poidsNum = parseFloat(poids) || null;
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
 
-  // Recherche insensible aux accents et à la casse
+  // Recherche insensible aux accents et à la casse, mots-clés indépendants
   const q = normSearch(search);
   const searchResults = q
-    ? CALC_ADULTE_MEDICAMENTS.filter(m => normSearch(m.nom+(m.indication||"")+(m.groupe||"")).includes(q))
+    ? CALC_ADULTE_MEDICAMENTS.filter(m => matchSearch(m.nom+(m.indication||"")+(m.groupe||""), search))
     : null;
 
   return (
@@ -36001,8 +36035,8 @@ function AppInner() {
         {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
-        {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack}/>}
-        {screen==="calcAdulte" && <CalcAdulteScreen key={"calcAdulte-"+navVersion} onBack={goBack}/>}
+        {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack} deepLinkId={deepLink}/>}
+        {screen==="calcAdulte" && <CalcAdulteScreen key={"calcAdulte-"+navVersion} onBack={goBack} deepLinkId={deepLink}/>}
         {screen==="echo"       && <EchoScreen key={"echo-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
