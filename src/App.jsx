@@ -30284,9 +30284,35 @@ function PediaStriadyneCard({ medic, poids, color }) {
   );
 }
 
+// Aperçu d'un médicament pédiatrique SANS calcul de dose (poids pas encore saisi)
+function PediaDoseCardPreview({ medic }) {
+  const C = useC();
+  const color = medic.color || "#0EA5E9";
+  return (
+    <div style={{background:C.white, border:`1.5px dashed ${C.border}`, borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:4}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", fontSize:11.5, color:C.sub, fontStyle:"italic"}}>
+        Saisissez le poids (ou l'âge) ci-dessus pour afficher la dose calculée.
+      </div>
+    </div>
+  );
+}
+
 function PediaDoseCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+
+  // Sans poids : aperçu simple, sans calcul (évite les NaN dans les cartes spéciales)
+  if (!poids) {
+    return <PediaDoseCardPreview medic={medic}/>;
+  }
 
   // Cas spécial : Striadyne (2 doses successives, concentration selon poids)
   if (medic.isStriadyne) {
@@ -30534,24 +30560,37 @@ function PediaDoses({ onBack, deepLinkId }) {
         </div>
       )}
 
-      {!poidsEff && (
+      {!poidsEff && !q && (
         <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
           Saisissez {mode==="poids" ? "le poids" : "l'âge"} pour voir les doses calculées
         </div>
       )}
 
-      {/* Recherche */}
-      {poidsEff && (
-        <input value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder="🔍 Rechercher un médicament..."
-          style={{width:"100%", padding:"10px 14px", borderRadius:10,
-            border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
-            background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
-        />
-      )}
+      {/* Recherche — toujours visible, avant ou après la saisie du poids */}
+      <input value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="🔍 Rechercher un médicament..."
+        style={{width:"100%", padding:"10px 14px", borderRadius:10,
+          border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
+          background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
+      />
 
-      {/* Médicaments groupés par catégorie */}
-      {poidsEff && (
+      {/* Si une recherche est active : liste plate des résultats (avec ou sans poids) */}
+      {q ? (
+        filtered.length === 0 ? (
+          <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
+            Aucun médicament ne correspond à « {search} »
+          </div>
+        ) : (
+          <div>
+            {filtered.map(m => (
+              <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>
+            ))}
+          </div>
+        )
+      ) : (
+
+      /* Médicaments groupés par catégorie (comportement normal, sans recherche) */
+      poidsEff && (
         loading ? (
           <div style={{textAlign:"center", padding:20, color:C.sub}}>Chargement...</div>
         ) : grouped.length === 0 ? (
@@ -30606,6 +30645,7 @@ function PediaDoses({ onBack, deepLinkId }) {
             ))}
           </div>
         )
+      )
       )}
     </div>
   );
@@ -31331,8 +31371,8 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"ketamine_isr", cat:"isr", groupe:"Hypnotique ISR",
     nom:"Kétamine", amp:"250 mg / 5 mL", concentration:50, unite:"mg",
-    doseMin:3, doseMax:3,
-    voie:"IVD", remarques:"Induction séquence rapide : 3 mg/kg. Prélever 1 amp 250 mg/5 mL pure (50 mg/mL). Dissociatif. Maintien des réflexes. Bronchodilatateur.",
+    doseMin:2, doseMax:3,
+    voie:"IVD", remarques:"Induction séquence rapide : 2 à 3 mg/kg. Prélever 1 amp 250 mg/5 mL pure (50 mg/mL). Dissociatif. Maintien des réflexes. Bronchodilatateur.",
     color:"#0891B2",
   },
   {
@@ -31464,6 +31504,18 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#7C3AED",
     infoExtra:"Demi-dose : ",
   },
+  {
+    id:"naloxone_in", cat:"analgesie_in", groupe:"Intranasal",
+    nom:"Naloxone (Narcan) intranasale", amp:"0,4 mg / 1 mL", concentration:0.4,
+    voie:"IN", isDoseFixe:true,
+    variantes:[
+      { label:"Narine droite", prepa:"Seringue de 1 mL pure, avec embout nasal spécifique.", dose:0.4, unite:"mg", volume:1 },
+      { label:"Narine gauche", prepa:"Seringue de 1 mL pure, avec embout nasal spécifique.", dose:0.4, unite:"mg", volume:1 },
+    ],
+    indication:"Surdosage en opiacés, si voie veineuse non disponible rapidement.",
+    remarques:"Préparer 2 seringues identiques de 1 mL et connecter l'embout nasal spécifique. Pulvériser 1 mL dans chaque narine (0,8 mg au total).",
+    color:"#7C3AED",
+  },
 
   // ── Infectieux ────────────────────────────────────────────────────────────
   {
@@ -31567,10 +31619,10 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"flecaine_adulte", cat:"cardio", groupe:"Antiarythmique",
     nom:"Flécaïne", amp:"150 mg / 15 mL", concentration:10, unite:"mg",
-    doseMin:1, doseMax:2,
+    doseMin:1, doseMax:2, doseAbsMax:150,
     voie:"IV / 10 min", preparation:"Prélever la dose selon le poids et compléter à 30 mL avec du G5%.",
     indication:"Réduction de FA mal tolérée, sans cardiopathie sous-jacente.",
-    remarques:"1 à 2 mg/kg en IV, à passer sur 10 min. Vérifier l'absence de cardiopathie avant utilisation.",
+    remarques:"1 à 2 mg/kg en IV, à passer sur 10 min, sans dépasser 150 mg. Vérifier l'absence de cardiopathie avant utilisation.",
     color:"#DC2626",
   },
   {
@@ -31614,11 +31666,11 @@ const CALC_ADULTE_MEDICAMENTS = [
     nom:"Gluconate de calcium", amp:"1 g / 10 mL", concentration:0.1,
     voie:"IVL / IVD selon contexte", isDoseFixe:true,
     variantes:[
-      { label:"Hyperkaliémie menaçante / Transfusion massive / Hypocalcémie aiguë", prepa:"Prélever 3 ampoules (3 g) et diluer dans 100 mL de NaCl 0,9%. IVL sur 10 min, à renouveler tant que les anomalies persistent (ECG pour l'hyperkaliémie).", dose:3, unite:"g" },
-      { label:"Arrêt cardiaque sur hyperkaliémie", prepa:"3 ampoules pures (3 g / 30 mL).", dose:3, unite:"g", volume:30 },
+      { label:"Hyperkaliémie menaçante / Transfusion massive / Hypocalcémie aiguë", prepa:"Prélever 1 à 2 ampoules (1 à 2 g) et diluer dans 100 mL de NaCl 0,9%. IVL sur 10 min, à renouveler tant que les anomalies persistent (ECG pour l'hyperkaliémie).", doseMin:1, doseMax:2, unite:"g" },
+      { label:"Arrêt cardiaque sur hyperkaliémie", prepa:"1 à 2 ampoules pures (1 à 2 g / 10-20 mL).", doseMin:1, doseMax:2, unite:"g", volumeMin:10, volumeMax:20 },
     ],
     indication:"Hyperkaliémie menaçante, arrêt cardiaque sur hyperkaliémie, transfusion massive, hypocalcémie aiguë.",
-    remarques:"Hors ACR : 3 g diluées dans 100 mL NaCl, IVL sur 10 min, à renouveler tant que les anomalies ne disparaissent pas. ACR : 3 g en IVD (bolus pur).",
+    remarques:"Hors ACR : 1 à 2 g diluées dans 100 mL NaCl, IVL sur 10 min, à renouveler tant que les anomalies ne disparaissent pas. ACR : 1 à 2 g en IVD (bolus pur).",
     color:"#DC2626",
   },
   {
@@ -31794,6 +31846,18 @@ const CALC_ADULTE_MEDICAMENTS = [
     ],
     indication:"Antagonisation des benzodiazépines.",
     remarques:"Bolus 0,1 mg (1 mL) en IVDL toutes les 30 secondes jusqu'à obtention d'une conscience et FR > 14/min. Max 2 mg au total. Si le bolus est efficace, relais possible en entretien PSE : 2 ampoules (1 mg) complétées avec 40 mL de NaCl 0,9% (50 mL au total) → 0,02 mg/mL. Débit horaire de l'entretien = dose de titration qui s'est révélée efficace.",
+    color:"#059669",
+  },
+  {
+    id:"naloxone_adulte", cat:"antidote", groupe:"Antidote opiacés",
+    nom:"Naloxone (Narcan)", amp:"0,4 mg / 1 mL", concentration:0.04,
+    voie:"IVDL puis IVSE", isDoseFixe:true,
+    variantes:[
+      { label:"Bolus (titration)", prepa:"Prélever 1 ampoule (0,4 mg/1 mL) et compléter à 10 mL avec du NaCl 0,9% → 0,04 mg/mL.", dose:1, unite:"mL" },
+      { label:"Entretien IVSE (si bolus efficace)", prepa:"Prélever 4 ampoules et compléter avec 40 mL de NaCl 0,9% → 0,04 mg/mL (même concentration que le bolus).", texteLibre:"Débuter à une vitesse (mL/h) égale à la moitié du volume total (mL) utilisé pendant la titration. Ex : 2 mL injectés en titration → débuter à 1 mL/h." },
+    ],
+    indication:"Surdosage en opiacés.",
+    remarques:"Bolus : 1 mL toutes les minutes jusqu'à obtention d'une FR > 15/min et d'un réveil. Entretien : débit de départ = moitié du volume de titration, en mL/h, à adapter selon la clinique.",
     color:"#059669",
   },
   {
@@ -32493,9 +32557,36 @@ function CalcAdulteDoseFixeCard({ medic, poids, color }) {
   );
 }
 
+// Aperçu d'un médicament SANS calcul de dose (le poids n'a pas encore été saisi) —
+// affiche juste le nom/indication/préparation, invite à saisir le poids pour le calcul.
+function CalcAdulteCardPreview({ medic }) {
+  const C = useC();
+  const color = medic.color || "#0EA5E9";
+  return (
+    <div style={{background:C.white, border:`1.5px dashed ${C.border}`, borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:4}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+      <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", fontSize:11.5, color:C.sub, fontStyle:"italic"}}>
+        Saisissez le poids ci-dessus pour afficher la dose calculée.
+      </div>
+    </div>
+  );
+}
+
 function CalcAdulteCard({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+
+  // Sans poids : aperçu simple, sans calcul (évite les NaN dans les cartes spéciales)
+  if (!poids) {
+    return <CalcAdulteCardPreview medic={medic}/>;
+  }
 
   // Cas spécial : médicament en PSE avec tableau de vitesses (mL/h) selon dose et poids
   if (medic.isPSETable) {
@@ -32797,22 +32888,15 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
         )}
       </div>
 
-      {/* Recherche */}
-      {poidsNum && poidsNum >= 50 && (
-        <input value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder="🔍 Rechercher un médicament..."
-          style={{width:"100%", padding:"10px 14px", borderRadius:10,
-            border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
-            background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
-        />
-      )}
+      {/* Recherche — toujours visible, avant ou après la saisie du poids */}
+      <input value={search} onChange={e=>setSearch(e.target.value)}
+        placeholder="🔍 Rechercher un médicament..."
+        style={{width:"100%", padding:"10px 14px", borderRadius:10,
+          border:`1.5px solid ${C.border}`, fontSize:13, color:C.text,
+          background:C.white, outline:"none", marginBottom:14, boxSizing:"border-box"}}
+      />
 
-      {!poidsNum ? (
-        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub}}>
-          <div style={{fontSize:36, marginBottom:8}}>⚖️</div>
-          <div style={{fontSize:13, fontWeight:600}}>Saisissez le poids pour voir les doses</div>
-        </div>
-      ) : poidsNum < 50 ? null : searchResults ? (
+      {searchResults ? (
         // Résultats de recherche : liste plate, sans regroupement par catégorie
         searchResults.length === 0 ? (
           <div style={{textAlign:"center", padding:"24px 20px", color:C.sub, fontSize:13}}>
@@ -32825,7 +32909,12 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
             ))}
           </div>
         )
-      ) : (
+      ) : !poidsNum ? (
+        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub}}>
+          <div style={{fontSize:36, marginBottom:8}}>⚖️</div>
+          <div style={{fontSize:13, fontWeight:600}}>Saisissez le poids pour voir les doses</div>
+        </div>
+      ) : poidsNum < 50 ? null : (
         <div>
           {CALC_ADULTE_CATS.map(cat => {
             const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key);
