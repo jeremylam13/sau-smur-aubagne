@@ -29573,6 +29573,8 @@ function PediaScreen({ onBack, deepLinkId }) {
   const [carteSel, setCarteSel] = useState(null);
   const [dedieSel, setDedieSel] = useState(null);
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
+  // Le deepLinkId peut arriver après le premier rendu (timing de navigation) : on réagit à son changement
+  useEffect(()=>{ if (deepLinkId) setSection("doses"); },[deepLinkId]);
 
   // Scores pédia avec calculateur dédié (réutilisés du module Scores)
   const PEDIA_SCORES_DEDIES = [
@@ -30288,6 +30290,13 @@ function PediaStriadyneCard({ medic, poids, color }) {
 function PediaDoseCardPreview({ medic }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+  // Affiche la formule au poids quand elle existe et que ce n'est pas une dose fixe
+  const hasWeightFormula = !medic.isDoseFixe && medic.doseMin != null && medic.doseMax != null;
+  const formuleTexte = hasWeightFormula
+    ? (medic.doseMin === medic.doseMax
+        ? `${medic.doseMin} ${medic.unite || "mg"}/kg`
+        : `${medic.doseMin} à ${medic.doseMax} ${medic.unite || "mg"}/kg`)
+    : null;
   return (
     <div style={{background:C.white, border:`1.5px dashed ${C.border}`, borderRadius:14, padding:"14px 16px", marginBottom:10}}>
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:4}}>
@@ -30298,8 +30307,14 @@ function PediaDoseCardPreview({ medic }) {
         {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
       </div>
       {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+      {formuleTexte && (
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>POSOLOGIE</div>
+          <div style={{fontSize:20, fontWeight:900, color:C.text}}>{formuleTexte}</div>
+        </div>
+      )}
       <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", fontSize:11.5, color:C.sub, fontStyle:"italic"}}>
-        Saisissez le poids (ou l'âge) ci-dessus pour afficher la dose calculée.
+        {hasWeightFormula ? "Saisissez le poids (ou l'âge) ci-dessus pour calculer la dose exacte." : "Saisissez le poids (ou l'âge) ci-dessus pour afficher la dose."}
       </div>
     </div>
   );
@@ -30479,6 +30494,8 @@ function PediaDoses({ onBack, deepLinkId }) {
   const [age, setAge] = useState("");
   const [search, setSearch] = useState(deepLinkId || "");
   const [openCats, setOpenCats] = useState({}); // toutes repliées par défaut
+  // Le deepLinkId peut arriver après le premier rendu (timing de navigation) : on réagit à son changement
+  useEffect(()=>{ if (deepLinkId) setSearch(deepLinkId); },[deepLinkId]);
 
   // Données codées en dur — hors ligne garanti
   const medicaments = PEDIA_MEDICAMENTS_DATA;
@@ -32562,6 +32579,13 @@ function CalcAdulteDoseFixeCard({ medic, poids, color }) {
 function CalcAdulteCardPreview({ medic }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+  // Affiche la formule au poids (mg/kg) quand elle existe et que ce n'est pas une dose fixe
+  const hasWeightFormula = !medic.isDoseFixe && medic.doseMin != null && medic.doseMax != null;
+  const formuleTexte = hasWeightFormula
+    ? (medic.doseMin === medic.doseMax
+        ? `${medic.doseMin} ${medic.unite || "mg"}/kg`
+        : `${medic.doseMin} à ${medic.doseMax} ${medic.unite || "mg"}/kg`)
+    : null;
   return (
     <div style={{background:C.white, border:`1.5px dashed ${C.border}`, borderRadius:14, padding:"14px 16px", marginBottom:10}}>
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:4}}>
@@ -32572,8 +32596,14 @@ function CalcAdulteCardPreview({ medic }) {
         {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
       </div>
       {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+      {formuleTexte && (
+        <div style={{marginBottom:8}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>POSOLOGIE</div>
+          <div style={{fontSize:20, fontWeight:900, color:C.text}}>{formuleTexte}</div>
+        </div>
+      )}
       <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", fontSize:11.5, color:C.sub, fontStyle:"italic"}}>
-        Saisissez le poids ci-dessus pour afficher la dose calculée.
+        {hasWeightFormula ? "Saisissez le poids ci-dessus pour calculer la dose exacte." : "Saisissez le poids ci-dessus pour afficher la dose."}
       </div>
     </div>
   );
@@ -32822,6 +32852,8 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
   const [openCats, setOpenCats] = useState({});
   const [search, setSearch] = useState(deepLinkId || "");
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
+  // Le deepLinkId peut arriver après le premier rendu (timing de navigation) : on réagit à son changement
+  useEffect(()=>{ if (deepLinkId) setSearch(deepLinkId); },[deepLinkId]);
 
   const poidsNum = parseFloat(poids) || null;
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
