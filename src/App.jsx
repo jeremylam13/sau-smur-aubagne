@@ -2870,6 +2870,145 @@ function matchSearch(haystack, query) {
   return words.every(w => h.includes(w));
 }
 
+// Encart de note personnelle — stockage 100% local sur l'appareil (localStorage),
+// jamais envoyé au serveur, jamais partagé avec le reste de l'équipe.
+// module = "dilution" | "score" | "geste" ; itemId = identifiant de la fiche concernée.
+function useNotePersonnelle(module, itemId) {
+  const storageKey = `note_perso_${module}_${itemId}`;
+  const [note, setNote] = useState(() => {
+    try { return window.localStorage.getItem(storageKey) || ""; } catch(e) { return ""; }
+  });
+  useEffect(() => {
+    try { setNote(window.localStorage.getItem(storageKey) || ""); } catch(e) { setNote(""); }
+  }, [storageKey]);
+  function saveNote(text) {
+    try { window.localStorage.setItem(storageKey, text); } catch(e) {}
+    setNote(text);
+  }
+  function clearNote() {
+    try { window.localStorage.removeItem(storageKey); } catch(e) {}
+    setNote("");
+  }
+  return { note, saveNote, clearNote };
+}
+
+// Encart inline — pour Dilutions et Gestes (affiché directement dans la page)
+function NotePersonnelle({ module, itemId }) {
+  const C = useC();
+  const { note, saveNote, clearNote } = useNotePersonnelle(module, itemId);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(note);
+
+  useEffect(() => { setEditing(false); }, [itemId]);
+
+  function startEdit() { setDraft(note); setEditing(true); }
+  function save() { saveNote(draft); setEditing(false); }
+
+  if (editing) {
+    return (
+      <div style={{background:"#FEF9C3", border:"1.5px solid #EAB308", borderRadius:12, padding:12, marginBottom:14}}>
+        <div style={{fontSize:11, fontWeight:800, color:"#854D0E", marginBottom:6, display:"flex", alignItems:"center", gap:5}}>
+          📝 MA NOTE PERSONNELLE <span style={{fontSize:9, fontWeight:600, opacity:.7}}>(visible sur cet appareil uniquement)</span>
+        </div>
+        <textarea
+          value={draft}
+          onChange={e=>setDraft(e.target.value)}
+          placeholder="Ex : protocole du service, rappel personnel..."
+          autoFocus
+          style={{width:"100%", boxSizing:"border-box", minHeight:70, padding:"8px 10px", borderRadius:8,
+            border:"1px solid #EAB308", fontSize:13, color:"#422006", fontFamily:"inherit", resize:"vertical"}}
+        />
+        <div style={{display:"flex", gap:8, marginTop:8}}>
+          <button onClick={save} style={{flex:1, background:"#EAB308", color:"#422006", border:"none", borderRadius:8, padding:"8px", fontSize:12, fontWeight:800, cursor:"pointer"}}>Enregistrer</button>
+          <button onClick={()=>setEditing(false)} style={{flex:1, background:"none", color:"#854D0E", border:"1px solid #EAB308", borderRadius:8, padding:"8px", fontSize:12, fontWeight:700, cursor:"pointer"}}>Annuler</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (note) {
+    return (
+      <div style={{background:"#FEF9C3", border:"1.5px solid #EAB308", borderRadius:12, padding:12, marginBottom:14}}>
+        <div style={{fontSize:11, fontWeight:800, color:"#854D0E", marginBottom:6, display:"flex", alignItems:"center", gap:5}}>
+          📝 MA NOTE PERSONNELLE <span style={{fontSize:9, fontWeight:600, opacity:.7}}>(visible sur cet appareil uniquement)</span>
+        </div>
+        <div style={{fontSize:13, color:"#422006", whiteSpace:"pre-wrap", marginBottom:8}}>{note}</div>
+        <div style={{display:"flex", gap:14}}>
+          <button onClick={startEdit} style={{background:"none", border:"none", color:"#854D0E", fontSize:11, fontWeight:700, cursor:"pointer", padding:0}}>✏️ Modifier</button>
+          <button onClick={clearNote} style={{background:"none", border:"none", color:"#B91C1C", fontSize:11, fontWeight:700, cursor:"pointer", padding:0}}>🗑️ Supprimer</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button onClick={startEdit} style={{
+      width:"100%", background:"none", border:`1.5px dashed ${C.border}`, borderRadius:12,
+      padding:"10px 12px", fontSize:12, fontWeight:700, color:C.sub, cursor:"pointer",
+      marginBottom:14, textAlign:"left", display:"flex", alignItems:"center", gap:6,
+    }}>📝 Ajouter une note personnelle</button>
+  );
+}
+
+// Bouton flottant + modale — pour les Scores (30 calculateurs indépendants,
+// un seul point d'intégration au lieu de modifier chaque calculateur).
+// Le bouton change d'aspect (rempli + point) dès qu'une note existe, pour la repérer sans l'ouvrir.
+function NotePersonnelleFlottante({ module, itemId }) {
+  const C = useC();
+  const { note, saveNote, clearNote } = useNotePersonnelle(module, itemId);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(note);
+  const hasNote = !!note;
+
+  function openModal() { setDraft(note); setOpen(true); }
+  function save() { saveNote(draft); setOpen(false); }
+
+  return (
+    <>
+      <button onClick={openModal} title={hasNote ? "Voir ma note personnelle" : "Ajouter une note personnelle"} style={{
+        position:"fixed", bottom:84, right:20, zIndex:150,
+        width:48, height:48, borderRadius:"50%", border:"none", cursor:"pointer",
+        background: hasNote ? "#EAB308" : C.white,
+        boxShadow: hasNote ? "0 3px 12px rgba(234,179,8,.5)" : "0 2px 10px rgba(0,0,0,.15)",
+        border: hasNote ? "none" : `1.5px solid ${C.border}`,
+        display:"flex", alignItems:"center", justifyContent:"center", fontSize:20,
+      }}>
+        📝
+        {hasNote && (
+          <span style={{position:"absolute", top:2, right:2, width:12, height:12, borderRadius:"50%",
+            background:"#DC2626", border:"2px solid #EAB308"}}/>
+        )}
+      </button>
+
+      {open && (
+        <div onClick={()=>setOpen(false)} style={{position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%", maxWidth:420, background:C.white, borderRadius:"20px 20px 0 0", padding:20, paddingBottom:32}}>
+            <div style={{fontSize:13, fontWeight:800, color:"#854D0E", marginBottom:4, display:"flex", alignItems:"center", gap:5}}>
+              📝 MA NOTE PERSONNELLE
+            </div>
+            <div style={{fontSize:10, fontWeight:600, color:C.sub, marginBottom:12}}>Visible sur cet appareil uniquement</div>
+            <textarea
+              value={draft}
+              onChange={e=>setDraft(e.target.value)}
+              placeholder="Ex : protocole du service, rappel personnel..."
+              autoFocus
+              style={{width:"100%", boxSizing:"border-box", minHeight:100, padding:"10px 12px", borderRadius:10,
+                border:`1.5px solid #EAB308`, fontSize:13, color:C.text, fontFamily:"inherit", resize:"vertical", marginBottom:12}}
+            />
+            <div style={{display:"flex", gap:8}}>
+              <button onClick={save} style={{flex:1, background:"#EAB308", color:"#422006", border:"none", borderRadius:10, padding:"12px", fontSize:13, fontWeight:800, cursor:"pointer"}}>Enregistrer</button>
+              {hasNote && (
+                <button onClick={()=>{ clearNote(); setDraft(""); setOpen(false); }} style={{background:"none", color:"#B91C1C", border:"1px solid #B91C1C44", borderRadius:10, padding:"12px 16px", fontSize:13, fontWeight:700, cursor:"pointer"}}>🗑️</button>
+              )}
+              <button onClick={()=>setOpen(false)} style={{flex:1, background:"none", color:C.sub, border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", fontSize:13, fontWeight:700, cursor:"pointer"}}>Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function playBeep() {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -6617,6 +6756,9 @@ function GesteDetail({geste, onBack}) {
 
       {/* ── Sections défilantes ── */}
 
+      {/* Note personnelle — stockage local, avant Indications */}
+      <NotePersonnelle module="geste" itemId={geste.id}/>
+
       {/* Indications */}
       {geste.indications && (
         <Section icon="💊" label="Indications" color={C.green}>
@@ -7101,6 +7243,9 @@ function DilutionScreen({ deepLinkId, onBack }) {
             </div>
           </div>
         )}
+
+        {/* Note personnelle — stockage local, avant Présentation */}
+        <NotePersonnelle module="dilution" itemId={selected.id}/>
 
         {/* Sections */}
         {sections.map(s => selected[s.key] ? (
@@ -28048,7 +28193,9 @@ function ScoresScreen({ deepLinkId, onBack }) {
   ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   // Routing vers le calculateur sélectionné
-  if (selected) {
+  // (fonction plutôt que "return" direct, pour pouvoir superposer le bouton
+  // "note personnelle" par-dessus n'importe lequel des ~30 calculateurs)
+  function renderSelectedCalculator() {
     if (selected.id === "glasgow") return <GlasgowCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "asa") return <AsaCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "mass") return <MassCalculator onBack={() => setSelected(null)}/>;
@@ -28088,6 +28235,15 @@ function ScoresScreen({ deepLinkId, onBack }) {
           <div style={{fontSize:13, color:C.sub}}>Calculateur en cours d'intégration</div>
         </Card>
       </div>
+    );
+  }
+
+  if (selected) {
+    return (
+      <>
+        {renderSelectedCalculator()}
+        <NotePersonnelleFlottante module="score" itemId={selected.id}/>
+      </>
     );
   }
 
@@ -31622,6 +31778,19 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#DC2626",
   },
   {
+    id:"noradrenaline_adulte", cat:"cardio", groupe:"Cardio-vasculaire",
+    nom:"Noradrénaline (Levophed)", amp:"8 mg / 4 mL", isPSETable:true,
+    voie:"PSE — voie dédiée",
+    isPSETableFixed:true,
+    concentrationMgMl:0.1, // 4 mg dans 40 mL = 0,1 mg/mL
+    dosePaliers:[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 6, 7, 8, 9, 10],
+    posologieLabel:"Débuter à 1 mg/h et adapter",
+    preparation:"Prélever 2 mL de l'ampoule (soit 4 mg), transférer dans une seringue de 50 mL et compléter à 40 mL avec du SG5%. → 0,1 mg/mL.",
+    indication:"État de choc.",
+    remarques:"Débuter à 1 mg/h (= 10 mL/h) et adapter par paliers en fonction de l'état hémodynamique du patient. Voie dédiée de bon calibre, veinotoxicité +++, ne pas arrêter brutalement.",
+    color:"#DC2626",
+  },
+  {
     id:"actilyse", cat:"cardio", groupe:"Thrombolyse",
     nom:"Altéplase (Actilyse)", amp:"2 flacons de 50 mg",
     voie:"IVD + PSE",
@@ -31717,6 +31886,18 @@ const CALC_ADULTE_MEDICAMENTS = [
     ],
     indication:"Insuffisance cardiaque aiguë / OAP hypertensif.",
     remarques:"Bolus 2 à 4 mg en IVD si PAS > 140 mmHg. Entretien IVSE : débuter à 1 mg/h, titrer par palier de 1 mg toutes les 5 min selon la PAS.",
+    color:"#DC2626",
+  },
+  {
+    id:"nicardipine_adulte", cat:"cardio", groupe:"Vasodilatateur",
+    nom:"Nicardipine (Loxen)", amp:"10 mg / 10 mL", concentration:1,
+    voie:"IVD puis IVSE", isDoseFixe:true,
+    variantes:[
+      { label:"Bolus (titration)", prepa:"Pure.", texteLibre:"Débuter les bolus à un débit de 1 mg/min, jusqu'à 10 mg maximum en fonction de l'effet." },
+      { label:"Entretien IVSE", prepa:"Prélever 1 ampoule (10 mg) et compléter à 50 mL avec du G5% → 0,2 mg/mL.", texteLibre:"Débuter à 1 mg/h, puis augmenter par palier de 0,5 à 1 mg/h toutes les 15 min selon la PAS." },
+    ],
+    indication:"Contrôle de la tension artérielle.",
+    remarques:"Bolus : 1 mg/min jusqu'à 10 mg max selon effet. Entretien IVSE : débuter à 1 mg/h, titrer par palier de 0,5 à 1 mg/h toutes les 15 min.",
     color:"#DC2626",
   },
   {
@@ -32393,6 +32574,59 @@ function CalcAdulteProtocoleCard({ medic, poids, color }) {
 // ── Carte spéciale : médicament en PSE, tableau de vitesses (mL/h) ──
 function CalcAdultePSECard({ medic, poids, color }) {
   const C = useC();
+
+  // Variante à débit FIXE (mg/h → mL/h, sans facteur poids) — ex: Noradrénaline
+  if (medic.isPSETableFixed) {
+    const concMgMl = medic.concentrationMgMl; // mg/mL après dilution
+    const dosesFixed = medic.dosePaliers; // ex: [0.5, 1, 1.5, ...] en mg/h
+    const vitesseFixe = (dose) => Math.round((dose / concMgMl) * 10) / 10;
+
+    return (
+      <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+        borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+        <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+            {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+          </div>
+          {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+        </div>
+
+        {medic.preparation && (
+          <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+            🧪 {medic.preparation}
+          </div>
+        )}
+
+        <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:8}}>
+          POSOLOGIE : {medic.posologieLabel} — Vitesse PSE (débit fixe, indépendant du poids)
+        </div>
+
+        <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
+          <div style={{display:"flex", background:color+"15", padding:"8px 12px", fontSize:11, fontWeight:800, color}}>
+            <div style={{flex:1}}>Dose</div>
+            <div style={{flexShrink:0, textAlign:"right"}}>Vitesse PSE</div>
+          </div>
+          {dosesFixed.map((d, i) => (
+            <div key={i} style={{display:"flex", alignItems:"center", padding:"9px 12px",
+              background: i%2 ? C.bg : C.white, borderTop:`1px solid ${C.border}`}}>
+              <div style={{flex:1, fontSize:13, fontWeight:700, color:C.text}}>{d} mg/h</div>
+              <div style={{flexShrink:0, fontSize:15, fontWeight:900, color}}>
+                {vitesseFixe(d)} <span style={{fontSize:11, fontWeight:600, color:C.sub}}>mL/h</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {medic.remarques && (
+          <div style={{marginTop:10, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+            {medic.remarques}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // concentration en µg/mL ; doses = liste des paliers µg/kg/min
   // vitesse (mL/h) = dose × poids × 60 / concentration
   const conc = medic.concentrationUgMl; // µg/mL
