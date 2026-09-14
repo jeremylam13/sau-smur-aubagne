@@ -30705,44 +30705,42 @@ function AcrPediaScreen({ onBack }) {
 
   const poids = mode === "poids" ? (parseFloat(poidsInput) || null) : estimatePoids(parseFloat(ageInput));
 
-  if (!poids) {
-    return (
-      <div>
-        <BackBtn onClick={onBack}/>
-        <div style={{fontSize:18, fontWeight:900, color:C.navy, marginBottom:4}}>🫀 ACR Pédiatrique</div>
-        <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Matériel, Adrénaline, Amiodarone, énergie de défibrillation</div>
-
-        <div style={{display:"flex", gap:8, marginBottom:14}}>
-          <button onClick={()=>setMode("poids")} style={{flex:1, padding:"10px", borderRadius:10, border:`1.5px solid ${mode==="poids"?"#DC2626":C.border}`, background:mode==="poids"?"#FEE2E2":C.white, color:mode==="poids"?"#DC2626":C.sub, fontWeight:700, fontSize:13, cursor:"pointer"}}>Par poids</button>
-          <button onClick={()=>setMode("age")} style={{flex:1, padding:"10px", borderRadius:10, border:`1.5px solid ${mode==="age"?"#DC2626":C.border}`, background:mode==="age"?"#FEE2E2":C.white, color:mode==="age"?"#DC2626":C.sub, fontWeight:700, fontSize:13, cursor:"pointer"}}>Par âge</button>
-        </div>
-
-        {mode === "poids" ? (
-          <input type="number" inputMode="decimal" value={poidsInput} onChange={e=>setPoidsInput(e.target.value)}
-            placeholder="Poids (kg)" autoFocus
-            style={{width:"100%", boxSizing:"border-box", padding:"14px", borderRadius:12, border:`1.5px solid ${C.border}`, fontSize:18, fontWeight:800, textAlign:"center", color:C.text}}/>
-        ) : (
-          <input type="number" inputMode="decimal" value={ageInput} onChange={e=>setAgeInput(e.target.value)}
-            placeholder="Âge (années)" autoFocus
-            style={{width:"100%", boxSizing:"border-box", padding:"14px", borderRadius:12, border:`1.5px solid ${C.border}`, fontSize:18, fontWeight:800, textAlign:"center", color:C.text}}/>
-        )}
-      </div>
-    );
-  }
-
-  const age = mode === "age" ? parseFloat(ageInput) : null;
-  const mat = calcMaterielACR(poids, age);
-  const adr = calcAdrenalineACR(poids);
-  const adrDoseMg = Math.round(0.01 * poids * 1000) / 1000;
-  const amioMg = Math.round(5 * poids);
-  const amioMl = Math.round((amioMg / 50) * 100) / 100;
-  const cee1 = Math.round(4 * poids); // 4 J/kg tous chocs en pédiatrie
-
   return (
     <div>
       <BackBtn onClick={onBack}/>
-      <button onClick={()=>{ setPoidsInput(""); setAgeInput(""); }} style={{fontSize:11, color:C.sub, background:"none", border:"none", marginBottom:10, cursor:"pointer", textDecoration:"underline"}}>← Changer le poids</button>
+      <div style={{fontSize:18, fontWeight:900, color:C.navy, marginBottom:4}}>🫀 ACR Pédiatrique</div>
+      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Matériel, Adrénaline, Amiodarone, énergie de défibrillation</div>
 
+      <div style={{display:"flex", gap:8, marginBottom:14}}>
+        <button onClick={()=>setMode("poids")} style={{flex:1, padding:"10px", borderRadius:10, border:`1.5px solid ${mode==="poids"?"#DC2626":C.border}`, background:mode==="poids"?"#FEE2E2":C.white, color:mode==="poids"?"#DC2626":C.sub, fontWeight:700, fontSize:13, cursor:"pointer"}}>Par poids</button>
+        <button onClick={()=>setMode("age")} style={{flex:1, padding:"10px", borderRadius:10, border:`1.5px solid ${mode==="age"?"#DC2626":C.border}`, background:mode==="age"?"#FEE2E2":C.white, color:mode==="age"?"#DC2626":C.sub, fontWeight:700, fontSize:13, cursor:"pointer"}}>Par âge</button>
+      </div>
+
+      {mode === "poids" ? (
+        <input type="number" inputMode="decimal" value={poidsInput} onChange={e=>setPoidsInput(e.target.value)}
+          placeholder="Poids (kg)" autoFocus
+          style={{width:"100%", boxSizing:"border-box", padding:"14px", borderRadius:12, border:`1.5px solid ${C.border}`, fontSize:18, fontWeight:800, textAlign:"center", color:C.text, marginBottom:16}}/>
+      ) : (
+        <input type="number" inputMode="decimal" value={ageInput} onChange={e=>setAgeInput(e.target.value)}
+          placeholder="Âge (années)" autoFocus
+          style={{width:"100%", boxSizing:"border-box", padding:"14px", borderRadius:12, border:`1.5px solid ${C.border}`, fontSize:18, fontWeight:800, textAlign:"center", color:C.text, marginBottom:16}}/>
+      )}
+
+      {!poids ? (
+        <div style={{textAlign:"center", padding:"24px 20px", color:C.sub}}>
+          <div style={{fontSize:36, marginBottom:8}}>🫀</div>
+          <div style={{fontSize:13, fontWeight:600}}>Saisissez {mode==="poids" ? "le poids" : "l'âge"} pour voir la fiche</div>
+        </div>
+      ) : (() => {
+        const age = mode === "age" ? parseFloat(ageInput) : null;
+        const mat = calcMaterielACR(poids, age);
+        const adr = calcAdrenalineACR(poids);
+        const adrDoseMg = Math.round(0.01 * poids * 1000) / 1000;
+        const amioMg = Math.round(5 * poids);
+        const amioMl = Math.round((amioMg / 50) * 100) / 100;
+        const cee1 = Math.round(4 * poids); // 4 J/kg tous chocs en pédiatrie
+
+        return (
       <div style={{background:"#0F2942", borderRadius:16, padding:14}}>
 
         <div style={{background:"#7F1D1D", borderRadius:12, padding:12, textAlign:"center", marginBottom:10}}>
@@ -30802,10 +30800,14 @@ function AcrPediaScreen({ onBack }) {
         </div>
 
       </div>
+        );
+      })()}
 
-      <div style={{fontSize:10, color:C.sub, marginTop:10, textAlign:"center"}}>
-        Aide au calcul — vérification clinique obligatoire avant administration.
-      </div>
+      {poids && (
+        <div style={{fontSize:10, color:C.sub, marginTop:10, textAlign:"center"}}>
+          Aide au calcul — vérification clinique obligatoire avant administration.
+        </div>
+      )}
     </div>
   );
 }
