@@ -30757,8 +30757,9 @@ function AcrPediaScreen({ onBack }) {
             </div>
           </div>
           <div style={{padding:"10px 12px", color:"#FCA5A5", fontSize:11, lineHeight:1.7}}>
-            🧪 <b style={{color:"#fff"}}>Protocole Aubagne ({adr.moins10 ? "< 10 kg" : "≥ 10 kg"})</b><br/>
-            {adr.etapes.map((e,i)=>`${i+1}. ${e}`).join("<br/>")}
+            🧪 <b style={{color:"#fff"}}>Protocole Aubagne ({adr.moins10 ? "< 10 kg" : "≥ 10 kg"})</b>
+            <div style={{marginTop:2}}>Ampoule 5 mg/5 mL (1 mg/mL).</div>
+            {adr.etapes.map((e,i) => <div key={i}>{i+1}. {e}</div>)}
           </div>
         </div>
 
@@ -30787,9 +30788,9 @@ function AcrPediaScreen({ onBack }) {
             <div style={{color:"#9DBFE0", fontSize:9}}>repère {mat.repere} cm</div>
           </div>
           <div style={{flex:1, background:"rgba(255,255,255,.08)", borderRadius:10, padding:10, textAlign:"center"}}>
-            <div style={{color:"#9DBFE0", fontSize:10, fontWeight:700}}>MASQUE LAR.</div>
-            <div style={{color:"#fff", fontSize:17, fontWeight:900}}>n°{mat.masque}</div>
-            <div style={{color:"#9DBFE0", fontSize:9}}>lame {mat.lame}</div>
+            <div style={{color:"#9DBFE0", fontSize:10, fontWeight:700}}>LAME LARYNGO.</div>
+            <div style={{color:"#fff", fontSize:14, fontWeight:900, lineHeight:1.3}}>{mat.lame}</div>
+            <div style={{color:"#9DBFE0", fontSize:9, marginTop:2}}>masque n°{mat.masque}</div>
           </div>
         </div>
 
