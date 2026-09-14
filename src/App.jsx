@@ -28885,6 +28885,53 @@ function estimatePoids(ageAnnees) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// ACR pédiatrique — calcul du matériel selon l'âge estimé (formule de Khine,
+// référence SFAR). En dessous de 2 ans, formule non fiable : on utilise les
+// paliers PEDIA_CARTES (nouveau-né / nourrisson) à la place.
+// ────────────────────────────────────────────────────────────────────────────
+function calcMaterielACR(poids, age) {
+  // Age dérivé du poids si non fourni (approximation inverse des formules estimatePoids)
+  const ageEff = age != null ? age : (poids <= 10 ? (poids - 8) / 2 : (poids - 7) / 3);
+
+  if (ageEff < 2 || poids < 12) {
+    // Paliers pour les tout-petits (valeurs usuelles nouveau-né/nourrisson)
+    if (poids < 5)  return { sonde:3,   repere:9,  masque:"00-0", lame:"Droite 0/1" };
+    if (poids < 10) return { sonde:3.5, repere:10, masque:"0-1",  lame:"Droite/courbe 1" };
+    return           { sonde:4,   repere:11, masque:"1-2",  lame:"1-2" };
+  }
+  // Formule de Khine (sans ballonnet) à partir de 2 ans
+  const sonde = Math.round(((ageEff / 4) + 4) * 2) / 2; // arrondi au demi
+  const repere = Math.round(((ageEff / 2) + 12) * 10) / 10;
+  const masqueTaille = sonde <= 4.5 ? "2" : sonde <= 5.5 ? "2,5" : "3";
+  const lame = ageEff < 4 ? "Droite/courbe 1-2" : "Courbe 2";
+  return { sonde, repere, masque: masqueTaille, lame };
+}
+
+// Protocole Adrénaline ACR pédiatrique — spécifique CH Aubagne (GK/DB)
+function calcAdrenalineACR(poids) {
+  if (poids < 10) {
+    return {
+      moins10: true,
+      etapes: [
+        "Diluer 1 mg dans 10 mL (+9 mL NaCl 0,9%) → 0,1 mg/mL",
+        `Garder ${poids} mL (= poids en kg)`,
+        "Rediluer à 10 mL total (+" + Math.round((10-poids)*10)/10 + " mL NaCl)",
+        `→ concentration finale : ${Math.round((poids*0.1/10)*1000)/1000} mg/mL`,
+      ],
+    };
+  }
+  const doseMg = Math.round((poids/10)*100)/100;
+  return {
+    moins10: false,
+    etapes: [
+      `Prélever ${doseMg} mg (poids ÷ 10)`,
+      `Diluer dans 10 mL (+${Math.round((10-doseMg)*10)/10} mL NaCl 0,9%)`,
+      `→ concentration finale : ${Math.round((doseMg/10)*1000)/1000} mg/mL`,
+    ],
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Scores pédiatriques
 // ────────────────────────────────────────────────────────────────────────────// ────────────────────────────────────────────────────────────────────────────
 // Toise de Broselow — correspondance taille (cm) → bande couleur → carte pédia
@@ -29763,6 +29810,7 @@ function PediaScreen({ onBack, deepLinkId }) {
   useEffect(()=>{ loadData(); },[]);
 
   const SECTIONS = [
+    { id:"acr",      icon:"🫀", label:"ACR Pédiatrique",   desc:"Matériel, doses, énergie — fiche express", color:"#DC2626", bg:"#FEE2E2" },
     { id:"broselow", icon:"📏", label:"Toise de Broselow", desc:"Taille → poids → carte d'urgence", color:"#1A3A5C", bg:"#EFF6FF" },
     { id:"cartes", icon:"🚨", label:"Cartes d'urgences vitales", desc:"Doses pré-calculées par âge/poids", color:"#EC4899", bg:"#FCE7F3" },
     { id:"doses",  icon:"💊", label:"Calculateur de doses", desc:"Doses selon le poids ou l'âge", color:"#0EA5E9", bg:"#E0F2FE" },
@@ -29810,6 +29858,7 @@ function PediaScreen({ onBack, deepLinkId }) {
   if (section === "scores" && dedieSel === "silverman") return <SilvermanCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
+  if (section === "acr")    return <AcrPediaScreen onBack={()=>setSection("home")}/>;
   if (section === "doses")  return <PediaDoses onBack={()=>setSection("home")} deepLinkId={deepLinkId}/>;
   if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
   if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
@@ -30639,6 +30688,124 @@ function PediaDoseCard({ medic, poids }) {
         );
       })()}
       {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ACR Pédiatrique — fiche visuelle dédiée : matériel + Adrénaline (protocole
+// CH Aubagne) + Amiodarone (calcul standard) + énergie CEE + repères RCP.
+// ────────────────────────────────────────────────────────────────────────────
+function AcrPediaScreen({ onBack }) {
+  const C = useC();
+  const [mode, setMode] = useState("poids");
+  const [poidsInput, setPoidsInput] = useState("");
+  const [ageInput, setAgeInput] = useState("");
+  useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]);
+
+  const poids = mode === "poids" ? (parseFloat(poidsInput) || null) : estimatePoids(parseFloat(ageInput));
+
+  if (!poids) {
+    return (
+      <div>
+        <BackBtn onClick={onBack}/>
+        <div style={{fontSize:18, fontWeight:900, color:C.navy, marginBottom:4}}>🫀 ACR Pédiatrique</div>
+        <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Matériel, Adrénaline, Amiodarone, énergie de défibrillation</div>
+
+        <div style={{display:"flex", gap:8, marginBottom:14}}>
+          <button onClick={()=>setMode("poids")} style={{flex:1, padding:"10px", borderRadius:10, border:`1.5px solid ${mode==="poids"?"#DC2626":C.border}`, background:mode==="poids"?"#FEE2E2":C.white, color:mode==="poids"?"#DC2626":C.sub, fontWeight:700, fontSize:13, cursor:"pointer"}}>Par poids</button>
+          <button onClick={()=>setMode("age")} style={{flex:1, padding:"10px", borderRadius:10, border:`1.5px solid ${mode==="age"?"#DC2626":C.border}`, background:mode==="age"?"#FEE2E2":C.white, color:mode==="age"?"#DC2626":C.sub, fontWeight:700, fontSize:13, cursor:"pointer"}}>Par âge</button>
+        </div>
+
+        {mode === "poids" ? (
+          <input type="number" inputMode="decimal" value={poidsInput} onChange={e=>setPoidsInput(e.target.value)}
+            placeholder="Poids (kg)" autoFocus
+            style={{width:"100%", boxSizing:"border-box", padding:"14px", borderRadius:12, border:`1.5px solid ${C.border}`, fontSize:18, fontWeight:800, textAlign:"center", color:C.text}}/>
+        ) : (
+          <input type="number" inputMode="decimal" value={ageInput} onChange={e=>setAgeInput(e.target.value)}
+            placeholder="Âge (années)" autoFocus
+            style={{width:"100%", boxSizing:"border-box", padding:"14px", borderRadius:12, border:`1.5px solid ${C.border}`, fontSize:18, fontWeight:800, textAlign:"center", color:C.text}}/>
+        )}
+      </div>
+    );
+  }
+
+  const age = mode === "age" ? parseFloat(ageInput) : null;
+  const mat = calcMaterielACR(poids, age);
+  const adr = calcAdrenalineACR(poids);
+  const adrDoseMg = Math.round(0.01 * poids * 1000) / 1000;
+  const amioMg = Math.round(5 * poids);
+  const amioMl = Math.round((amioMg / 50) * 100) / 100;
+  const cee1 = Math.round(4 * poids); // 4 J/kg tous chocs en pédiatrie
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+      <button onClick={()=>{ setPoidsInput(""); setAgeInput(""); }} style={{fontSize:11, color:C.sub, background:"none", border:"none", marginBottom:10, cursor:"pointer", textDecoration:"underline"}}>← Changer le poids</button>
+
+      <div style={{background:"#0F2942", borderRadius:16, padding:14}}>
+
+        <div style={{background:"#7F1D1D", borderRadius:12, padding:12, textAlign:"center", marginBottom:10}}>
+          <div style={{color:"#FCA5A5", fontSize:11, fontWeight:700}}>POIDS {mode==="age" ? "ESTIMÉ" : ""}</div>
+          <div style={{color:"#fff", fontSize:28, fontWeight:900, lineHeight:1.1}}>{poids} kg</div>
+        </div>
+
+        {/* Adrénaline */}
+        <div style={{background:"#7F1D1D", borderRadius:10, padding:0, overflow:"hidden", marginBottom:8}}>
+          <div style={{padding:12, textAlign:"center", borderBottom:"1px solid rgba(255,255,255,.15)"}}>
+            <div style={{color:"#FCA5A5", fontSize:10, fontWeight:700}}>ADRÉNALINE — {adrDoseMg} mg</div>
+            <div style={{color:"#fff", fontSize:26, fontWeight:900, lineHeight:1.1}}>
+              1 mL <span style={{fontSize:13, color:"#FCA5A5", fontWeight:700}}>toutes les 4 min</span>
+            </div>
+          </div>
+          <div style={{padding:"10px 12px", color:"#FCA5A5", fontSize:11, lineHeight:1.7}}>
+            🧪 <b style={{color:"#fff"}}>Protocole Aubagne ({adr.moins10 ? "< 10 kg" : "≥ 10 kg"})</b><br/>
+            {adr.etapes.map((e,i)=>`${i+1}. ${e}`).join("<br/>")}
+          </div>
+        </div>
+
+        {/* Amiodarone */}
+        <div style={{background:"#7F1D1D", borderRadius:10, padding:10, marginBottom:8}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:6}}>
+            <div style={{color:"#FCA5A5", fontSize:10, fontWeight:700}}>AMIODARONE (5 mg/kg)</div>
+            <div style={{color:"#fff", fontSize:18, fontWeight:900}}>{amioMg} mg <span style={{fontSize:12, color:"#FCA5A5"}}>· {amioMl} mL</span></div>
+          </div>
+          <div style={{borderTop:"0.5px solid rgba(255,255,255,.15)", paddingTop:6, color:"#FCA5A5", fontSize:11}}>
+            🧪 Pure — 150 mg/3 mL (50 mg/mL). Après le 3ᵉ choc si rythme choquable.
+          </div>
+        </div>
+
+        {/* Énergie CEE */}
+        <div style={{background:"#7F1D1D", borderRadius:10, padding:10, textAlign:"center", marginBottom:10}}>
+          <div style={{color:"#FCA5A5", fontSize:10, fontWeight:700}}>ÉNERGIE CEE (4 J/kg)</div>
+          <div style={{color:"#fff", fontSize:22, fontWeight:900}}>{cee1} J</div>
+        </div>
+
+        {/* Matériel */}
+        <div style={{display:"flex", gap:8, marginBottom:10}}>
+          <div style={{flex:1, background:"rgba(255,255,255,.08)", borderRadius:10, padding:10, textAlign:"center"}}>
+            <div style={{color:"#9DBFE0", fontSize:10, fontWeight:700}}>SONDE IOT</div>
+            <div style={{color:"#fff", fontSize:17, fontWeight:900}}>{mat.sonde}</div>
+            <div style={{color:"#9DBFE0", fontSize:9}}>repère {mat.repere} cm</div>
+          </div>
+          <div style={{flex:1, background:"rgba(255,255,255,.08)", borderRadius:10, padding:10, textAlign:"center"}}>
+            <div style={{color:"#9DBFE0", fontSize:10, fontWeight:700}}>MASQUE LAR.</div>
+            <div style={{color:"#fff", fontSize:17, fontWeight:900}}>n°{mat.masque}</div>
+            <div style={{color:"#9DBFE0", fontSize:9}}>lame {mat.lame}</div>
+          </div>
+        </div>
+
+        {/* RCP */}
+        <div style={{background:"rgba(255,255,255,.08)", borderRadius:10, padding:10}}>
+          <div style={{color:"#9DBFE0", fontSize:10, fontWeight:700, marginBottom:4}}>RCP</div>
+          <div style={{color:"#fff", fontSize:13}}>15 compressions : 2 insufflations · 100-120/min</div>
+        </div>
+
+      </div>
+
+      <div style={{fontSize:10, color:C.sub, marginTop:10, textAlign:"center"}}>
+        Aide au calcul — vérification clinique obligatoire avant administration.
+      </div>
     </div>
   );
 }
@@ -31982,6 +32149,28 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#65A30D",
   },
   {
+    id:"octreotide_adulte", cat:"digestif", groupe:"Hémostatique digestif",
+    nom:"Octréotide (Sandostatine)", amp:"100 µg / 1 mL", isDoseFixe:true,
+    variantes:[
+      { label:"PSE", prepa:"Prélever 300 µg (3 ampoules de 100 µg) et compléter à 48 mL avec du NaCl 0,9% → 6,25 µg/mL.", dose:25, unite:"µg", volume:4 },
+    ],
+    voie:"IVSE",
+    indication:"Hémorragie digestive par rupture de varice œsophagienne.",
+    remarques:"25 µg/h en IVSE, soit une vitesse de 4 mL/h.",
+    color:"#65A30D",
+  },
+  {
+    id:"pantoprazole_adulte", cat:"digestif", groupe:"Hémostatique digestif",
+    nom:"Pantoprazole", amp:"Flacon poudre 40 mg", voie:"IVDL puis IVSE", isDoseFixe:true,
+    variantes:[
+      { label:"Bolus", prepa:"Reconstituer 80 mg (2 flacons) et diluer dans 20 mL de NaCl 0,9% → 4 mg/mL.", dose:80, unite:"mg", volume:20 },
+      { label:"PSE (entretien)", prepa:"Reconstituer 80 mg (2 flacons) et diluer dans 40 mL de NaCl 0,9% → 2 mg/mL.", texteLibre:"4 mL/h, soit 8 mg/h (≈ 200 mg/24h)." },
+    ],
+    indication:"Hémorragie digestive.",
+    remarques:"Bolus 80 mg IVDL, puis entretien PSE à 4 mL/h (8 mg/h, soit environ 200 mg/24h).",
+    color:"#65A30D",
+  },
+  {
     id:"adenosine", cat:"cardio", groupe:"Antiarythmique",
     nom:"Adénosine (Krenosin)", amp:"6 mg / 2 mL", concentration:3,
     voie:"IVD flash", isDoseFixe:true,
@@ -32016,6 +32205,57 @@ const CALC_ADULTE_MEDICAMENTS = [
     entretienUIkgH:18,          // 18 UI/kg/h
     preparation:"Prélever 1 ampoule de 25 000 UI (5 mL) et compléter à 50 mL avec du NaCl 0,9% → 500 UI/mL.",
     remarques:"Bolus 80 UI/kg puis entretien 18 UI/kg/h au PSE. Adapter secondairement selon TCA / anti-Xa (premier contrôle à H4-H6). Surveiller le risque hémorragique.",
+    surveillance:{
+      frequence:"Dosage de l'activité anti-Xa (héparinémie) sur tube citraté : 6h après la mise en place ou tout changement de posologie, puis 1 fois par 24h en l'absence de modification.",
+      cible:"0,3 à 0,6 UI/mL",
+      ciblePrudent:"0,2 à 0,3 UI/mL si risque hémorragique.",
+      paliers:[
+        { valeur:"< 0,10", action:"Augmenter la vitesse de 0,4 mL/h" },
+        { valeur:"0,10 - 0,29", action:"Augmenter la vitesse de 0,2 mL/h" },
+        { valeur:"0,3 - 0,6", action:"Pas de modification" },
+        { valeur:"0,61 - 0,9", action:"Diminuer la vitesse de 0,2 mL/h" },
+        { valeur:"> 0,9", action:"Arrêt du PSE pendant 1h, puis reprendre en baissant la dose" },
+      ],
+    },
+    color:"#DC2626",
+  },
+  {
+    id:"innohep_adulte", cat:"cardio", groupe:"Anticoagulation",
+    nom:"Tinzaparine (Innohep)", amp:"Seringue préremplie graduée 20 000 UI/mL",
+    voie:"SC", isPalierPoids:true,
+    preparation:"Seringue préremplie graduée, prête à l'emploi (pas de dilution).",
+    paliersPoids:[
+      { min:32, max:37,  ui:6000,  volume:0.30 },
+      { min:38, max:42,  ui:7000,  volume:0.35 },
+      { min:43, max:48,  ui:8000,  volume:0.40 },
+      { min:49, max:54,  ui:9000,  volume:0.45 },
+      { min:55, max:59,  ui:10000, volume:0.50 },
+      { min:60, max:65,  ui:11000, volume:0.55 },
+      { min:66, max:71,  ui:12000, volume:0.60 },
+      { min:72, max:77,  ui:13000, volume:0.65 },
+      { min:78, max:82,  ui:14000, volume:0.70 },
+      { min:83, max:88,  ui:15000, volume:0.75 },
+      { min:89, max:94,  ui:16000, volume:0.80 },
+      { min:95, max:99,  ui:17000, volume:0.85 },
+      { min:100,max:105, ui:18000, volume:0.90 },
+    ],
+    indication:"Traitement des thromboses veineuses profondes et des embolies pulmonaires.",
+    remarques:"175 UI anti-Xa/kg en SC, une fois par jour. Dose par palier de poids selon le tableau officiel (seringues préremplies graduées). Non recommandé si clairance de la créatinine < 30 mL/min.",
+    color:"#DC2626",
+  },
+  {
+    id:"calciparine_adulte", cat:"cardio", groupe:"Anticoagulation",
+    nom:"Héparine calcique (Calciparine)", amp:"Flacon 25 000 UI/mL",
+    voie:"SC (+ bolus IV optionnel)", isDoseFixe:true,
+    variantes:[
+      { label:"Bolus IV initial (optionnel)", prepa:"Pur (25 000 UI/mL).", mgKgUniqueMin:50, mgKgUniqueMax:100, unite:"UI", concentration:25000 },
+      { label:"Curatif SC — 2 injections/jour (/12h)", prepa:"Pur (25 000 UI/mL).", mgKgUnique:250, unite:"UI", concentration:25000 },
+      { label:"Curatif SC — 3 injections/jour (/8h)", prepa:"Pur (25 000 UI/mL).", mgKgUnique:166.7, unite:"UI", concentration:25000 },
+      { label:"Préventif chirurgical", prepa:"Pur.", texteLibre:"5 000 UI en SC, 2h avant l'intervention, puis 5 000 UI toutes les 12h pendant 10 jours minimum après l'intervention." },
+      { label:"Préventif médical", prepa:"Pur.", texteLibre:"5 000 UI toutes les 12h en SC." },
+    ],
+    indication:"Thrombose veineuse profonde et embolie pulmonaire à la phase aiguë, infarctus du myocarde, angor instable, embolies artérielles extracérébrales.",
+    remarques:"Dose curative totale : 500 UI/kg/24h en SC, répartie en 2 ou 3 injections. Ne pas dépasser 15 000 UI (0,6 mL) par injection : privilégier 3 injections/jour au-delà de 60 kg environ. Bolus IV de 50-100 UI/kg possible en même temps que la 1ère injection SC.",
     color:"#DC2626",
   },
 
@@ -32027,6 +32267,15 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"IVL 15-20 min",
     indication:"Hypertension intracrânienne (engagement cérébral).",
     remarques:"0,5 à 1 g/kg. Adulte de taille moyenne : environ 250 mL. Renouveler si symptomatologie persistante.",
+    color:"#0891B2",
+  },
+  {
+    id:"ssh_75_adulte", cat:"osmotherapie", groupe:"Osmothérapie",
+    nom:"Sérum salé hypertonique 7,5%", amp:"Flacon verre 250 mL", preparation:"Prélever le volume nécessaire directement dans le(s) flacon(s).", flaconVolume:250,
+    doseMin:4, doseMax:4, unite:"mL",
+    voie:"IVL",
+    indication:"Hypertension intracrânienne (engagement cérébral), alternative ou complément au Mannitol.",
+    remarques:"Bolus de 4 mL/kg. Au-delà de 60 kg, prévoir 2 flacons de 250 mL. Surveiller la natrémie.",
     color:"#0891B2",
   },
 
@@ -32082,6 +32331,16 @@ const CALC_ADULTE_MEDICAMENTS = [
     color:"#059669",
   },
   {
+    id:"vitaminek1_adulte", cat:"antidote", groupe:"Antagonisation anticoagulants",
+    nom:"Phytoménadione (Vitamine K1)", amp:"10 mg / 1 mL", voie:"IVL 10 min", isDoseFixe:true,
+    variantes:[
+      { label:"Dose unique", prepa:"Prélever 1 ampoule (10 mg) et diluer dans une poche de 50 mL de NaCl 0,9%.", dose:10, unite:"mg", volume:50 },
+    ],
+    indication:"Traitement d'une hémorragie grave sous AVK.",
+    remarques:"10 mg (1 ampoule) en IVL sur 10 min. Associer au CCP (Octaplex) en cas d'hémorragie grave sous AVK.",
+    color:"#059669",
+  },
+  {
     id:"nac", cat:"antidote", groupe:"Antidote paracétamol",
     nom:"N-acétylcystéine (Hidonac)", amp:"Flacon 5 g / 25 mL",
     voie:"IVSE",
@@ -32094,6 +32353,16 @@ const CALC_ADULTE_MEDICAMENTS = [
       { titre:"2ᵉ DOSE",        doseParKg:50,  duree:"sur 4h",  dilution:"Ajouter le volume d'acétylcystéine dans une poche de G5% 500 mL." },
       { titre:"3ᵉ DOSE",        doseParKg:100, duree:"sur 16h", dilution:"Ajouter le volume d'acétylcystéine dans une poche de G5% 1000 mL." },
     ],
+    color:"#059669",
+  },
+  {
+    id:"bleu_methylene_adulte", cat:"antidote", groupe:"Antidote méthémoglobinémie",
+    nom:"Chlorure de méthylthioninium (Bleu de méthylène)", amp:"10 mg / 1 mL", concentration:10, unite:"mg",
+    doseMin:1, doseMax:2,
+    voie:"IVL 5 min",
+    preparation:"Diluer la dose dans du NaCl 0,9% ou du G5%.",
+    indication:"Méthémoglobinémie aiguë (intoxication par produits méthémoglobinisants : nitrates, nitrites, aniline...).",
+    remarques:"1 à 2 mg/kg en IVL sur 5 min. Répétable après 30-60 min si besoin. Ne pas dépasser 7 mg/kg cumulé sur 24h : au-delà, le bleu de méthylène devient lui-même méthémoglobinisant.",
     color:"#059669",
   },
   {
@@ -32180,6 +32449,32 @@ const CALC_ADULTE_MEDICAMENTS = [
     remarques:"1 à 2 mg/kg en IVL sur 10 min, sans dépasser 120 mg (1 flacon).",
     color:"#0284C7",
   },
+  {
+    id:"salbutamol_iv_adulte", cat:"respiratoire", groupe:"Bronchodilatateur",
+    nom:"Salbutamol (IV)", amp:"5 mg / 5 mL", isPSETable:true,
+    voie:"IVSE", isPSETableFixed:true,
+    concentrationMgMl:0.2, // 2 ampoules (10mg) dans 50mL = 0,2 mg/mL
+    dosePaliers:[0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    posologieLabel:"Débuter à 0,5 mg/h, ne pas dépasser 8-10 mg/h",
+    preparation:"Prélever 2 ampoules (10 mg) et compléter à 50 mL avec du NaCl 0,9% ou du G5% → 0,2 mg/mL.",
+    indication:"Asthme aigu grave, en cas d'impossibilité de nébulisation (pas de bénéfice démontré au-delà des nébulisations en 1ère intention).",
+    remarques:"Débuter à 0,5 mg/h et augmenter selon l'effet, sans dépasser 8 mg/h (aucun bénéfice supplémentaire démontré au-delà). Ne remplace pas les nébulisations continues, réservé à l'impossibilité de les réaliser.",
+    color:"#0284C7",
+  },
+
+  // ── Obstétrique ───────────────────────────────────────────────────────────
+  {
+    id:"syntocinon_adulte", cat:"obstetrique", groupe:"Délivrance",
+    nom:"Ocytocine (Syntocinon)", amp:"5 UI / 1 mL", voie:"IVDL puis IVSE selon contexte", isDoseFixe:true,
+    variantes:[
+      { label:"Préventif — dégagement de l'épaule / accouchement < 15 min", prepa:"Prélever l'ampoule pure (5 UI/1 mL) dans une seringue de 2 mL.", dose:5, unite:"UI", volume:1 },
+      { label:"Préventif — si facteur de risque cardiovasculaire", prepa:"Prélever l'ampoule pure (5 UI/1 mL) dans une seringue de 2 mL.", dose:5, unite:"UI", volume:1 },
+      { label:"Curatif — accouchement > 15 min (PSE)", prepa:"Prélever 2 ampoules (10 UI) et compléter à 20 mL avec du G5% → 0,5 UI/mL.", texteLibre:"Débuter à 20 mL/h pendant 1h (10 UI sur 1h)." },
+    ],
+    indication:"Prévention et traitement curatif de l'hémorragie de la délivrance.",
+    remarques:"Préventif : 5 UI en IVDL sur 1 min (ou sur 5 min si facteur de risque cardiovasculaire), au dégagement de l'épaule du bébé ou si accouchement < 15 min. Curatif : si accouchement > 15 min, 10 UI sur 1h au PSE (20 mL/h).",
+    color:"#DB2777",
+  },
 ];
 
 // Catégories avec config affichage
@@ -32196,6 +32491,7 @@ const CALC_ADULTE_CATS = [
   { key:"antiepileptique",  label:"Antiépileptiques",          icon:"🧠", color:"#CA8A04", bg:"#FEF9C3" },
   { key:"antidote",         label:"Antidotes",                 icon:"🧪", color:"#059669", bg:"#D1FAE5" },
   { key:"respiratoire",     label:"Respiratoire",              icon:"🫁", color:"#0284C7", bg:"#E0F2FE" },
+  { key:"obstetrique",      label:"Obstétrique",               icon:"🤰", color:"#DB2777", bg:"#FCE7F3" },
 ];
 
 // ── Carte spéciale : protocole en 3 phases successives (N-acétylcystéine) ──
@@ -32277,6 +32573,57 @@ function CalcAdulteNACCard({ medic, poids, color }) {
 }
 
 // ── Carte spéciale : anticoagulation (bolus + entretien PSE) — HNF ──
+// Section repliable : surveillance biologique + tableau d'adaptation posologique
+// selon l'héparinémie (activité anti-Xa). data = { frequence, cible, ciblePrudent, paliers }
+function AnticoagSurveillance({ data, color }) {
+  const C = useC();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{marginTop:10, borderTop:`1px solid ${C.border}`, paddingTop:10}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{
+        width:"100%", background:"none", border:"none", cursor:"pointer", padding:0,
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        fontSize:11.5, fontWeight:800, color,
+      }}>
+        <span>🧪 Surveillance & adaptation (héparinémie)</span>
+        <span>{open ? "▼" : "▶"}</span>
+      </button>
+
+      {open && (
+        <div style={{marginTop:10}}>
+          {data.frequence && (
+            <div style={{fontSize:12, color:C.text, lineHeight:1.6, marginBottom:8}}>
+              {data.frequence}
+            </div>
+          )}
+          {data.cible && (
+            <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text}}>
+              <b>Valeur cible (anti-Xa) :</b> {data.cible}
+              {data.ciblePrudent && <div style={{marginTop:2}}>{data.ciblePrudent}</div>}
+            </div>
+          )}
+          {data.paliers && (
+            <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
+              <div style={{display:"flex", background:color+"15", padding:"7px 10px", fontSize:10.5, fontWeight:800, color}}>
+                <div style={{flex:"0 0 90px"}}>Anti-Xa (UI/mL)</div>
+                <div style={{flex:1}}>Ajustement</div>
+              </div>
+              {data.paliers.map((p, i) => (
+                <div key={i} style={{display:"flex", padding:"8px 10px",
+                  background: i%2 ? C.bg : C.white, borderTop:`1px solid ${C.border}`, fontSize:12}}>
+                  <div style={{flex:"0 0 90px", fontWeight:800, color:C.text}}>{p.valeur}</div>
+                  <div style={{flex:1, color:C.text}}>{p.action}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CalcAdulteAnticoagCard({ medic, poids, color }) {
   const C = useC();
   const conc = medic.concentrationPrep;   // 500 UI/mL (après dilution)
@@ -32337,6 +32684,9 @@ function CalcAdulteAnticoagCard({ medic, poids, color }) {
           {medic.remarques}
         </div>
       )}
+
+      {/* Surveillance / adaptation posologique selon l'héparinémie */}
+      {medic.surveillance && <AnticoagSurveillance data={medic.surveillance} color={color}/>}
     </div>
   );
 }
@@ -32572,6 +32922,61 @@ function CalcAdulteProtocoleCard({ medic, poids, color }) {
 }
 
 // ── Carte spéciale : médicament en PSE, tableau de vitesses (mL/h) ──
+// Cas spécial : dose par PALIER DE POIDS (tableau officiel RCP, pas une formule continue)
+// medic.paliersPoids = [{ min, max, ui, volume }, ...] triés par poids croissant
+function CalcAdultePalierPoidsCard({ medic, poids, color }) {
+  const C = useC();
+  const palier = medic.paliersPoids.find(p => poids >= p.min && poids <= p.max);
+  const horsTableauBas = poids < medic.paliersPoids[0].min;
+  const horsTableauHaut = poids > medic.paliersPoids[medic.paliersPoids.length - 1].max;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      {medic.preparation && (
+        <div style={{background:color+"0E", borderRadius:10, padding:"9px 11px", marginBottom:10, fontSize:12, color:C.text, lineHeight:1.5}}>
+          🧪 {medic.preparation}
+        </div>
+      )}
+
+      {palier ? (
+        <div style={{display:"flex", gap:16}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE (pour {poids} kg — palier {palier.min}-{palier.max} kg)</div>
+            <div style={{fontSize:20, fontWeight:900, color:C.text}}>{palier.ui} <span style={{fontSize:12}}>UI</span></div>
+          </div>
+          <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+            <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+            <div style={{fontSize:20, fontWeight:900, color}}>{palier.volume} <span style={{fontSize:12}}>mL</span></div>
+          </div>
+        </div>
+      ) : (
+        <div style={{background:"#FEF2F2", border:"1px solid #FCA5A5", borderRadius:10, padding:"10px 12px", fontSize:12.5, color:"#991B1B", fontWeight:600}}>
+          {horsTableauBas
+            ? `Poids inférieur à ${medic.paliersPoids[0].min} kg : hors du tableau officiel, avis spécialisé recommandé.`
+            : horsTableauHaut
+              ? `Poids supérieur à ${medic.paliersPoids[medic.paliersPoids.length - 1].max} kg : hors du tableau officiel, avis spécialisé recommandé.`
+              : "Poids hors du tableau de référence."}
+        </div>
+      )}
+
+      {medic.remarques && (
+        <div style={{marginTop:10, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CalcAdultePSECard({ medic, poids, color }) {
   const C = useC();
 
@@ -32825,6 +33230,24 @@ function CalcAdulteDoseFixeCard({ medic, poids, color }) {
                 </div>
                 <div style={{fontSize:9, color:C.sub, marginTop:2}}>{v.mgKgHMin}-{v.mgKgHMax} mg/kg/h</div>
               </div>
+            ) : v.mgKgUniqueMin != null ? (
+              <div style={{display:"flex", gap:16}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE (pour {poids} kg)</div>
+                  <div style={{fontSize:20, fontWeight:900, color:C.text}}>
+                    {Math.round(v.mgKgUniqueMin*poids*100)/100} – {Math.round(v.mgKgUniqueMax*poids*100)/100} <span style={{fontSize:12}}>{v.unite}</span>
+                  </div>
+                  <div style={{fontSize:9, color:C.sub, marginTop:2}}>{v.mgKgUniqueMin}-{v.mgKgUniqueMax} {v.unite}/kg</div>
+                </div>
+                {v.concentration != null && (
+                  <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+                    <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+                    <div style={{fontSize:20, fontWeight:900, color}}>
+                      {Math.round((v.mgKgUniqueMin*poids/v.concentration)*100)/100} – {Math.round((v.mgKgUniqueMax*poids/v.concentration)*100)/100} <span style={{fontSize:12}}>mL</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : v.mgKgUnique != null ? (
               <div style={{display:"flex", gap:16}}>
                 <div style={{flex:1}}>
@@ -32931,6 +33354,11 @@ function CalcAdulteCard({ medic, poids }) {
     return <CalcAdultePSECard medic={medic} poids={poids} color={color}/>;
   }
 
+  // Cas spécial : dose par palier de poids (tableau officiel RCP, ex: Innohep)
+  if (medic.isPalierPoids) {
+    return <CalcAdultePalierPoidsCard medic={medic} poids={poids} color={color}/>;
+  }
+
   // Cas spécial : protocole en 2 temps (bolus + perfusion) avec seuil de poids
   if (medic.isProtocole) {
     return <CalcAdulteProtocoleCard medic={medic} poids={poids} color={color}/>;
@@ -32993,7 +33421,9 @@ function CalcAdulteCard({ medic, poids }) {
   const volMax = hasVol ? (medic.isIN ? Math.round((volMaxRaw + ESPACE_MORT) * 100) / 100 : Math.round(volMaxRaw * 10) / 10) : null;
 
   // Nombre de flacons/ampoules nécessaires (arrondi supérieur)
-  const nbFlacons = medic.flaconVolume && volMax != null ? Math.ceil(volMax / medic.flaconVolume) : null;
+  const nbFlacons = medic.flaconVolume
+    ? Math.ceil((volMax != null ? volMax : doseMaxCalc) / medic.flaconVolume)
+    : null;
 
   // Dose alt (sujet âgé) — fixe ou par kg selon isFixedDose
   let altMin = null, altMax = null;
