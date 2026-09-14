@@ -1674,7 +1674,7 @@ function useNotifications() {
 
   // Pousse une notification partagée (visible par tous)
   async function pushNotif(item) {
-    // item : { title, body, icon, nav, type, ref_id }
+    // item : { title, body, icon, nav, type, ref_id, recipient_id }
     const notif = {
       type: item.type || "",
       title: item.title || "",
@@ -1683,11 +1683,16 @@ function useNotifications() {
       nav: item.nav || "",
       ref_id: String(item.ref_id || item.id || ""),
       ts: Date.now(),
+      recipient_id: item.recipient_id || null,
     };
     try {
-      const rows = await supaFetch("/notifications", "POST", notif);
-      const created = Array.isArray(rows) ? rows[0] : rows;
-      if(created) setNotifs(prev => [{...created, key:created.id}, ...prev].slice(0,50));
+      const rows = await supaFetch("/notifications", "POST", notif, !!item.recipient_id);
+      // Si la notification est ciblée à quelqu'un d'autre, on ne l'ajoute pas à sa
+      // propre liste locale (elle n'est pas pour soi) ; sinon comportement habituel.
+      if (!item.recipient_id) {
+        const created = Array.isArray(rows) ? rows[0] : rows;
+        if (created) setNotifs(prev => [{...created, key:created.id}, ...prev].slice(0,50));
+      }
     } catch(e){ console.error("pushNotif error", e); }
   }
 
@@ -5017,8 +5022,9 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onStatut, onDelete, onEdit }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onStatut, onDelete, onEdit }) {
   const C = useC();
+  const { isAdmin } = useAuth();
   const { toggleFavori, isFavori } = useFavoris();
   const [commentText, setCommentText] = useState("");
   const [commentAuthor, setCommentAuthor] = useState("");
@@ -5282,7 +5288,15 @@ function RetexDetail({ item, onBack, onReaction, onComment, onStatut, onDelete, 
             <div key={cm.id} style={{background:C.white, borderRadius:12, padding:"10px 14px", border:`1px solid ${C.border}`}}>
               <div style={{display:"flex", justifyContent:"space-between", marginBottom:4}}>
                 <span style={{fontSize:12, fontWeight:700, color:C.blue}}>👤 {cm.author}</span>
-                <span style={{fontSize:10, color:C.sub}}>{relTime(cm.ts)}</span>
+                <div style={{display:"flex", alignItems:"center", gap:8}}>
+                  <span style={{fontSize:10, color:C.sub}}>{relTime(cm.ts)}</span>
+                  {isAdmin && onDeleteComment && (
+                    <button onClick={()=>{ if(window.confirm("Supprimer ce commentaire ?")) onDeleteComment(item.id, cm.id); }}
+                      style={{background:"none", border:"none", color:C.red, fontSize:13, cursor:"pointer", padding:0, lineHeight:1}}>
+                      🗑️
+                    </button>
+                  )}
+                </div>
               </div>
               <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{cm.text}</div>
             </div>
@@ -5308,6 +5322,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onStatut, onDelete, 
 // ── RetexScreen ───────────────────────────────────────────────────────────────
 function RetexScreen({ deepLinkId, onBack, pushNotif }) {
   const C = useC();
+  const { profile } = useAuth();
   const { store, addRetexItem, removeRetexItem, updateRetex } = useData();
   const items = [...(store.retex||[])].sort((a,b)=>{
     // Trier par ordre de publication : le plus récent en premier
@@ -5350,17 +5365,61 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
   async function toggleReaction(id, emoji) {
     const item = items.find(x=>x.id===id);
     if(!item) return;
+    const myId = profile?.id || null;
     const reactions = {...(item.reactions||{})};
-    reactions[emoji] = (reactions[emoji]||0) + (reactions[emoji] ? -1 : 1);
-    if(reactions[emoji]<=0) delete reactions[emoji];
-    await updateRetex({...item, reactions});
+    const reactionsBy = [...(item.reactionsBy||[])];
+    const already = myId && reactionsBy.some(r => r.userId===myId && r.emoji===emoji);
+
+    if (already) {
+      // Retirer ma réaction
+      reactions[emoji] = Math.max(0, (reactions[emoji]||0) - 1);
+      if(reactions[emoji]<=0) delete reactions[emoji];
+      const idx = reactionsBy.findIndex(r => r.userId===myId && r.emoji===emoji);
+      if (idx >= 0) reactionsBy.splice(idx, 1);
+    } else {
+      // Ajouter ma réaction
+      reactions[emoji] = (reactions[emoji]||0) + 1;
+      if (myId) reactionsBy.push({ userId: myId, emoji });
+    }
+    await updateRetex({...item, reactions, reactionsBy});
   }
 
   async function addComment(id, author, text) {
     const item = items.find(x=>x.id===id);
     if(!item) return;
-    const comment = {id:Date.now(), author, text, ts:Date.now()};
-    await updateRetex({...item, comments:[...(item.comments||[]), comment]});
+    const myId = profile?.id || null;
+    const comment = {id:Date.now(), author, text, ts:Date.now(), userId: myId};
+    const newComments = [...(item.comments||[]), comment];
+    await updateRetex({...item, comments:newComments});
+
+    // Notifier tous les participants précédents (commentaires + réactions avec userId connu),
+    // sauf soi-même. Les anciens commentaires sans userId ne peuvent pas être notifiés.
+    if (pushNotif && myId) {
+      const participantIds = new Set();
+      (item.comments||[]).forEach(c => { if (c.userId && c.userId !== myId) participantIds.add(c.userId); });
+      (item.reactionsBy||[]).forEach(r => { if (r.userId && r.userId !== myId) participantIds.add(r.userId); });
+      // L'auteur original du RETEX/Cas est aussi notifié s'il n'a pas déjà commenté
+      if (item.created_by && item.created_by !== myId) participantIds.add(item.created_by);
+
+      for (const recipientId of participantIds) {
+        pushNotif({
+          type: "retex_comment",
+          icon: "💬",
+          title: `Nouveau commentaire sur "${item.title}"`,
+          body: text.length > 80 ? text.slice(0,80)+"…" : text,
+          nav: item.type === "cas" ? "cas" : "retex",
+          ref_id: item.id,
+          recipient_id: recipientId,
+        });
+      }
+    }
+  }
+
+  async function deleteComment(id, commentId) {
+    const item = items.find(x=>x.id===id);
+    if(!item) return;
+    const newComments = (item.comments||[]).filter(c => c.id !== commentId);
+    await updateRetex({...item, comments:newComments});
   }
 
   async function changeStatut(id, statut) {
@@ -5433,6 +5492,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
       onBack={()=>setSelected(null)}
       onReaction={toggleReaction}
       onComment={addComment}
+      onDeleteComment={deleteComment}
       onStatut={changeStatut}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
       onEdit={(it)=>{ setSelected(null); setEditing(it); }}
@@ -32107,14 +32167,14 @@ const CALC_ADULTE_MEDICAMENTS = [
   },
   {
     id:"sulfate_magnesium_adulte", cat:"cardio", groupe:"Réanimation",
-    nom:"Sulfate de magnésium", amp:"1 g / 10 mL",
+    nom:"Sulfate de magnésium", amp:"1,5 g / 10 mL",
     voie:"IVL / IVDL selon contexte", isDoseFixe:true,
     variantes:[
-      { label:"Asthme aigu grave / Hypokaliémie sévère / Torsades de pointes", prepa:"Prélever 2 ampoules (2 g) et diluer dans 100 mL de NaCl 0,9%. IVL sur 15 min.", dose:2, unite:"g" },
-      { label:"Arrêt cardiaque sur hypokaliémie (IVDL sur 1 min)", prepa:"2 ampoules pures.", dose:2, unite:"g", volume:20 },
+      { label:"Asthme aigu grave / Hypokaliémie sévère / Torsades de pointes", prepa:"Ouvrir 2 ampoules et prélever 13,3 mL (soit 2 g), diluer dans 100 mL de NaCl 0,9%. IVL sur 15 min.", dose:2, unite:"g", volume:13.3 },
+      { label:"Arrêt cardiaque sur hypokaliémie (IVDL sur 1 min)", prepa:"Ouvrir 2 ampoules et prélever 13,3 mL (soit 2 g), pures.", dose:2, unite:"g", volume:13.3 },
     ],
     indication:"Asthme aigu grave, hypokaliémie sévère, torsades de pointes, arrêt cardiaque sur hypokaliémie.",
-    remarques:"Hors ACR : 2 g diluées dans 100 mL NaCl, IVL sur 15 min. ACR sur hypokaliémie : 2 g en IVDL sur 1 min.",
+    remarques:"Hors ACR : 2 g diluées dans 100 mL NaCl, IVL sur 15 min. ACR sur hypokaliémie : 2 g en IVDL sur 1 min. Ampoule à 1,5 g/10 mL (0,15 g/mL) : le volume de 2 g ne correspond pas à un nombre entier d'ampoules.",
     color:"#DC2626",
   },
   {
@@ -32331,6 +32391,16 @@ const CALC_ADULTE_MEDICAMENTS = [
     preparation:"Reconstituer chaque flacon selon la notice.",
     indication:"Antagonisation en urgence d'un traitement par AVK (hémorragie grave, geste urgent).",
     remarques:"Associer 10 mg de vitamine K IV si AVK. Contrôler le TP/INR après administration.",
+    color:"#059669",
+  },
+  {
+    id:"octaplas_lg_adulte", cat:"antidote", groupe:"Plasma",
+    nom:"Plasma frais congelé viro-inactivé (Octaplas LG)", amp:"Flacon 200 mL", voie:"IVL", isDoseFixe:true,
+    variantes:[
+      { label:"Dose de départ", prepa:"2 flacons (400 mL), prêts à l'emploi.", dose:2, unite:"flacon" },
+    ],
+    indication:"Traumatismes pénétrants, AVP ou traumatisme haute cinétique, hémorragies non traumatiques.",
+    remarques:"Dose de DÉPART pragmatique (2 flacons = 400 mL), avant bilan biologique. À réévaluer et compléter ensuite selon la biologie (TP/TCA/fibrinogène) et la poursuite du saignement. Respecter la compatibilité ABO.",
     color:"#059669",
   },
   {
