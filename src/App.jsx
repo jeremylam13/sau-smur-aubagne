@@ -2461,7 +2461,7 @@ function HomeScreen({onNav}) {
     {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
     // ── Ligne 5 ──
-    {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight},
+    {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight, hideForConsultatif:true},
     {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9", hideForConsultatif:true},
     {id:"comptes",    icon:"👥", label:"Comptes",           color:"#0F172A", bg:"#F1F5F9", adminOnly:true},
@@ -7073,6 +7073,23 @@ function DiversScreen({ deepLinkId, onBack }) {
 
 // - AnnuaireScreen -
 function AnnuaireScreen({ deepLinkId, onBack }) {
+  const C = useC();
+  const { role } = useAuth();
+
+  if (role === "consultatif") {
+    return (
+      <div>
+        <BackBtn onClick={onBack}/>
+        <div style={{textAlign:"center", padding:40, color:C.sub, fontSize:13}}>
+          🔒 L'annuaire des contacts est réservé aux médecins et administrateurs.
+        </div>
+      </div>
+    );
+  }
+  return <AnnuaireScreenInner deepLinkId={deepLinkId} onBack={onBack}/>;
+}
+
+function AnnuaireScreenInner({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
   const [search, setSearch]     = useState("");
@@ -32000,11 +32017,11 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"PSE — voie dédiée",
     isPSETable:true,
     concentrationUgMl:5000, // 250 mg dans 50 mL = 5 mg/mL = 5000 µg/mL
-    dosePaliers:[5, 7.5, 10, 12.5, 15, 20],
-    posologieLabel:"5 à 20 µg/kg/min",
+    dosePaliers:[2, 5, 7.5, 10, 12.5, 15, 20],
+    posologieLabel:"2 à 20 µg/kg/min",
     preparation:"Seringue de 50 mL : prélever 1 flacon de 250 mg (20 mL) et compléter à 50 mL avec du SG5%. → 5 mg/mL.",
     indication:"Syndrome de bas débit cardiaque (catécholamine inotrope positive).",
-    remarques:"5 à 20 µg/kg/min. CI : cardiomyopathie obstructive, RA serré, hypersensibilité. Voie dédiée de bon calibre, ne pas arrêter brutalement, prévoir relais entre seringues. Veinotoxicité +++.",
+    remarques:"Débuter à la dose la plus faible possible (2 µg/kg/min), titrer selon la réponse hémodynamique. CI : cardiomyopathie obstructive, RA serré, hypersensibilité. Voie dédiée de bon calibre, ne pas arrêter brutalement, prévoir relais entre seringues. Veinotoxicité +++.",
     color:"#DC2626",
   },
   {
@@ -32121,13 +32138,12 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"nicardipine_adulte", cat:"cardio", groupe:"Vasodilatateur",
     nom:"Nicardipine (Loxen)", amp:"10 mg / 10 mL", concentration:1,
-    voie:"IVD puis IVSE", isDoseFixe:true,
+    voie:"IVSE", isDoseFixe:true,
     variantes:[
-      { label:"Bolus (titration)", prepa:"Pure.", texteLibre:"Débuter les bolus à un débit de 1 mg/min, jusqu'à 10 mg maximum en fonction de l'effet." },
-      { label:"Entretien IVSE", prepa:"Prélever 1 ampoule (10 mg) et compléter à 50 mL avec du G5% → 0,2 mg/mL.", texteLibre:"Débuter à 1 mg/h, puis augmenter par palier de 0,5 à 1 mg/h toutes les 15 min selon la PAS." },
+      { label:"Perfusion IVSE d'emblée (pas de bolus)", prepa:"Prélever 1 ampoule (10 mg) et compléter à 50 mL avec du G5% → 0,2 mg/mL.", texteLibre:"Débuter à 3-5 mg/h pendant 15 min, puis ajuster par palier de 0,5 à 1 mg/h toutes les 15 min selon la PAS, sans dépasser 15 mg/h." },
     ],
-    indication:"Contrôle de la tension artérielle.",
-    remarques:"Bolus : 1 mg/min jusqu'à 10 mg max selon effet. Entretien IVSE : débuter à 1 mg/h, titrer par palier de 0,5 à 1 mg/h toutes les 15 min.",
+    indication:"Urgence hypertensive menaçant le pronostic vital (HTA maligne, encéphalopathie hypertensive, dissection aortique, pré-éclampsie sévère), HTA post-opératoire.",
+    remarques:"Depuis la réévaluation ANSM/EMA du rapport bénéfice/risque, le bolus n'est plus recommandé : perfusion IVSE continue d'emblée à 3-5 mg/h pendant 15 min, puis paliers de 0,5-1 mg/h toutes les 15 min, sans dépasser 15 mg/h (plafond absolu).",
     color:"#DC2626",
   },
   {
@@ -32238,8 +32254,8 @@ const CALC_ADULTE_MEDICAMENTS = [
     nom:"Adénosine (Krenosin)", amp:"6 mg / 2 mL", concentration:3,
     voie:"IVD flash", isDoseFixe:true,
     variantes:[
-      { label:"1ère dose", prepa:"Pure — prélever 2 flacons (6 mg/2 mL chacun) avec une seringue de 10 mL.", dose:12, unite:"mg", volume:4 },
-      { label:"2ème dose (si inefficace)", prepa:"Pure — prélever 3 flacons.", dose:18, unite:"mg", volume:6 },
+      { label:"1ère dose", prepa:"1 ampoule pure (6 mg/2 mL).", dose:6, unite:"mg", volume:2 },
+      { label:"2ème dose (si inefficace)", prepa:"Pure — prélever 2 flacons (6 mg/2 mL chacun) avec une seringue de 10 mL.", dose:12, unite:"mg", volume:4 },
     ],
     indication:"Tachycardie jonctionnelle (réduction).",
     remarques:"Injection IVD flash suivie d'une rinçure au NaCl 0,9%. Prévenir le patient (sensation de malaise bref). Scope et défibrillateur à proximité.",
@@ -32250,7 +32266,7 @@ const CALC_ADULTE_MEDICAMENTS = [
     nom:"Striadyne (ATP)", amp:"20 mg / 2 mL", concentration:10,
     voie:"IVD flash", isDoseFixe:true,
     variantes:[
-      { label:"1ère dose", prepa:"1 ampoule pure.", dose:20, unite:"mg", volume:2 },
+      { label:"1ère dose", prepa:"Prélever 1 mL (10 mg) de l'ampoule.", dose:10, unite:"mg", volume:1 },
       { label:"2ème dose (si inefficace)", prepa:"1 ampoule pure.", dose:20, unite:"mg", volume:2 },
     ],
     indication:"Tachycardie jonctionnelle (réduction).",
@@ -32378,7 +32394,7 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"IVD puis perfusion",
     isProtocole:true,
     indication:"Toxicité systémique des anesthésiques locaux (LAST) : convulsions, troubles du rythme, arrêt cardiaque.",
-    remarques:"Seuil de poids à 70 kg. Bolus IVD (ne dépassant pas 100 mL) puis perfusion d'entretien. Poursuivre la RCP en parallèle si ACR. Répéter le bolus 1-2× si besoin selon protocole LAST.",
+    remarques:"Bolus unique de 3 mL/kg en IV, sur environ 1 min. Pas de perfusion continue nécessaire (protocole SFMU). Poursuivre la RCP en parallèle si ACR. Répéter le bolus si besoin selon la réponse clinique.",
     color:"#059669",
   },
   {
@@ -32443,10 +32459,10 @@ const CALC_ADULTE_MEDICAMENTS = [
     nom:"Flumazénil (Anexate)", amp:"0,5 mg / 5 mL", concentration:0.1,
     voie:"IVDL", isDoseFixe:true,
     variantes:[
-      { label:"Bolus (titration)", prepa:"Pure — 0,1 mg/mL.", dose:0.1, unite:"mg", volume:1 },
+      { label:"Bolus initial", prepa:"Pure — 0,1 mg/mL.", dose:0.2, unite:"mg", volume:2 },
     ],
     indication:"Antagonisation des benzodiazépines.",
-    remarques:"Bolus 0,1 mg (1 mL) en IVDL toutes les 30 secondes jusqu'à obtention d'une conscience et FR > 14/min. Max 2 mg au total. Si le bolus est efficace, relais possible en entretien PSE : 2 ampoules (1 mg) complétées avec 40 mL de NaCl 0,9% (50 mL au total) → 0,02 mg/mL. Débit horaire de l'entretien = dose de titration qui s'est révélée efficace.",
+    remarques:"Bolus initial 0,2 mg (2 mL) en IVDL sur 15 sec. Si besoin, doses de 0,1 mg répétables toutes les 30-60 sec jusqu'à obtention d'une conscience et FR > 14/min. Max 2 mg au total. Si le bolus est efficace, relais possible en entretien PSE : 2 ampoules (1 mg) complétées avec 40 mL de NaCl 0,9% (50 mL au total) → 0,02 mg/mL. Débit horaire de l'entretien = dose de titration qui s'est révélée efficace.",
     color:"#059669",
   },
   {
@@ -32464,12 +32480,13 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"exacyl_adulte", cat:"antidote", groupe:"Hémostatique",
     nom:"Acide tranexamique (Exacyl)", amp:"0,5 g / 5 mL",
-    voie:"IVL 10 min", isDoseFixe:true,
+    voie:"IVL puis IVSE", isDoseFixe:true,
     variantes:[
-      { label:"Dose unique", prepa:"Prélever 2 ampoules (1 g) et diluer dans une poche de 100 mL de NaCl 0,9%. À passer en 10 min.", dose:1, unite:"g" },
+      { label:"Bolus initial", prepa:"Prélever 2 ampoules (1 g) et diluer dans une poche de 100 mL de NaCl 0,9%. À passer en 10 min.", dose:1, unite:"g" },
+      { label:"Puis entretien IVSE", prepa:"Prélever 2 ampoules (1 g) et diluer dans une seringue de 50 mL de NaCl 0,9%.", texteLibre:"1 g sur 8h, soit un débit de 6,25 mL/h (≈ 125 mg/h)." },
     ],
     indication:"Hémorragie traumatique (CRASH-2, dans les 3h du traumatisme).",
-    remarques:"1 g IVL sur 10 min.",
+    remarques:"Protocole CRASH-2 (grade 1+) : bolus 1 g IVL sur 10 min, suivi d'un entretien de 1 g sur 8h en IVSE.",
     color:"#059669",
   },
   {
@@ -32926,18 +32943,8 @@ function CalcAdulteThrombolyseCard({ medic, poids, color }) {
 function CalcAdulteProtocoleCard({ medic, poids, color }) {
   const C = useC();
 
-  // Intralipide LAST : seuil à 70 kg
-  const lourd = poids >= 70;
-
-  // Bolus initial
-  const bolus = lourd
-    ? { valeur: "100 mL", detail: "dose plafonnée (poids ≥ 70 kg)" }
-    : { valeur: `${Math.round(1.5 * poids * 10) / 10} mL`, detail: `1,5 mL/kg × ${poids} kg` };
-
-  // Perfusion
-  const perf = lourd
-    ? { valeur: "250 mL en 15-20 min", detail: "poids ≥ 70 kg" }
-    : { valeur: `${Math.round(0.25 * poids * 10) / 10} mL/min`, detail: `0,25 mL/kg/min × ${poids} kg` };
+  // Intralipide LAST : protocole SFMU — bolus seul, pas de perfusion continue nécessaire
+  const bolus = { valeur: `${Math.round(3 * poids * 10) / 10} mL`, detail: `3 mL/kg × ${poids} kg` };
 
   return (
     <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
@@ -32962,25 +32969,14 @@ function CalcAdulteProtocoleCard({ medic, poids, color }) {
         Protocole pour <span style={{color, fontWeight:900}}>{poids} kg</span>
       </div>
 
-      {/* Temps 1 : Bolus */}
-      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
+      {/* Bolus */}
+      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
         <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>
-          1️⃣ BOLUS INITIAL (IVD)
+          BOLUS IVD (sur 1 min)
         </div>
         <div style={{padding:"10px 12px"}}>
           <div style={{fontSize:18, fontWeight:900, color:C.text}}>{bolus.valeur}</div>
           <div style={{fontSize:11, color:C.sub, marginTop:2}}>{bolus.detail}</div>
-        </div>
-      </div>
-
-      {/* Temps 2 : Perfusion */}
-      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
-        <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>
-          2️⃣ PUIS PERFUSION
-        </div>
-        <div style={{padding:"10px 12px"}}>
-          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{perf.valeur}</div>
-          <div style={{fontSize:11, color:C.sub, marginTop:2}}>{perf.detail}</div>
         </div>
       </div>
 
@@ -36743,7 +36739,7 @@ function AppInner() {
   const { notifs, pushNotif, clearAll, markSeen, unread } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const { profile, roleLabel } = useAuth();
+  const { profile, roleLabel, role } = useAuth();
   const unreadCount = unread;
 
   // Badge natif sur l'icône de l'app (écran d'accueil du téléphone)
@@ -36819,8 +36815,8 @@ function AppInner() {
     {id:"gestes",     icon:"✂️",  label:"Gestes"},
     {id:"scores",     icon:"🧮", label:"Scores"},
     {id:"dilutions",  icon:"💉", label:"Dilutions"},
-    {id:"annuaire",   icon:"📒", label:"Contacts"},
-  ];
+    {id:"annuaire",   icon:"📒", label:"Contacts", hideForConsultatif:true},
+  ].filter(t => !t.hideForConsultatif || role !== "consultatif");
 
   const contentRef = React.useRef(null);
 
