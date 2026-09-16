@@ -30082,32 +30082,31 @@ const PEDIA_MEDICAMENTS_DATA = [
   { id:"adr_ped",   nom:"Adrénaline",             indication:"Arrêt cardiaque",             voie:"IVD / IO",       dose_par_kg:0.01, unite:"mg",  dose_max:1,    concentration:"0,1 mg/mL (1 mg/10 mL)", concentration_value:0.1,  frequence:"Toutes les 3-5 min", remarques:"Diluer 1 amp 5 mg/5 mL dans 45 mL NaCl 0,9% = 0,1 mg/mL", categorie:"hemodynamique", color:"#DC2626" },
   { id:"adr_anaph_ped", nom:"Adrénaline (anaphylaxie)", indication:"Choc anaphylactique", voie:"IM ++++", dose_par_kg:0.01, unite:"mg", dose_max:0.5, concentration:"1 mg/mL (ampoule pure)", concentration_value:1, frequence:"2ᵉ dose à 5 min si symptômes persistants", dosePaliers:[ {max:20, dose:0.15, label:"< 20 kg"}, {max:40, dose:0.3, label:"20–40 kg"}, {max:null, dose:0.5, label:"> 40 kg"} ], remarques:"Anaphylaxie : 0,01 mg/kg (max 0,5 mg) en IM (face antéro-latérale de cuisse). En pratique : < 20 kg → 0,15 mg ; 20–40 kg → 0,3 mg ; > 40 kg → 0,5 mg. Ampoule 1 mg/mL. 2ᵉ dose à 5 min si les symptômes persistent.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"adr_aero_ped", nom:"Adrénaline (aérosol)", indication:"Laryngite / anaphylaxie (voie inhalée)", voie:"Aérosol", isAerosol:true, unite:"mg", frequence:"Renouvelable selon évolution", remarques:"Ampoule 5 mg/5 mL (1 mg/mL). Posologie 0,5 mg/kg (max 5 mg). Surveillance : fréquence cardiaque, efficacité respiratoire. Effet transitoire → surveiller l'effet rebond.", categorie:"aerosols", color:"#0EA5E9" },
-  { id:"act_ped",   nom:"Acide tranexamique (Exacyl)",      indication:"Hémorragie traumatique",      voie:"IVL 10 min",     dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:10, doseSup:15 }, unite:"mg",  concentration:"100 mg/mL (0,5 g / 5 mL)", concentration_value:100, frequence:"Dose unique", dilutionSeuil:{ seuilPoids:30, volInf:"50 mL", volSup:"100 mL" }, remarques:"Posologie : ≤ 10 kg → 10 mg/kg ; > 10 kg → 15 mg/kg. Prélever le volume nécessaire et diluer dans une poche de NaCl 0,9% (50 mL si ≤ 30 kg, 100 mL si > 30 kg).", categorie:"hemodynamique", color:"#B91C1C" },
+  { id:"act_ped",   nom:"Acide tranexamique (Exacyl)",      indication:"Hémorragie traumatique",      voie:"IVL 10 min puis IVSE",     dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:10, doseSup:15 }, unite:"mg",  concentration:"100 mg/mL (0,5 g / 5 mL)", concentration_value:100, frequence:"Bolus unique, puis entretien", dilutionSeuil:{ seuilPoids:30, volInf:"50 mL", volSup:"100 mL" }, remarques:"Bolus : ≤ 10 kg → 10 mg/kg ; > 10 kg → 15 mg/kg. Prélever le volume nécessaire et diluer dans une poche de NaCl 0,9% (50 mL si ≤ 30 kg, 100 mL si > 30 kg), à passer en 10 min. PUIS entretien : 2 mg/kg/h en IVSE pendant 8h.", categorie:"hemodynamique", color:"#B91C1C" },
   { id:"striadyne_ped", nom:"Striadyne (Triphosadénine)", indication:"Tachycardie supraventriculaire", voie:"IVD FLASH", isStriadyne:true, unite:"mg", frequence:"AR si besoin", remarques:"Ampoule 20 mg / 2 mL. Posologie : 0,5 mg/kg (1ère dose) puis 1 mg/kg à 3 min (max 20 mg/dose). Prévenir le patient (sensation de malaise brève). Scope + défibrillateur à proximité.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"cordarone_ped", nom:"Amiodarone (Cordarone)",       indication:"Trouble du rythme / ACR rythmes chocables", voie:"IVD / IVL", dose_par_kg:5, unite:"mg", concentration:"50 mg/mL (2 amp pures = 300 mg/6 mL)", concentration_value:50, frequence:"ACR : après le 3ᵉ choc", remarques:"Posologie : 5 mg/kg. Préparation : 2 ampoules pures = 300 mg / 6 mL (50 mg/mL). Ampoule 150 mg/3 mL.", categorie:"hemodynamique", color:"#DC2626" },
-  { id:"atropine_ped", nom:"Atropine", indication:"Bradycardie / prémédication", voie:"IVD flash", isAtropine:true, unite:"mg", frequence:"Renouvelable si besoin", remarques:"Ampoule 0,5 mg/1 mL. Posologie 0,02 mg/kg (max 0,5 mg). ≤ 20 kg : diluer à 0,1 mg/mL ; > 20 kg : pur.", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"atropine_ped", nom:"Atropine", indication:"Bradycardie / prémédication", voie:"IVD flash", isAtropine:true, unite:"mg", frequence:"Renouvelable si besoin", remarques:"Ampoule 0,5 mg/1 mL. Posologie 0,02 mg/kg (dose minimale 0,1 mg, maximale 0,5 mg). ≤ 20 kg : diluer à 0,1 mg/mL ; > 20 kg : pur.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"bicar_ped", nom:"Bicarbonate de sodium 4,2%", indication:"Intoxication grave aux stabilisants de membrane", voie:"IVL", isVolumeParKg:true, mlParKg:2, unite:"mL", frequence:"Jusqu'à normalisation des QRS", remarques:"Flacon 250 mL. Posologie 2 mL/kg en IVL, à passer jusqu'à normalisation des QRS. Pur.", categorie:"antidotes", color:"#059669" },
   { id:"cyanokit_ped", nom:"Hydroxocobalamine (Cyanokit)", indication:"Intoxication au cyanure (fumées d'incendie)", voie:"Perfusion IV", isCyanokit:true, unite:"mg", frequence:"Sur 10 min", remarques:"Flacon poudre 5 g. Posologie 70 mg/kg sans dépasser 5 g, sur 10 min. Reconstituer avec 200 mL NaCl 0,9% (25 mg/mL).", categorie:"antidotes", color:"#059669" },
   { id:"diazepam_ir_ped", nom:"Diazépam (Valium) intrarectal", indication:"Crise convulsive", voie:"Intrarectal", dose_par_kg:0.5, unite:"mg", dose_max:10, concentration:"5 mg/mL (10 mg / 2 mL)", concentration_value:5, arrondiVolume:0.1, frequence:"Dose unique", remarques:"Ampoule 10 mg/2 mL, pure. Posologie 0,5 mg/kg en intrarectal sans dépasser 10 mg. Administrer avec une canule/seringue adaptée.", categorie:"antiepileptique", color:"#9333EA" },
 
   // ── Analgésie ──────────────────────────────────────────────────────────
-  { id:"mor_ped",   nom:"Morphine",                indication:"Douleur modérée à sévère",    voie:"IVD titration",  dose_par_kg:0.1,  unite:"mg",  dose_max:10,   concentration:"1 mg/mL (10 mg/10 mL)", concentration_value:1, frequence:"Puis 0,05 mg/kg toutes les 5 min si besoin", remarques:"Diluer 1 amp 10 mg/1 mL dans 9 mL NaCl 0,9% = 1 mg/mL. Max = dose adulte.", categorie:"analgesie", color:"#7C3AED" },
+  { id:"mor_ped",   nom:"Morphine",                indication:"Douleur modérée à sévère (> 6 mois)",    voie:"IVD titration",  dose_par_kg:0.1,  unite:"mg",  dose_max:10,   concentration:"1 mg/mL (10 mg/10 mL)", concentration_value:1, frequence:"Puis 0,05 mg/kg toutes les 5 min si besoin", remarques:"Protocole valable à partir de 6 mois. Diluer 1 amp 10 mg/1 mL dans 9 mL NaCl 0,9% = 1 mg/mL. Max = dose adulte.", categorie:"analgesie", color:"#7C3AED" },
   { id:"ketan_a",   nom:"Kétamine (low dose — analgésie)", indication:"Analgésie — geste douloureux", voie:"IVDL",          dose_par_kg:0.2,  unite:"mg",  dose_max:50,   concentration:"10 mg/mL (amp 50 mg/5 mL)", concentration_value:10, frequence:"Dose unique avant geste", remarques:"Low dose analgésie : 0,2 mg/kg. Prélever 2 mL (soit 20 mg) de l'ampoule de 50 mg/5 mL = concentration 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
-  { id:"para_ped",  nom:"Paracétamol",             indication:"Antalgique / antipyrétique",  voie:"Per os / IV",    dose_par_kg:15,   unite:"mg",  dose_max:1000, concentration:"10 mg/mL (IV : 500 mg/50 mL)", concentration_value:10, frequence:"Toutes les 6h", remarques:"15 mg/kg/6h (per os ou IV). Max 1 g par prise et 60 mg/kg/j. Voie IV : flacon 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
+  { id:"para_ped",  nom:"Paracétamol",             indication:"Antalgique / antipyrétique",  voie:"Per os / IV",    dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:7.5, doseSup:15 }, unite:"mg",  dose_max:1000, concentration:"10 mg/mL (IV : 500 mg/50 mL)", concentration_value:10, frequence:"Toutes les 6h", remarques:"≤ 10 kg (nouveau-né/nourrisson) → 7,5 mg/kg/6h ; > 10 kg → 15 mg/kg/6h. Max 1 g par prise et 60 mg/kg/j. Voie IV : flacon 10 mg/mL.", categorie:"analgesie", color:"#7C3AED" },
   { id:"advil_ped", nom:"Ibuprofène (Advil)", indication:"Antalgique / antipyrétique", voie:"Per os", dose_par_kg:7.5, unite:"mg", dose_max:300, concentration:"20 mg/mL (suspension buvable)", concentration_value:20, arrondiVolume:0.1, frequence:"Toutes les 6-8h", alerte:"⛔ Contre-indiqué avant 3 mois (< 7 kg)", remarques:"Suspension buvable 20 mg/mL. Posologie 7,5 mg/kg/prise (max 300 mg/prise). Prélever le volume avec la seringue dédiée. À prendre au cours d'un repas.", categorie:"analgesie", color:"#7C3AED" },
   // ── ISR ────────────────────────────────────────────────────────────────
   { id:"ketan_i",   nom:"Kétamine ISR",             indication:"Induction séquence rapide",  voie:"IVD",            dose_par_kg:3,    unite:"mg",  dose_max:200,  concentration:"10 mg/mL (200 mg/20 mL)", concentration_value:10, frequence:"Dose unique — induction", remarques:"ISR : 3 mg/kg. Préparation : prélever 200 mg (soit 4 mL) de l'ampoule 250 mg/5 mL, puis compléter à 20 mL avec du NaCl 0,9% dans une seringue de 20 mL = 10 mg/mL. À partir de 24 mois : étomidate préférable si choc absent.", categorie:"isr", color:"#0891B2" },
   { id:"eto_ped",   nom:"Étomidate ISR",             indication:"Induction (> 24 mois)",      voie:"IVD",            dose_par_kg:0.3,  unite:"mg",  dose_max:20,   concentration:"2 mg/mL (20 mg/10 mL)", concentration_value:2, frequence:"Dose unique — induction", alerte:"⛔ Non recommandé chez l'enfant < 2 ans", remarques:"Disponible à partir de 24 mois. Non recommandé < 2 ans.", categorie:"isr", color:"#0891B2" },
-  { id:"sux_ped",   nom:"Suxaméthonium",            indication:"Curarisation ISR (< 8 ans)", voie:"IVD",            dose_par_kg:2,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (100 mg/10 mL)", concentration_value:10, frequence:"Dose unique", remarques:"À partir de 8 ans : réduire à 1 mg/kg. Diluer amp 100 mg/2 mL dans 8 mL NaCl.", categorie:"isr", color:"#0891B2" },
-  { id:"roc_ped",   nom:"Rocuronium",               indication:"Curarisation ISR",           voie:"IVD",            dose_par_kg:1,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (50 mg/5 mL)", concentration_value:10, frequence:"Dose unique", remarques:"Antidote : sugammadex 16 mg/kg. Flacon pur 50 mg/5 mL.", categorie:"isr", color:"#0891B2" },
   { id:"celo_ped",  nom:"Suxaméthonium (Célocurine)", indication:"Curarisation ISR",         voie:"IVD",            dose_par_kg:2,    doseParKgPaliers:[ {max:11, dose:2, label:"≤ 11 kg"}, {max:25, dose:1.5, label:"12–25 kg"}, {max:null, dose:1, label:"> 25 kg"} ], unite:"mg", dose_max:100, concentration:"50 mg/mL (100 mg/2 mL)", concentration_value:50, frequence:"Dose unique", remarques:"Posologie selon poids : ≤ 11 kg → 2 mg/kg ; 12–25 kg → 1,5 mg/kg ; > 25 kg → 1 mg/kg. Ampoule 100 mg/2 mL (50 mg/mL). CI : hyperkaliémie, brûlés, crush.", categorie:"isr", color:"#0891B2" },
+  { id:"roc_ped",   nom:"Rocuronium",               indication:"Curarisation ISR",           voie:"IVD",            dose_par_kg:1,    unite:"mg",  dose_max:100,  concentration:"10 mg/mL (50 mg/5 mL)", concentration_value:10, frequence:"Dose unique", remarques:"Antidote : sugammadex 16 mg/kg. Flacon pur 50 mg/5 mL.", categorie:"isr", color:"#0891B2" },
   // ── Sédation ───────────────────────────────────────────────────────────
   { id:"ketan_s",   nom:"Kétamine sédation",         indication:"Sédation procédurale",       voie:"IVDL",           dose_par_kg:0.5,  unite:"mg",  dose_max:100,  concentration:"Concentration selon poids ↓", concentration_value:null, concParPoidsSeuil:{ seuilPoids:20, concInf:1, concSup:5 }, frequence:"Dose unique", remarques:"Sédation procédurale : 0,5 mg/kg. Préparation selon poids — < 20 kg (1 mg/mL) : seringue de 20 mL, prélever 20 mg (2 mL de l'amp 50 mg/5 mL ou 0,4 mL de l'amp 250 mg/5 mL) et compléter à 20 mL avec NaCl 0,9%. 20–50 kg (5 mg/mL) : seringue de 20 mL, prélever 100 mg (2 amp de 50 mg/5 mL ou 2 mL de l'amp 250 mg/5 mL) et compléter à 20 mL avec NaCl 0,9%. Titrer selon effet.", categorie:"sedation", color:"#6366F1" },
   { id:"mid_ped",   nom:"Midazolam sédation",        indication:"Sédation — entretien",       voie:"PSE",            dose_par_kg:0.1,  unite:"mg/kg/h", dose_max:null, concentration:"1 mg/mL (50 mg/50 mL)", concentration_value:1, frequence:"Débuter 0,1 mg/kg/h — max 0,3 mg/kg/h", remarques:"Diluer 50 mg/10 mL dans 40 mL NaCl 0,9% = 1 mg/mL", categorie:"sedation", color:"#6366F1" },
   { id:"suf_ped",   nom:"Sufentanil entretien sédation", indication:"Sédation — entretien",     voie:"PSE",          dose_par_kg:0.1,  unite:"µg/kg/h",  dose_max:null,   concentration:"1 µg/mL (50 µg/50 mL)", concentration_value:1, frequence:"Débuter 0,1 µg/kg/h", remarques:"Entretien sédation : 0,1 µg/kg/h. On peut augmenter jusqu'à 0,3 µg/kg/h. Diluer 50 µg/10 mL dans 40 mL NaCl 0,9% = 1 µg/mL. Volume affiché = débit en mL/h.", categorie:"sedation", color:"#6366F1" },
-  { id:"cis_ped",   nom:"Cisatracurium",             indication:"Curarisation entretien",     voie:"BOLUS/Entretien", dose_par_kg:0.15, unite:"mg", dose_max:20,   concentration:"0,5 mg/mL (10 mg/20 mL)", concentration_value:0.5, frequence:"Entretien : 0,05 mg/kg toutes les 20 min", remarques:"Diluer amp 10 mg/5 mL dans 15 mL NaCl 0,9% = 0,5 mg/mL", categorie:"sedation", color:"#6366F1" },
+  { id:"cis_ped",   nom:"Cisatracurium",             indication:"Curarisation (induction)",     voie:"IVD", dose_par_kg:0.15, unite:"mg", dose_max:20,   concentration:"0,5 mg/mL (10 mg/20 mL)", concentration_value:0.5, frequence:"Dose unique", remarques:"Diluer amp 10 mg/5 mL dans 15 mL NaCl 0,9% = 0,5 mg/mL.", categorie:"sedation", color:"#6366F1" },
   // ── Osmothérapie ───────────────────────────────────────────────────────
-  { id:"ssh_ped",   nom:"SSH 3%",                   indication:"HTIC — hyponatrémie sévère", voie:"IVDL 5 min",     dose_par_kg:3,    unite:"mL",  dose_max:150,  concentration:"Solution à 3%", concentration_value:null, frequence:"Dose unique, renouvelable", remarques:"Reconstituer : 100 mL NaCl 0,9% + 10 mL NaCl 20% = SSH 3%.", categorie:"osmotherapie", color:"#CA8A04" },
+  { id:"ssh_ped",   nom:"SSH 3%",                   indication:"HTIC — hyponatrémie sévère", voie:"IVDL 5 min",     dose_par_kg:3,    unite:"mL",  dose_max:150,  concentration:"Solution à 3%", concentration_value:null, frequence:"Dose unique, renouvelable", remarques:"Reconstituer : 90 mL NaCl 0,9% + 10 mL NaCl 20% = SSH 3%.", categorie:"osmotherapie", color:"#CA8A04" },
   { id:"man_ped",   nom:"Mannitol 20%",              indication:"HTIC",                       voie:"IVDL 10 min",    dose_par_kg:3,    unite:"mL",  dose_max:150,  concentration:"Solution à 20%", concentration_value:null, frequence:"Dose unique", remarques:"Poche 250 mL : retirer le volume non utilisé selon poids. Voir cartes.", categorie:"osmotherapie", color:"#CA8A04" },
   // ── Antibiotique ───────────────────────────────────────────────────────
   { id:"amx_ped",   nom:"Amoxicilline-Ac. clavulanique", indication:"Infection — sepsis",    voie:"IVL 30 min",     dose_par_kg:50,   unite:"mg",  dose_max:3000, concentration:"Variable selon flacon (50 mg/mL)", concentration_value:50, frequence:"Toutes les 8h", remarques:"Reconstituer chaque flacon dans 10 mL EPPI. Voir cartes pour volume.", categorie:"antibiotique", color:"#EA580C" },
@@ -30139,14 +30138,14 @@ function DoseRow({ label, value, C, color, bold }) {
 const PEDIA_MEDS_IN = [
   {
     id:"suf_in_ped", nom:"Sufentanil (intranasal)",
-    unite:"µg", doseMin:0.5, doseMax:0.5,
-    doseAdditionnelle:0.25,
+    unite:"µg", doseMin:0.3, doseMax:0.3,
+    doseAdditionnelle:0.15,
     // ≤ 10 kg : ampoule 10 µg/2 mL = 5 µg/mL ; > 10 kg : 250 µg/5 mL = 50 µg/mL
     concPetit:5, concGrand:50,
     ampPetit:"10 µg / 2 mL (≤ 10 kg)", ampGrand:"250 µg / 5 mL (> 10 kg)",
     color:"#7C3AED",
     infoExtra:true,
-    remarques:"Utiliser pur. Dose additionnelle : demi-dose, soit 0,25 µg/kg. Atomiseur MAD. +0,1 mL espace mort inclus.",
+    remarques:"Utiliser pur. Dose additionnelle : demi-dose, soit 0,15 µg/kg après 10 min. Atomiseur MAD. +0,1 mL espace mort inclus.",
   },
   {
     id:"midaz_in_sed_ped", nom:"Midazolam IN — Anxiolyse",
@@ -30389,11 +30388,13 @@ function PediaAtropineCard({ medic, poids, color }) {
   const dilue = poids <= 20;            // ≤ 20 kg : dilué
   const conc = dilue ? 0.1 : 0.5;       // mg/mL
   const doseMax = 0.5;                  // mg
+  const doseMin = 0.1;                  // mg — dose minimale (une dose trop faible peut aggraver la bradycardie)
   const brute = 0.02 * poids;           // 0,02 mg/kg
-  const dosePlaf = Math.min(brute, doseMax);
+  const dosePlaf = Math.min(Math.max(brute, doseMin), doseMax);
   const dose = Math.round(dosePlaf * 100) / 100;        // dose en mg (2 déc, doses fines)
   const vol = Math.round((dosePlaf / conc) * 10) / 10;  // volume au 0,1 le plus proche
   const capped = brute > doseMax;
+  const floored = brute < doseMin;
 
   return (
     <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
@@ -30422,6 +30423,7 @@ function PediaAtropineCard({ medic, poids, color }) {
         </div>
         <div style={{fontSize:10, color:C.sub, marginTop:4}}>0,02 mg/kg × {poids} kg</div>
         {capped && <div style={{marginTop:4, fontSize:11, fontWeight:800, color:"#DC2626"}}>⚠️ Dose plafonnée à {doseMax} mg</div>}
+        {floored && <div style={{marginTop:4, fontSize:11, fontWeight:800, color:"#D97706"}}>⚠️ Dose relevée au minimum de {doseMin} mg (une dose trop faible peut aggraver la bradycardie)</div>}
       </div>
 
       {/* Préparation selon poids */}
@@ -32017,11 +32019,11 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"PSE — voie dédiée",
     isPSETable:true,
     concentrationUgMl:5000, // 250 mg dans 50 mL = 5 mg/mL = 5000 µg/mL
-    dosePaliers:[2, 5, 7.5, 10, 12.5, 15, 20],
-    posologieLabel:"2 à 20 µg/kg/min",
+    dosePaliers:[5, 7.5, 10, 12.5, 15, 20],
+    posologieLabel:"5 à 20 µg/kg/min",
     preparation:"Seringue de 50 mL : prélever 1 flacon de 250 mg (20 mL) et compléter à 50 mL avec du SG5%. → 5 mg/mL.",
     indication:"Syndrome de bas débit cardiaque (catécholamine inotrope positive).",
-    remarques:"Débuter à la dose la plus faible possible (2 µg/kg/min), titrer selon la réponse hémodynamique. CI : cardiomyopathie obstructive, RA serré, hypersensibilité. Voie dédiée de bon calibre, ne pas arrêter brutalement, prévoir relais entre seringues. Veinotoxicité +++.",
+    remarques:"5 à 20 µg/kg/min. CI : cardiomyopathie obstructive, RA serré, hypersensibilité. Voie dédiée de bon calibre, ne pas arrêter brutalement, prévoir relais entre seringues. Veinotoxicité +++.",
     color:"#DC2626",
   },
   {
@@ -32394,7 +32396,7 @@ const CALC_ADULTE_MEDICAMENTS = [
     voie:"IVD puis perfusion",
     isProtocole:true,
     indication:"Toxicité systémique des anesthésiques locaux (LAST) : convulsions, troubles du rythme, arrêt cardiaque.",
-    remarques:"Bolus unique de 3 mL/kg en IV, sur environ 1 min. Pas de perfusion continue nécessaire (protocole SFMU). Poursuivre la RCP en parallèle si ACR. Répéter le bolus si besoin selon la réponse clinique.",
+    remarques:"Seuil de poids à 70 kg. Bolus IVD (ne dépassant pas 100 mL) puis perfusion d'entretien. Poursuivre la RCP en parallèle si ACR. Répéter le bolus 1-2× si besoin selon protocole LAST.",
     color:"#059669",
   },
   {
@@ -32459,10 +32461,10 @@ const CALC_ADULTE_MEDICAMENTS = [
     nom:"Flumazénil (Anexate)", amp:"0,5 mg / 5 mL", concentration:0.1,
     voie:"IVDL", isDoseFixe:true,
     variantes:[
-      { label:"Bolus initial", prepa:"Pure — 0,1 mg/mL.", dose:0.2, unite:"mg", volume:2 },
+      { label:"Bolus (titration)", prepa:"Pure — 0,1 mg/mL.", dose:0.1, unite:"mg", volume:1 },
     ],
     indication:"Antagonisation des benzodiazépines.",
-    remarques:"Bolus initial 0,2 mg (2 mL) en IVDL sur 15 sec. Si besoin, doses de 0,1 mg répétables toutes les 30-60 sec jusqu'à obtention d'une conscience et FR > 14/min. Max 2 mg au total. Si le bolus est efficace, relais possible en entretien PSE : 2 ampoules (1 mg) complétées avec 40 mL de NaCl 0,9% (50 mL au total) → 0,02 mg/mL. Débit horaire de l'entretien = dose de titration qui s'est révélée efficace.",
+    remarques:"Bolus 0,1 mg (1 mL) en IVDL toutes les 30 secondes jusqu'à obtention d'une conscience et FR > 14/min. Max 2 mg au total. Si le bolus est efficace, relais possible en entretien PSE : 2 ampoules (1 mg) complétées avec 40 mL de NaCl 0,9% (50 mL au total) → 0,02 mg/mL. Débit horaire de l'entretien = dose de titration qui s'est révélée efficace.",
     color:"#059669",
   },
   {
@@ -32480,13 +32482,12 @@ const CALC_ADULTE_MEDICAMENTS = [
   {
     id:"exacyl_adulte", cat:"antidote", groupe:"Hémostatique",
     nom:"Acide tranexamique (Exacyl)", amp:"0,5 g / 5 mL",
-    voie:"IVL puis IVSE", isDoseFixe:true,
+    voie:"IVL 10 min", isDoseFixe:true,
     variantes:[
-      { label:"Bolus initial", prepa:"Prélever 2 ampoules (1 g) et diluer dans une poche de 100 mL de NaCl 0,9%. À passer en 10 min.", dose:1, unite:"g" },
-      { label:"Puis entretien IVSE", prepa:"Prélever 2 ampoules (1 g) et diluer dans une seringue de 50 mL de NaCl 0,9%.", texteLibre:"1 g sur 8h, soit un débit de 6,25 mL/h (≈ 125 mg/h)." },
+      { label:"Dose unique", prepa:"Prélever 2 ampoules (1 g) et diluer dans une poche de 100 mL de NaCl 0,9%. À passer en 10 min.", dose:1, unite:"g" },
     ],
     indication:"Hémorragie traumatique (CRASH-2, dans les 3h du traumatisme).",
-    remarques:"Protocole CRASH-2 (grade 1+) : bolus 1 g IVL sur 10 min, suivi d'un entretien de 1 g sur 8h en IVSE.",
+    remarques:"1 g IVL sur 10 min.",
     color:"#059669",
   },
   {
@@ -32943,8 +32944,18 @@ function CalcAdulteThrombolyseCard({ medic, poids, color }) {
 function CalcAdulteProtocoleCard({ medic, poids, color }) {
   const C = useC();
 
-  // Intralipide LAST : protocole SFMU — bolus seul, pas de perfusion continue nécessaire
-  const bolus = { valeur: `${Math.round(3 * poids * 10) / 10} mL`, detail: `3 mL/kg × ${poids} kg` };
+  // Intralipide LAST : seuil à 70 kg
+  const lourd = poids >= 70;
+
+  // Bolus initial
+  const bolus = lourd
+    ? { valeur: "100 mL", detail: "dose plafonnée (poids ≥ 70 kg)" }
+    : { valeur: `${Math.round(1.5 * poids * 10) / 10} mL`, detail: `1,5 mL/kg × ${poids} kg` };
+
+  // Perfusion
+  const perf = lourd
+    ? { valeur: "250 mL en 15-20 min", detail: "poids ≥ 70 kg" }
+    : { valeur: `${Math.round(0.25 * poids * 10) / 10} mL/min`, detail: `0,25 mL/kg/min × ${poids} kg` };
 
   return (
     <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
@@ -32969,14 +32980,25 @@ function CalcAdulteProtocoleCard({ medic, poids, color }) {
         Protocole pour <span style={{color, fontWeight:900}}>{poids} kg</span>
       </div>
 
-      {/* Bolus */}
-      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
+      {/* Temps 1 : Bolus */}
+      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden", marginBottom:8}}>
         <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>
-          BOLUS IVD (sur 1 min)
+          1️⃣ BOLUS INITIAL (IVD)
         </div>
         <div style={{padding:"10px 12px"}}>
           <div style={{fontSize:18, fontWeight:900, color:C.text}}>{bolus.valeur}</div>
           <div style={{fontSize:11, color:C.sub, marginTop:2}}>{bolus.detail}</div>
+        </div>
+      </div>
+
+      {/* Temps 2 : Perfusion */}
+      <div style={{border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden"}}>
+        <div style={{background:color+"15", padding:"7px 12px", fontSize:11, fontWeight:800, color}}>
+          2️⃣ PUIS PERFUSION
+        </div>
+        <div style={{padding:"10px 12px"}}>
+          <div style={{fontSize:18, fontWeight:900, color:C.text}}>{perf.valeur}</div>
+          <div style={{fontSize:11, color:C.sub, marginTop:2}}>{perf.detail}</div>
         </div>
       </div>
 
