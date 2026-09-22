@@ -2220,35 +2220,25 @@ function MediaGallery({ medias }) {
 }
 
 // - Recherche globale -
-function useGlobalSearch() {
+function useGlobalSearch(store) {
   const [allData, setAllData] = useState(null);
   useEffect(()=>{
-    (async()=>{
-      const base = {
-        ecgs: ECGS,
-        retex: [],
-        divers: DIVERS,
-        agenda: AGENDA,
-        annuaire: [],
-        imagerie: [],
-        dilutions: DILUTIONS,
-        gestes: GESTES,
-        scores: SCORES_LIST,
-        quizzes: [],
-        recoflash: [],
-      };
-      try { const r=await safeGet("admin_ecgs");        if(r) base.ecgs=[...ECGS,...JSON.parse(r.value)]; } catch(e){}
-      try { const rows = await supaFetch("/retex?order=ts.desc"); base.retex = Array.isArray(rows) ? rows.map(r => rowToItem("retex", r)) : []; } catch(e){}
-      try { const r=await safeGet("admin_divers");      if(r) base.divers=[...DIVERS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_agenda");      if(r) base.agenda=[...AGENDA,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_imagerie");    if(r) base.imagerie=JSON.parse(r.value); } catch(e){}
-      try { const r=await safeGet("admin_dilutions");   if(r) base.dilutions=[...DILUTIONS,...JSON.parse(r.value)]; } catch(e){}
-      try { const r=await safeGet("admin_contacts");    if(r) base.annuaire=JSON.parse(r.value); } catch(e){}
-      try { const r=await safeGet("admin_quizzes");     if(r) base.quizzes=JSON.parse(r.value); } catch(e){}
-      try { const r=await safeGet("admin_recoflash");   if(r) base.recoflash=JSON.parse(r.value); } catch(e){}
-      setAllData(base);
-    })();
-  },[]);
+    if (!store || !store.loaded) return;
+    const base = {
+      ecgs: [...ECGS, ...(store.ecgs||[])],
+      retex: store.retex||[],
+      divers: [...DIVERS, ...(store.divers||[])],
+      agenda: [...AGENDA, ...(store.agenda||[])],
+      annuaire: store.contacts||[],
+      imagerie: store.imagerie||[],
+      dilutions: [...DILUTIONS, ...(store.dilutions||[])],
+      gestes: [...GESTES, ...(store.gestes||[])],
+      scores: SCORES_LIST,
+      quizzes: store.quizzes||[],
+      recoflash: store.recoflash||[],
+    };
+    setAllData(base);
+  },[store]);
   return allData;
 }
 
@@ -2409,9 +2399,9 @@ function HomeScreen({onNav}) {
   const C = useC();
   const [query, setQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
-  const allData = useGlobalSearch();
-  const { favoris } = useFavoris();
   const { store } = useData();
+  const allData = useGlobalSearch(store);
+  const { favoris } = useFavoris();
   const inputRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -7605,10 +7595,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
       showSaved("ECG modifié !");
     } else {
       const item = {...eForm, id:Date.now(), tags, points, revealed:false, color:"#E05260"};
-      await addItem("ecgs","admin_ecgs",item,["image","image2"]);
+      const newItem = await addItem("ecgs","admin_ecgs",item,["image","image2"]);
       setEForm(ecgReset); setEcgConfirmed(false);
       showSaved("ECG ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
+      if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
   }
 
@@ -7625,10 +7615,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
         showSaved("Cas modifié !");
       } else {
         const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
-        await addItem("imagerie","admin_imagerie",item,["image"]);
+        const newItem = await addItem("imagerie","admin_imagerie",item,["image"]);
         setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""}); setImagerieConfirmed(false);
         showSaved("Cas ajouté !");
-        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
+        if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
       }
     } finally {
       setSubmittingKey(null);
@@ -7646,10 +7636,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
       showSaved("Événement modifié !");
     } else {
       const item = {...aForm, id:Date.now(), tags, color:colors[aForm.type]||C.blue};
-      await addItem("agenda","admin_agenda",item,["image"]);
+      const newItem = await addItem("agenda","admin_agenda",item,["image"]);
       setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
       showSaved("Événement ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
+      if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
     }
   }
 
@@ -7663,10 +7653,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
       showSaved("Fiche modifiée !");
     } else {
       const item = {...dForm, id:Date.now(), tags};
-      await addItem("divers","admin_divers",item,["image"]);
+      const newItem = await addItem("divers","admin_divers",item,["image"]);
       setDForm({title:"",categorie:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
       showSaved("Fiche ajoutée !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
+      if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
     }
   }
 
@@ -7674,11 +7664,11 @@ function AdminScreenInner({ onNewItem, onBack }) {
     if(!rForm.title.trim()) return;
     const tags = (rForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
-    await addRetexItem(item);
+    const newItem = await addRetexItem(item);
     setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",evolution:"",medias:[]});
     setRetexAdminConfirmed(false);
     showSaved("Publication ajoutée !");
-    if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
+    if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
   }
 
   async function addGeste() {
@@ -7697,10 +7687,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
       showSaved("Geste modifié !");
     } else {
       const item = {...gForm, id:Date.now(), tags, ...parsed};
-      await addItem("gestes","admin_gestes",item,["image"]);
+      const newItem = await addItem("gestes","admin_gestes",item,["image"]);
       setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste ajouté !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
+      if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
   }
 
@@ -7714,10 +7704,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
       showSaved("Dilution modifiée !");
     } else {
       const item = {...dilForm, id:Date.now(), tags, color:dilForm.color||"#E05260"};
-      await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
+      const newItem = await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution ajoutée !");
-      if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
+      if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
   }
 
@@ -7732,10 +7722,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
         showSaved("Reco modifiée !");
       } else {
         const item = {...rfForm, id:Date.now(), tags};
-        await addItem("recoflash","admin_recoflash",item,[]);
+        const newItem = await addItem("recoflash","admin_recoflash",item,[]);
         setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
         showSaved("Reco ajoutée !");
-        if(onNewItem) onNewItem({id:item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
+        if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
       }
     } catch(e) {
       console.error("addRecoflash error", e);
@@ -7772,10 +7762,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
         showSaved("Quiz modifié !");
       } else {
         const item = {...payload, id:Date.now()};
-        await addItem("quizzes","admin_quizzes",item,[]);
+        const newItem = await addItem("quizzes","admin_quizzes",item,[]);
         setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""});
         showSaved("Quiz ajouté !");
-        if(onNewItem) onNewItem({id:item.id,title:item.title,icon:"🧠",color:"#6366F1",nav:"quiz"});
+        if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🧠",color:"#6366F1",nav:"quiz"});
       }
     } catch(e) {
       console.error("addQuiz error", e);
@@ -8184,8 +8174,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
               onSubmit={async (form)=>{
                 const tags = (typeof form.tags==="string" ? form.tags : (form.tags||[]).join(" ")).split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
                 const item = {...form, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
-                await addRetexItem(item);
-                if(onNewItem) onNewItem({title:form.type==="recit"?"Nouveau cas clinique":"Nouveau RETEX", body:item.title, icon:form.type==="recit"?"📖":"🔬", nav:"retex", ref_id:item.id});
+                const newItem = await addRetexItem(item);
+                if(onNewItem) onNewItem({title:form.type==="recit"?"Nouveau cas clinique":"Nouveau RETEX", body:item.title, icon:form.type==="recit"?"📖":"🔬", nav:"retex", ref_id:(newItem&&newItem.id)||item.id});
               }}
               onCancel={()=>setTab("home")}
             />
@@ -30086,6 +30076,7 @@ const PEDIA_MEDICAMENTS_DATA = [
   { id:"striadyne_ped", nom:"Striadyne (Triphosadénine)", indication:"Tachycardie supraventriculaire", voie:"IVD FLASH", isStriadyne:true, unite:"mg", frequence:"AR si besoin", remarques:"Ampoule 20 mg / 2 mL. Posologie : 0,5 mg/kg (1ère dose) puis 1 mg/kg à 3 min (max 20 mg/dose). Prévenir le patient (sensation de malaise brève). Scope + défibrillateur à proximité.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"cordarone_ped", nom:"Amiodarone (Cordarone)",       indication:"Trouble du rythme / ACR rythmes chocables", voie:"IVD / IVL", dose_par_kg:5, unite:"mg", concentration:"50 mg/mL (2 amp pures = 300 mg/6 mL)", concentration_value:50, frequence:"ACR : après le 3ᵉ choc", remarques:"Posologie : 5 mg/kg. Préparation : 2 ampoules pures = 300 mg / 6 mL (50 mg/mL). Ampoule 150 mg/3 mL.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"atropine_ped", nom:"Atropine", indication:"Bradycardie / prémédication", voie:"IVD flash", isAtropine:true, unite:"mg", frequence:"Renouvelable si besoin", remarques:"Ampoule 0,5 mg/1 mL. Posologie 0,02 mg/kg (dose minimale 0,1 mg, maximale 0,5 mg). ≤ 20 kg : diluer à 0,1 mg/mL ; > 20 kg : pur.", categorie:"hemodynamique", color:"#DC2626" },
+  { id:"gluc_ped", nom:"Glucagon (Glucagen)", indication:"Hypoglycémie sévère (sans voie veineuse disponible)", voie:"IM ou SC", frequence:"< 25 kg (< 6-8 ans) → 0,5 mg ; ≥ 25 kg (> 6-8 ans) → 1 mg", remarques:"Diluer le flacon de 1 mg avec le solvant fourni (1 mL) → 1 mg/mL. À défaut, utiliser une seringue à tuberculine avec 1 mL d'EPPI. Correspond à 0,03 mg/kg.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"bicar_ped", nom:"Bicarbonate de sodium 4,2%", indication:"Intoxication grave aux stabilisants de membrane", voie:"IVL", isVolumeParKg:true, mlParKg:2, unite:"mL", frequence:"Jusqu'à normalisation des QRS", remarques:"Flacon 250 mL. Posologie 2 mL/kg en IVL, à passer jusqu'à normalisation des QRS. Pur.", categorie:"antidotes", color:"#059669" },
   { id:"cyanokit_ped", nom:"Hydroxocobalamine (Cyanokit)", indication:"Intoxication au cyanure (fumées d'incendie)", voie:"Perfusion IV", isCyanokit:true, unite:"mg", frequence:"Sur 10 min", remarques:"Flacon poudre 5 g. Posologie 70 mg/kg sans dépasser 5 g, sur 10 min. Reconstituer avec 200 mL NaCl 0,9% (25 mg/mL).", categorie:"antidotes", color:"#059669" },
   { id:"diazepam_ir_ped", nom:"Diazépam (Valium) intrarectal", indication:"Crise convulsive", voie:"Intrarectal", dose_par_kg:0.5, unite:"mg", dose_max:10, concentration:"5 mg/mL (10 mg / 2 mL)", concentration_value:5, arrondiVolume:0.1, frequence:"Dose unique", remarques:"Ampoule 10 mg/2 mL, pure. Posologie 0,5 mg/kg en intrarectal sans dépasser 10 mg. Administrer avec une canule/seringue adaptée.", categorie:"antiepileptique", color:"#9333EA" },
