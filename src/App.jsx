@@ -691,25 +691,27 @@ function AccountModal({ onClose }) {
           </div>
         </div>
 
-        {badgeSupported && (
-          <div style={{marginBottom:18}}>
-            <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Badge de notifications</div>
-            {notifPerm === "granted" ? (
-              <div style={{background:C.greenLight, color:C.green, borderRadius:10, padding:"10px 12px", fontSize:12, fontWeight:600}}>
-                ✓ Activé — le badge s'affiche sur l'icône de l'app
-              </div>
-            ) : notifPerm === "denied" ? (
-              <div style={{background:C.redLight, color:C.red, borderRadius:10, padding:"10px 12px", fontSize:11.5, lineHeight:1.5}}>
-                Refusé. Pour l'activer, va dans les réglages Notifications de ton téléphone pour cette app.
-              </div>
-            ) : (
-              <button onClick={handleEnableBadge} style={{
-                width:"100%", background:C.blueLight, color:C.blue, border:`1px solid ${C.blue}44`,
-                borderRadius:10, padding:"10px 12px", fontSize:12, fontWeight:700, cursor:"pointer",
-              }}>🔔 Activer le badge sur l'icône</button>
-            )}
-          </div>
-        )}
+        <div style={{marginBottom:18}}>
+          <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Badge de notifications</div>
+          {!badgeSupported ? (
+            <div style={{background:C.border, color:C.sub, borderRadius:10, padding:"10px 12px", fontSize:11.5, lineHeight:1.5}}>
+              Non disponible sur ce navigateur/appareil. Sur iPhone, installe l'app depuis Safari (Partager → Sur l'écran d'accueil) pour activer cette fonctionnalité.
+            </div>
+          ) : notifPerm === "granted" ? (
+            <div style={{background:C.greenLight, color:C.green, borderRadius:10, padding:"10px 12px", fontSize:12, fontWeight:600}}>
+              ✓ Activé — le badge s'affiche sur l'icône de l'app
+            </div>
+          ) : notifPerm === "denied" ? (
+            <div style={{background:C.redLight, color:C.red, borderRadius:10, padding:"10px 12px", fontSize:11.5, lineHeight:1.5}}>
+              Refusé. Pour l'activer, va dans les réglages Notifications de ton téléphone pour cette app.
+            </div>
+          ) : (
+            <button onClick={handleEnableBadge} style={{
+              width:"100%", background:C.blueLight, color:C.blue, border:`1px solid ${C.blue}44`,
+              borderRadius:10, padding:"10px 12px", fontSize:12, fontWeight:700, cursor:"pointer",
+            }}>🔔 Activer le badge sur l'icône</button>
+          )}
+        </div>
 
         <div style={{fontSize:12, fontWeight:700, color:C.sub, marginBottom:8}}>Changer de mot de passe</div>
         <input type="password" value={pwd1} onChange={e=>setPwd1(e.target.value)} placeholder="Nouveau mot de passe"
@@ -36895,7 +36897,7 @@ function AppInner() {
       try {
         if (unreadCount > 0) await navigator.setAppBadge(unreadCount);
         else await navigator.clearAppBadge();
-      } catch(e) { /* silencieux : API non supportée ou refusée */ }
+      } catch(e) { console.error("[badge] setAppBadge/clearAppBadge a échoué :", e); }
     })();
   }, [unreadCount]);
 
