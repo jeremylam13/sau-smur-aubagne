@@ -15626,6 +15626,105 @@ function AvpuCalculator({ onBack }) {
 // RamsayCalculator : Score de Ramsay (sédation, 6 niveaux)
 // Cible thérapeutique courante : R2-R3 (patient calme, coopératif)
 // ────────────────────────────────────────────────────────────────────────────
+function GirCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#7C3AED";
+
+  // 5 variables discriminantes AGGIR les plus déterminantes, simplifiées pour un usage SMUR.
+  // Chaque item coté A (autonome) / B (aide partielle) / C (aide totale / absente).
+  const ITEMS = [
+    { key:"coherence", label:"Cohérence et orientation", options:[
+      { code:"A", label:"Cohérente et orientée" },
+      { code:"B", label:"Confuse ou désorientée par moments" },
+      { code:"C", label:"Incohérente ou désorientée en permanence" },
+    ]},
+    { key:"toilette", label:"Toilette et habillage", options:[
+      { code:"A", label:"Seul(e)" },
+      { code:"B", label:"Aide partielle" },
+      { code:"C", label:"Aide totale" },
+    ]},
+    { key:"alimentation", label:"Alimentation", options:[
+      { code:"A", label:"Seul(e)" },
+      { code:"B", label:"Aide partielle (servir, couper)" },
+      { code:"C", label:"Aide totale (faire manger)" },
+    ]},
+    { key:"elimination", label:"Élimination (urinaire/fécale)", options:[
+      { code:"A", label:"Seul(e), continent(e)" },
+      { code:"B", label:"Aide partielle ou incontinence occasionnelle" },
+      { code:"C", label:"Aide totale ou incontinence permanente" },
+    ]},
+    { key:"transferts", label:"Transferts et déplacements", options:[
+      { code:"A", label:"Seul(e)" },
+      { code:"B", label:"Aide partielle" },
+      { code:"C", label:"Aide totale / grabataire" },
+    ]},
+  ];
+
+  const [answers, setAnswers] = useState({});
+  const allAnswered = ITEMS.every(it => answers[it.key]);
+  const nbC = Object.values(answers).filter(v => v === "C").length;
+  const nbB = Object.values(answers).filter(v => v === "B").length;
+  const cCoherence = answers.coherence === "C";
+  const cTransferts = answers.transferts === "C";
+
+  // Estimation simplifiée : approximation du poids des variables les plus lourdes
+  // (cohérence et transferts comptent double, comme dans la logique AGGIR officielle
+  // où troubles cognitifs + dépendance physique sévère orientent vers les GIR les plus bas).
+  let gir, girLabel, girColor, girBg;
+  if (cCoherence && cTransferts)      { gir=1; girLabel="Dépendance totale, fonctions mentales gravement altérées"; girColor=C.red; girBg=C.redLight; }
+  else if (nbC >= 4 || (cTransferts && nbC>=2)) { gir=2; girLabel="Confiné(e) au lit/fauteuil ou fonctions mentales altérées, nécessite une aide pour la plupart des activités"; girColor=C.red; girBg=C.redLight; }
+  else if (nbC >= 2)                  { gir=3; girLabel="Autonomie corporelle partielle, aide plusieurs fois par jour pour les actes essentiels"; girColor=C.amber; girBg=C.amberLight; }
+  else if (nbC === 1 || nbB >= 3)     { gir=4; girLabel="Aide pour les transferts, la toilette et l'habillage ; alimentation seul(e)"; girColor=C.amber; girBg=C.amberLight; }
+  else if (nbB >= 1)                  { gir=5; girLabel="Aide ponctuelle pour la toilette, l'habillage ou les repas"; girColor=C.green; girBg=C.greenLight; }
+  else                                 { gir=6; girLabel="Personne autonome pour les actes essentiels"; girColor=C.green; girBg=C.greenLight; }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+      <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:4}}>
+        <span style={{fontSize:26}}>🧓</span>
+        <div>
+          <div style={{fontSize:17, fontWeight:900, color:C.navy}}>Score GIR</div>
+          <div style={{fontSize:11, color:C.sub}}>Estimation rapide de la dépendance</div>
+        </div>
+      </div>
+
+      <div style={{background:C.amberLight, border:`1px solid ${C.amber}55`, borderRadius:10, padding:"9px 12px", margin:"10px 0 14px", fontSize:11.5, color:C.text}}>
+        ⚠️ Estimation indicative pour orientation rapide en SMUR. Le GIR officiel (grille AGGIR complète) ne peut être établi que par une équipe médico-sociale.
+      </div>
+
+      {ITEMS.map(item => (
+        <div key={item.key} style={{marginBottom:12}}>
+          <div style={{fontSize:12.5, fontWeight:800, color:C.text, marginBottom:6}}>{item.label}</div>
+          <div style={{display:"flex", flexDirection:"column", gap:6}}>
+            {item.options.map(opt => {
+              const isSel = answers[item.key] === opt.code;
+              return (
+                <button key={opt.code} onClick={()=>setAnswers(a=>({...a, [item.key]:opt.code}))} style={{
+                  width:"100%", background: isSel ? COLOR+"18" : C.white,
+                  border:`2px solid ${isSel ? COLOR : C.border}`, borderRadius:10,
+                  padding:"9px 12px", cursor:"pointer", textAlign:"left", touchAction:"manipulation",
+                  fontSize:12.5, color:isSel?COLOR:C.text, fontWeight:isSel?800:500,
+                }}>
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {allAnswered && (
+        <div style={{background:girBg, border:`2px solid ${girColor}`, borderRadius:14, padding:"16px", textAlign:"center", marginTop:16}}>
+          <div style={{fontSize:11, fontWeight:800, color:girColor}}>GIR ESTIMÉ</div>
+          <div style={{fontSize:32, fontWeight:900, color:girColor, lineHeight:1.1}}>GIR {gir}</div>
+          <div style={{fontSize:12, color:C.text, marginTop:6}}>{girLabel}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AsaCalculator({ onBack }) {
   const C = useC();
   const COLOR = "#0369A1";
@@ -18711,6 +18810,15 @@ const SCORES_LIST = [
     icon: "🩺",
     color: "#0369A1",
     tags: ["#anesthésie", "#préop", "#ASA", "#risque", "#sédation"],
+  },
+  {
+    id: "gir",
+    category: "autres",
+    title: "Score GIR",
+    subtitle: "Estimation rapide de la dépendance (personne âgée)",
+    icon: "🧓",
+    color: "#7C3AED",
+    tags: ["#gériatrie", "#dépendance", "#GIR", "#AGGIR", "#autonomie"],
   },
   {
     id: "mass",
@@ -28265,6 +28373,7 @@ function ScoresScreen({ deepLinkId, onBack }) {
   function renderSelectedCalculator() {
     if (selected.id === "glasgow") return <GlasgowCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "asa") return <AsaCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "gir") return <GirCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "mass") return <MassCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "mpadss") return <MpadssCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "asia") return <AsiaFiche onBack={() => setSelected(null)}/>;
