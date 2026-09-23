@@ -118,15 +118,6 @@ function rowToItem(table, row) {
   if ("url_pdf"     in r) { r.urlPdf     = r.url_pdf;     delete r.url_pdf; }
   // Quiz : mapping spécifique
   if ("estimated_min" in r) { r.estimatedMin = r.estimated_min; delete r.estimated_min; }
-  // Normalise tags : on garde un ARRAY pour que .map() fonctionne partout en lecture
-  // (la conversion string→array pour le formulaire d'édition se fait à l'init du form)
-  if (!Array.isArray(r.tags)) {
-    if (typeof r.tags === "string" && r.tags.trim()) {
-      r.tags = r.tags.split(",").map(t => t.trim()).filter(Boolean);
-    } else {
-      r.tags = [];
-    }
-  }
   // Filet de sécurité : tout champ snake_case restant est auto-converti en camelCase
   // (utile pour les colonnes ajoutées en DB sans mapping explicite — sauf created_at/updated_at)
   const SNAKE_PRESERVE = new Set(["created_at", "updated_at", "created_by"]);
@@ -183,8 +174,6 @@ function itemToRow(table, item) {
   for (const k of NULLABLE_IF_EMPTY) {
     if (k in r && (r[k] === "" || r[k] === undefined)) r[k] = null;
   }
-  // tags : string→array pour Supabase
-  if (typeof r.tags === "string") r.tags = r.tags ? r.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
   // Filet de sécurité : tout champ camelCase restant est auto-converti en snake_case
   // (utile si un nouveau champ est ajouté en DB sans mapping explicite)
   for (const key of Object.keys(r)) {
@@ -2268,15 +2257,15 @@ function GlobalSearch({query, allData, onNav, onClose}) {
 
   // Divers
   allData.divers.forEach(d=>{
-    const hay=[d.title,d.content,...(Array.isArray(d.tags)?d.tags:[])].filter(Boolean).join(" ");
+    const hay=[d.title,d.content].filter(Boolean).join(" ");
     if(matchSearch(hay, query))
       results.push({type:"divers", icon:"⚡", color:C.navy, bg:C.blueLight,
-        title:d.title, sub:(Array.isArray(d.tags)?d.tags:[]).join(" ")||"Base de connaissances", nav:"divers", id:d.id});
+        title:d.title, sub:"Base de connaissances", nav:"divers", id:d.id});
   });
 
   // Dilutions
   (allData.dilutions||[]).forEach(d=>{
-    const hay=[d.title,d.subtitle,...(Array.isArray(d.tags)?d.tags:[])].filter(Boolean).join(" ");
+    const hay=[d.title,d.subtitle].filter(Boolean).join(" ");
     if(matchSearch(hay, query))
       results.push({type:"dilution", icon:"💉", color:"#E05260", bg:"#FDF0F1",
         title:d.title, sub:d.subtitle||"Dilution", nav:"dilutions", id:d.id});
@@ -2284,10 +2273,10 @@ function GlobalSearch({query, allData, onNav, onClose}) {
 
   // Gestes
   (allData.gestes||[]).forEach(g=>{
-    const hay=[g.title,(Array.isArray(g.tags)?g.tags:[]).join(" "),g.indications||""].join(" ");
+    const hay=[g.title,g.indications||""].join(" ");
     if(matchSearch(hay, query))
       results.push({type:"geste", icon:"✂️", color:"#C0392B", bg:"#FDECEA",
-        title:g.title, sub:(Array.isArray(g.tags)?g.tags:[]).join(" ")||"Geste technique", nav:"gestes", id:g.id});
+        title:g.title, sub:"Geste technique", nav:"gestes", id:g.id});
   });
 
   // Agenda
@@ -2323,7 +2312,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
 
   // Quiz
   (allData.quizzes||[]).forEach(qz=>{
-    const hay=[qz.title,qz.description,qz.theme,...(Array.isArray(qz.tags)?qz.tags:[])].filter(Boolean).join(" ");
+    const hay=[qz.title,qz.description,qz.theme].filter(Boolean).join(" ");
     if(matchSearch(hay, query))
       results.push({type:"quiz", icon:"🧠", color:"#6366F1", bg:"#EEF2FF",
         title:qz.title, sub:qz.description||qz.theme||"Quiz", nav:"quiz", id:qz.id});
@@ -2331,7 +2320,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
 
   // Reco Flash
   (allData.recoflash||[]).forEach(rf=>{
-    const hay=[rf.title,rf.subtitle,rf.source,...(Array.isArray(rf.tags)?rf.tags:[])].filter(Boolean).join(" ");
+    const hay=[rf.title,rf.subtitle,rf.source].filter(Boolean).join(" ");
     if(matchSearch(hay, query))
       results.push({type:"reco", icon:"📋", color:"#0891B2", bg:"#CFFAFE",
         title:rf.title, sub:rf.subtitle||rf.source||"Recommandation", nav:"recoflash", id:rf.id});
@@ -4729,8 +4718,6 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   const [tab, setTab] = useState(initial?.type || "retex"); // retex | recit
   const [form, setForm] = useState(initial ? {
     ...initial,
-    // Reconvertit tags array → string pour l'input
-    tags: Array.isArray(initial.tags) ? initial.tags.join(" ") : (initial.tags || ""),
     // Valeurs par défaut pour les nouveaux champs (anciens RETEX sans ces champs)
     facteurs: initial.facteurs || {},
     actions: Array.isArray(initial.actions) ? initial.actions : [],
@@ -4746,7 +4733,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   } : {
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
-    recit:"", tags:"", gravite:"", categorie:"Réanimation", evolution:"", medias:[],
+    recit:"", gravite:"", categorie:"Réanimation", evolution:"", medias:[],
     // Champs RETEX (méthode ALARM)
     anonyme:false, nature:"", zone:"", flux:"", declencheurs:"", chronologie:"",
     facteurs:{}, pointsForts:"", actions:[], statut:"ouvert", evitabilite:"",
@@ -4976,9 +4963,6 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
         />
       </div>)}
 
-      <label style={lbl}>Tags (optionnel)</label>
-      <input style={inp} placeholder="#SMUR #SCA #Pediatrie" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
-
       {/* Case à cocher obligatoire */}
       <div onClick={()=>setConfirmed(v=>!v)}
         style={{display:"flex", alignItems:"flex-start", gap:10, padding:"12px 14px",
@@ -5092,13 +5076,6 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
         <div style={{fontSize:11, opacity:.8}}>
           {[item.anonyme?"👤 Anonyme":item.author, item.date, item.type==="recit"?item.lieu:"", item.type==="retex"?item.zone:""].filter(Boolean).join(" · ")}
         </div>
-        {(item.tags&&item.tags.length>0) && (
-          <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-            {item.tags.map((t,i)=>(
-              <span key={i} style={{background:"rgba(255,255,255,.18)", color:"#fff", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Cas : récit de l'intervention */}
@@ -5329,8 +5306,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
   const [search, setSearch] = useState("");
 
   async function submit(form) {
-    const tags = (form.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    const item = {...form, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
+    const item = {...form, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
     await addRetexItem(item);
     // Notification partagée
     if(pushNotif){
@@ -5348,8 +5324,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
   }
 
   async function submitEdit(form) {
-    const tags = (form.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    const item = {...editing, ...form, tags};
+    const item = {...editing, ...form};
     await updateRetex(item);
     return item;
   }
@@ -5459,8 +5434,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
     if(filter==="recit") return x.type==="recit";
     return true;
   }).filter(x=>
-    !search || x.title?.toLowerCase().includes(search.toLowerCase()) ||
-    (x.tags||[]).some(t=>(t||"").toLowerCase().includes(search.toLowerCase()))
+    !search || x.title?.toLowerCase().includes(search.toLowerCase())
   );
 
   if(editing) return (
@@ -5815,13 +5789,6 @@ function ECGScreen({ deepLinkId, onBack }) {
         </div>
         <Tag label={"ECG · À analyser"} color={e.color||C.red}/>
         <h2 style={{color:C.navy, fontSize:17, fontWeight:800, margin:"12px 0 8px"}}>{e.title}</h2>
-          {(e.tags&&e.tags.length>0) && (
-            <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:12}}>
-              {e.tags.map((t,i)=>(
-                <span key={i} style={{background:C.red+"22", color:C.red, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
-              ))}
-            </div>
-          )}
 
         {/* Encart contexte clinique — bien visible */}
         {e.context && (
@@ -6047,13 +6014,6 @@ function IconoScreen({ deepLinkId, onBack }) {
             <Card style={{border:`2px solid ${c.color}`, marginBottom:12}}>
               <div style={{fontSize:11, fontWeight:800, color:C.green, marginBottom:4}}>DIAGNOSTIC</div>
               <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{c.diag}</div>
-            {(c.tags&&c.tags.length>0) && (
-              <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:10}}>
-                {c.tags.map((t,i)=>(
-                  <span key={i} style={{background:"#9B59B6"+"22", color:"#9B59B6", padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
-                ))}
-              </div>
-            )}
             </Card>
             {c.mediasApres?.length > 0 && (
               <div style={{marginTop:4}}>
@@ -6271,13 +6231,6 @@ function AgendaScreen({ deepLinkId, onBack }) {
             <div style={{fontSize:12, color:C.sub}}>{"📆"} {(()=>{ const iso=selected.date&&selected.date.match(/^(\d{4})-(\d{2})-(\d{2})$/); return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : selected.date; })()}</div>
             {selected.heure && <div style={{fontSize:12, color:C.sub}}>{"🕐"} {selected.heure}</div>}
             {selected.lieu && <div style={{fontSize:12, color:C.sub}}>{"📍"} {selected.lieu}</div>}
-            {(selected.tags&&selected.tags.length>0) && (
-              <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:8}}>
-                {selected.tags.map((t,i)=>(
-                  <span key={i} style={{background:C.amber+"22", color:C.amber, padding:"2px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
-                ))}
-              </div>
-            )}
             {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
           </div>
         </Card>
@@ -6585,7 +6538,7 @@ function GestesScreen({ deepLinkId, onBack }) {
     // Filtre recherche
     const q = search.toLowerCase();
     if(!q) return true;
-    return (g.title + (Array.isArray(g.tags)?g.tags:[]).join(" ") + (g.indications||"")).toLowerCase().includes(q);
+    return (g.title + (g.indications||"")).toLowerCase().includes(q);
   })
   .sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
@@ -6697,14 +6650,7 @@ function GestesScreen({ deepLinkId, onBack }) {
                 {g.icon||"✂️"}
               </div>
               <div style={{flex:1, minWidth:0}}>
-                <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{g.title}</div>
-                <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                  {(Array.isArray(g.tags) ? g.tags : (typeof g.tags === "string" && g.tags ? g.tags.split(",").map(s=>s.trim()).filter(Boolean) : [])).slice(0,3).map(t=>(
-                    <span key={t} style={{fontSize:10, fontWeight:700,
-                      background:C.blue+"22", color:C.blue,
-                      padding:"2px 7px", borderRadius:6}}>{t}</span>
-                  ))}
-                </div>
+                <div style={{fontSize:14, fontWeight:800, color:C.text}}>{g.title}</div>
               </div>
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </div>
@@ -6731,8 +6677,6 @@ function GesteDetail({geste, onBack}) {
     return m ? m[1] : null;
   };
   const ytId = extractYoutubeId(geste.videoUrl);
-  const gTags = Array.isArray(geste.tags) ? geste.tags
-    : (typeof geste.tags==="string" && geste.tags ? geste.tags.split(",").map(s=>s.trim()).filter(Boolean) : []);
   const COLOR = geste.color || C.red;
 
   // Helper : section avec icône-label + contenu en carte (style Dilutions)
@@ -6776,14 +6720,6 @@ function GesteDetail({geste, onBack}) {
             {geste.subtitle && <div style={{fontSize:12, opacity:.8, marginTop:2}}>{geste.subtitle}</div>}
           </div>
         </div>
-        {gTags.length > 0 && (
-          <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:4}}>
-            {gTags.map(t=>(
-              <span key={t} style={{background:"rgba(255,255,255,.2)", borderRadius:20,
-                padding:"2px 10px", fontSize:10, fontWeight:700}}>{t}</span>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Image principale */}
@@ -6968,8 +6904,7 @@ function DiversScreen({ deepLinkId, onBack }) {
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
 
   const filtered = allDivers.filter(d =>
-    (d.title||"").toLowerCase().includes(search.toLowerCase()) ||
-    (Array.isArray(d.tags)?d.tags:d.tags?[d.tags]:[]).some(t => (t||"").toLowerCase().includes(search.toLowerCase()))
+    (d.title||"").toLowerCase().includes(search.toLowerCase())
   );
 
   if(selected) {
@@ -6981,9 +6916,6 @@ function DiversScreen({ deepLinkId, onBack }) {
             onToggle={()=>toggleFavori({id:selected.id, type:"divers", title:selected.title, icon:"⚡", color:C.navy, nav:"divers"})}/>
         </div>
         <h2 style={{color:C.navy, fontWeight:800, fontSize:17, marginBottom:12}}>{selected.title}</h2>
-        <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:selected.source?8:16}}>
-          {(Array.isArray(selected.tags)?selected.tags:[]).map(t => <Tag key={t} label={t} color={C.blue}/>)}
-        </div>
         {selected.source && (
           <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:12,
             background:C.blueLight, borderRadius:8, padding:"5px 10px"}}>
@@ -7043,7 +6975,6 @@ function DiversScreen({ deepLinkId, onBack }) {
               <div style={{fontWeight:700, color:C.text}}>{d.title}</div>
             </div>
             <div style={{display:"flex", gap:6, flexWrap:"wrap", alignItems:"center"}}>
-              {(Array.isArray(d.tags)?d.tags:[]).map(t => <Tag key={t} label={t} color={C.navy}/>)}
               {d.imageData && <span style={{fontSize:11, color:C.sub}}>{"📎"}</span>}
               {d.schema && <Tag label="Schema" color={C.red}/>}
               {d.source && <span style={{fontSize:10, color:C.sub, fontStyle:"italic"}}>{"🏥"} {d.source}</span>}
@@ -7248,8 +7179,7 @@ function DilutionScreen({ deepLinkId, onBack }) {
     else if (selectedCat !== "all") { if (d.categorie !== selectedCat) return false; }
     // Filtre recherche
     const q = search.toLowerCase();
-    return (d.title||"").toLowerCase().includes(q) ||
-      (Array.isArray(d.tags)?d.tags:[]).some(t=>(t||"").toLowerCase().includes(q));
+    return (d.title||"").toLowerCase().includes(q);
   }).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   if(selected) {
@@ -7291,11 +7221,6 @@ function DilutionScreen({ deepLinkId, onBack }) {
               {selected.nomCommercial && <div style={{fontSize:13, opacity:.9, marginTop:2, fontStyle:"italic"}}>{selected.nomCommercial}</div>}
               {selected.subtitle && <div style={{fontSize:12, opacity:.75, marginTop:2}}>{selected.subtitle}</div>}
             </div>
-          </div>
-          <div style={{display:"flex", gap:6, flexWrap:"wrap", marginTop:6}}>
-            {(Array.isArray(selected.tags)?selected.tags:[]).map(t=>(
-              <span key={t} style={{background:"rgba(255,255,255,.2)", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700}}>{t}</span>
-            ))}
           </div>
         </div>
 
@@ -7489,11 +7414,6 @@ function DilutionScreen({ deepLinkId, onBack }) {
                 <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{d.title}</div>
                 {d.subtitle && <div style={{fontSize:11, color:C.sub, marginBottom:5}}>{d.subtitle}</div>}
                 <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                  {(Array.isArray(d.tags)?d.tags:[]).slice(0,3).map(t=>(
-                    <span key={t} style={{fontSize:10, fontWeight:700,
-                      background:(d.color||C.red)+"22", color:d.color||C.red,
-                      padding:"2px 7px", borderRadius:6}}>{t}</span>
-                  ))}
                   {d.schema && <span style={{fontSize:10, fontWeight:700,
                     background:C.blueLight, color:C.blue,
                     padding:"2px 7px", borderRadius:6}}>{"📊 Schema"}</span>}
@@ -7587,16 +7507,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addEcg() {
     if(!eForm.title.trim()) return;
-    const tags = eForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
-    const ecgReset = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],tags:"",hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null};
+    const ecgReset = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null};
     if(editingE !== null) {
-      const item = {...eForm, id:editingE, tags, points, color:"#E05260"};
+      const item = {...eForm, id:editingE, points, color:"#E05260"};
       await updateItem("ecgs","admin_ecgs",item,["image","image2"]);
       setEditingE(null); setEForm(ecgReset);
       showSaved("ECG modifié !");
     } else {
-      const item = {...eForm, id:Date.now(), tags, points, revealed:false, color:"#E05260"};
+      const item = {...eForm, id:Date.now(), points, revealed:false, color:"#E05260"};
       const newItem = await addItem("ecgs","admin_ecgs",item,["image","image2"]);
       setEForm(ecgReset); setEcgConfirmed(false);
       showSaved("ECG ajouté !");
@@ -7609,16 +7528,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
     if(submittingKey === "imagerie") return; // déjà en cours d'envoi
     setSubmittingKey("imagerie");
     try {
-      const tags = iForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
       if(editingI !== null) {
-        const item = {...iForm, id:editingI, tags, color:"#9B59B6"};
+        const item = {...iForm, id:editingI, color:"#9B59B6"};
         await updateItem("imagerie","admin_imagerie",item,["image"]);
-        setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""});
+        setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[]});
         showSaved("Cas modifié !");
       } else {
-        const item = {...iForm, id:Date.now(), tags, revealed:false, color:"#9B59B6"};
+        const item = {...iForm, id:Date.now(), revealed:false, color:"#9B59B6"};
         const newItem = await addItem("imagerie","admin_imagerie",item,["image"]);
-        setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[],tags:""}); setImagerieConfirmed(false);
+        setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[]}); setImagerieConfirmed(false);
         showSaved("Cas ajouté !");
         if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
       }
@@ -7630,16 +7548,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
   async function addAgenda() {
     if(!aForm.title.trim()||!aForm.date.trim()) return;
     const colors = {formation:C.blue,reunion:C.green,congres:C.navy,soiree:C.amber,autre:"#8B5CF6"};
-    const tags = aForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     if(editingA !== null) {
-      const item = {...aForm, id:editingA, tags, color:colors[aForm.type]||C.blue};
+      const item = {...aForm, id:editingA, color:colors[aForm.type]||C.blue};
       await updateItem("agenda","admin_agenda",item,["image"]);
-      setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Événement modifié !");
     } else {
-      const item = {...aForm, id:Date.now(), tags, color:colors[aForm.type]||C.blue};
+      const item = {...aForm, id:Date.now(), color:colors[aForm.type]||C.blue};
       const newItem = await addItem("agenda","admin_agenda",item,["image"]);
-      setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[],tags:""});
+      setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Événement ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
     }
@@ -7647,16 +7564,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addDivers() {
     if(!dForm.title.trim()) return;
-    const tags = dForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     if(editingD !== null) {
-      const item = {...dForm, id:editingD, tags};
+      const item = {...dForm, id:editingD};
       await updateItem("divers","admin_divers",item,["image"]);
-      setEditingD(null); setDForm({title:"",categorie:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
+      setEditingD(null); setDForm({title:"",categorie:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
       showSaved("Fiche modifiée !");
     } else {
-      const item = {...dForm, id:Date.now(), tags};
+      const item = {...dForm, id:Date.now()};
       const newItem = await addItem("divers","admin_divers",item,["image"]);
-      setDForm({title:"",categorie:"",tags:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
+      setDForm({title:"",categorie:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
       showSaved("Fiche ajoutée !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
     }
@@ -7664,10 +7580,9 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addRetex() {
     if(!rForm.title.trim()) return;
-    const tags = (rForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-    const item = {...rForm, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
+    const item = {...rForm, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:rForm.date||new Date().toLocaleDateString("fr-FR")};
     const newItem = await addRetexItem(item);
-    setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",tags:"",evolution:"",medias:[]});
+    setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",evolution:"",medias:[]});
     setRetexAdminConfirmed(false);
     showSaved("Publication ajoutée !");
     if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
@@ -7675,7 +7590,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addGeste() {
     if(!gForm.title.trim()) return;
-    const tags = gForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const parsed = {
       materiel: typeof gForm.materiel==="string"?gForm.materiel.split("\n").filter(Boolean):gForm.materiel,
       etapes:   typeof gForm.etapes==="string"?gForm.etapes.split("\n").filter(Boolean):gForm.etapes,
@@ -7683,14 +7597,14 @@ function AdminScreenInner({ onNewItem, onBack }) {
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
     };
     if(editingG !== null) {
-      const item = {...gForm, id:editingG, tags, ...parsed};
+      const item = {...gForm, id:editingG, ...parsed};
       await updateItem("gestes","admin_gestes",item,["image"]);
-      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste modifié !");
     } else {
-      const item = {...gForm, id:Date.now(), tags, ...parsed};
+      const item = {...gForm, id:Date.now(), ...parsed};
       const newItem = await addItem("gestes","admin_gestes",item,["image"]);
-      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",tags:"",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
@@ -7698,16 +7612,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addDilution() {
     if(!dilForm.title.trim()) return;
-    const tags = dilForm.tags.split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     if(editingDil !== null) {
-      const item = {...dilForm, id:editingDil, tags, color:dilForm.color||"#E05260"};
+      const item = {...dilForm, id:editingDil, color:dilForm.color||"#E05260"};
       await updateItem("dilutions","admin_dilutions",item,["schema","photo"]);
-      setEditingDil(null); setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      setEditingDil(null); setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution modifiée !");
     } else {
-      const item = {...dilForm, id:Date.now(), tags, color:dilForm.color||"#E05260"};
+      const item = {...dilForm, id:Date.now(), color:dilForm.color||"#E05260"};
       const newItem = await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
-      setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",tags:"",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
       showSaved("Dilution ajoutée !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
@@ -7715,17 +7628,16 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   async function addRecoflash() {
     if(!rfForm.titre || !rfForm.titre.trim()) { alert("Le titre de la reco est obligatoire."); return; }
-    const tags = (rfForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     try {
       if(editingRf !== null) {
-        const item = {...rfForm, id:editingRf, tags};
+        const item = {...rfForm, id:editingRf};
         await updateItem("recoflash","admin_recoflash",item,[]);
-        setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
+        setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:""});
         showSaved("Reco modifiée !");
       } else {
-        const item = {...rfForm, id:Date.now(), tags};
+        const item = {...rfForm, id:Date.now()};
         const newItem = await addItem("recoflash","admin_recoflash",item,[]);
-        setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""});
+        setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:""});
         showSaved("Reco ajoutée !");
         if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
       }
@@ -7738,7 +7650,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
   async function addQuiz() {
     if(!qzForm.title || !qzForm.title.trim()) { alert("Le titre du quiz est obligatoire."); return; }
     if(!qzForm.questions || qzForm.questions.length === 0) { alert("Ajoutez au moins 1 question."); return; }
-    const tags = (qzForm.tags||"").split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
     const sources = (qzForm.sources||"").split("\n").map(line => line.trim()).filter(Boolean).map(line => {
       // Format attendu : "Nom de la reco (2024)" → parse l'année si présente
       const m = line.match(/^(.*?)\s*\((\d{4})\)\s*$/);
@@ -7754,18 +7665,17 @@ function AdminScreenInner({ onNewItem, onBack }) {
       estimatedMin: parseInt(qzForm.estimatedMin, 10) || 5,
       sources, takeaways,
       questions: qzForm.questions,
-      tags,
     };
     try {
       if(editingQz !== null) {
         await updateItem("quizzes","admin_quizzes",{...payload, id:editingQz},[]);
         setEditingQz(null);
-        setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""});
+        setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[]});
         showSaved("Quiz modifié !");
       } else {
         const item = {...payload, id:Date.now()};
         const newItem = await addItem("quizzes","admin_quizzes",item,[]);
-        setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""});
+        setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[]});
         showSaved("Quiz ajouté !");
         if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🧠",color:"#6366F1",nav:"quiz"});
       }
@@ -8031,9 +7941,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               onChange={upd => setEForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
               accept="image/*,video/*"
             />
-                        <label style={lbl}>Tags (optionnel)</label>
-            <input style={inp} placeholder="#SCA #Arythmie #Pediatrie" value={eForm.tags} onChange={e=>setEForm({...eForm,tags:e.target.value})}/>
-            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); setEcgConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); setEcgConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             {/* Case à cocher obligatoire */}
             <div onClick={()=>setEcgConfirmed(v=>!v)}
               style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
@@ -8062,7 +7970,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:11, color:C.sub}}>{e.imageUrl?"Image : "+e.imageUrl:"Trace SVG"}</div>
                   </div>
                   <div style={{display:"flex", gap:6, flexShrink:0}}>
-                    <button onClick={()=>{ setEditingE(e.id); setEForm({...e, points:Array.isArray(e.points)?e.points.join("\n"):e.points||"", tags:Array.isArray(e.tags)?e.tags.join(" "):e.tags||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingE(e.id); setEForm({...e, points:Array.isArray(e.points)?e.points.join("\n"):e.points||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("ecgs","admin_ecgs",e.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -8122,9 +8030,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               onChange={upd => setIForm(f=>({...f, mediasApres: typeof upd==="function"?upd(f.mediasApres||[]):upd}))}
               accept="image/*,video/*"
             />
-                        <label style={lbl}>Tags (optionnel)</label>
-            <input style={inp} placeholder="#Scanner #Radio #Fracture" value={iForm.tags} onChange={e=>setIForm({...iForm,tags:e.target.value})}/>
-            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[], tags:"" }); setImagerieConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingI && <Btn onClick={()=>{ setEditingI(null); setIForm({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[] }); setImagerieConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             {/* Case à cocher obligatoire */}
             <div onClick={()=>setImagerieConfirmed(v=>!v)}
               style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
@@ -8153,7 +8059,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:11, color:C.sub}}>{c.type}{c.imageUrl?" - "+c.imageUrl:""}</div>
                   </div>
                   <div style={{display:"flex", gap:6, flexShrink:0}}>
-                    <button onClick={()=>{ setEditingI(c.id); setIForm({...c, tags:Array.isArray(c.tags)?c.tags.join(" "):c.tags||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingI(c.id); setIForm({...c}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("imagerie","admin_imagerie",c.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -8174,8 +8080,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <div style={{fontSize:11, color:C.sub, marginBottom:14}}>Même formulaire que le module RETEX/Cas</div>
             <RetexSubmitForm
               onSubmit={async (form)=>{
-                const tags = (typeof form.tags==="string" ? form.tags : (form.tags||[]).join(" ")).split(/[\s,]+/).filter(Boolean).map(t=>t.startsWith("#")?t:"#"+t);
-                const item = {...form, tags, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
+                const item = {...form, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
                 const newItem = await addRetexItem(item);
                 if(onNewItem) onNewItem({title:form.type==="recit"?"Nouveau cas clinique":"Nouveau RETEX", body:item.title, icon:form.type==="recit"?"📖":"🔬", nav:"retex", ref_id:(newItem&&newItem.id)||item.id});
               }}
@@ -8259,9 +8164,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               onChange={upd => setAForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
               accept="image/*,application/pdf,video/*"
             />
-                        <label style={lbl}>Tags (optionnel)</label>
-            <input style={inp} placeholder="#Formation #DPC #Congres" value={aForm.tags} onChange={e=>setAForm({...aForm,tags:e.target.value})}/>
-            {editingA && <Btn onClick={()=>{ setEditingA(null); setAForm({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingA && <Btn onClick={()=>{ setEditingA(null); setAForm({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addAgenda} color={C.amber} style={{width:"100%"}}>{editingA ? "✅ Enregistrer les modifications" : "Ajouter l'evenement"}</Btn>
           </Card>
           {customAgenda.length>0 && (
@@ -8274,7 +8177,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:11, color:C.sub}}>{(()=>{ const iso=ev.date&&ev.date.match(/^(\d{4})-(\d{2})-(\d{2})$/); return iso?`${iso[3]}/${iso[2]}/${iso[1]}`:ev.date; })()}</div>
                   </div>
                   <div style={{display:"flex", gap:6, flexShrink:0}}>
-                    <button onClick={()=>{ setEditingA(ev.id); setAForm({...ev, tags:Array.isArray(ev.tags)?ev.tags.join(" "):ev.tags||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingA(ev.id); setAForm({...ev}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("agenda","admin_agenda",ev.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -8290,8 +8193,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingD ? "✏️ Modifier la fiche" : "+ Nouvelle fiche"}</div>
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Dilution Ketamine" value={dForm.title} onChange={e=>setDForm({...dForm,title:e.target.value})}/>
-            <label style={lbl}>{"Tags (separes par virgule ou espace)"}</label>
-            <input style={inp} placeholder="ketamine, dilution, SMUR" value={dForm.tags} onChange={e=>setDForm({...dForm,tags:e.target.value})}/>
             <label style={lbl}>Contenu</label>
             <textarea style={{...inp, height:120, resize:"vertical"}} placeholder={"Ampoule : 500mg/10mL\nDose : 1-2mg/kg IV..."} value={dForm.content} onChange={e=>setDForm({...dForm,content:e.target.value})}/>
             <label style={lbl}>Image ou document (optionnel)</label>
@@ -8332,10 +8233,9 @@ function AdminScreenInner({ onNewItem, onBack }) {
                 <div key={d.id} style={{background:C.white, borderRadius:10, padding:"10px 14px", marginBottom:8, border:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
                   <div style={{flex:1, minWidth:0}}>
                     <div style={{fontSize:13, fontWeight:700, color:C.text}}>{d.title}</div>
-                    <div style={{fontSize:11, color:C.sub}}>{Array.isArray(d.tags)?d.tags.join(" "):d.tags}</div>
                   </div>
                   <div style={{display:"flex", gap:6, flexShrink:0}}>
-                    <button onClick={()=>{ setEditingD(d.id); setDForm({...d, tags:Array.isArray(d.tags)?d.tags.join(" "):d.tags||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingD(d.id); setDForm({...d}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("divers","admin_divers",d.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -8386,9 +8286,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
                 );
               })}
             </div>
-
-            <label style={lbl}>{"Tags (séparés par espace ou virgule)"}</label>
-            <input style={inp} placeholder="ketamine choc analgesie" value={dilForm.tags} onChange={e=>setDilForm({...dilForm,tags:e.target.value})}/>
 
             {/* Schéma visuel PNG/SVG */}
             <label style={lbl}>{"📊 Schéma visuel (PNG, SVG, JPG)"}</label>
@@ -8497,10 +8394,10 @@ function AdminScreenInner({ onNewItem, onBack }) {
                 <div key={d.id} style={{background:C.white, borderRadius:10, padding:"10px 14px", marginBottom:8, border:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", borderLeft:`4px solid ${d.color||C.red}`}}>
                   <div>
                     <div style={{fontSize:13, fontWeight:700, color:C.text}}>{d.title}</div>
-                    <div style={{fontSize:11, color:C.sub}}>{d.subtitle||""} {Array.isArray(d.tags)?d.tags.join(" "):""}</div>
+                    <div style={{fontSize:11, color:C.sub}}>{d.subtitle||""}</div>
                   </div>
                   <div style={{display:"flex", gap:6}}>
-                    <button onClick={()=>{ setEditingDil(d.id); setDilForm({...d, tags:Array.isArray(d.tags)?d.tags.join(" "):d.tags||"", nomCommercial:d.nomCommercial||"", indication:d.indication||"", administration:d.administration||"", photoUrl:d.photoUrl||"", photoData:null}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingDil(d.id); setDilForm({...d, nomCommercial:d.nomCommercial||"", indication:d.indication||"", administration:d.administration||"", photoUrl:d.photoUrl||"", photoData:null}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("dilutions","admin_dilutions",d.id)} style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -8568,9 +8465,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
               })}
             </div>
 
-            <label style={lbl}>Tags (separes par virgule)</label>
-            <input style={inp} placeholder="airway, IOT, urgence" value={gForm.tags} onChange={e=>setGForm({...gForm,tags:e.target.value})}/>
-
             <label style={lbl}>Indications</label>
             <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.indications} onChange={e=>setGForm({...gForm,indications:e.target.value})} placeholder="Indications cliniques..."/>
 
@@ -8612,10 +8506,9 @@ function AdminScreenInner({ onNewItem, onBack }) {
                   display:"flex", justifyContent:"space-between", alignItems:"center"}}>
                   <div>
                     <div style={{fontSize:13, fontWeight:700, color:C.text}}>{g.icon} {g.title}</div>
-                    <div style={{fontSize:11, color:C.sub}}>{(g.tags||[]).join(" ")}</div>
                   </div>
                   <div style={{display:"flex", gap:6}}>
-                    <button onClick={()=>{ setEditingG(g.id); setGForm({...g, tags:Array.isArray(g.tags)?g.tags.join(" "):g.tags||"", materiel:Array.isArray(g.materiel)?g.materiel.join("\n"):g.materiel||"", etapes:Array.isArray(g.etapes)?g.etapes.join("\n"):g.etapes||"", pieges:Array.isArray(g.pieges)?g.pieges.join("\n"):g.pieges||"", complications:Array.isArray(g.complications)?g.complications.join("\n"):g.complications||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingG(g.id); setGForm({...g, materiel:Array.isArray(g.materiel)?g.materiel.join("\n"):g.materiel||"", etapes:Array.isArray(g.etapes)?g.etapes.join("\n"):g.etapes||"", pieges:Array.isArray(g.pieges)?g.pieges.join("\n"):g.pieges||"", complications:Array.isArray(g.complications)?g.complications.join("\n"):g.complications||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("gestes","admin_gestes",g.id)}
                       style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>
                       Suppr.
@@ -8651,10 +8544,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>Résumé / Points clés</label>
             <textarea style={{...inp, minHeight:140, fontFamily:"inherit", resize:"vertical"}} placeholder={"- Point clé 1\n- Point clé 2\n- Conduite à tenir..."} value={rfForm.resume} onChange={e=>setRfForm({...rfForm,resume:e.target.value})}/>
 
-            <label style={lbl}>Tags (séparés par espace ou virgule)</label>
-            <input style={inp} placeholder="#sepsis #antibiotique #urgence" value={rfForm.tags} onChange={e=>setRfForm({...rfForm,tags:e.target.value})}/>
-
-            {editingRf && <Btn onClick={()=>{ setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:"",tags:""}); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingRf && <Btn onClick={()=>{ setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:""}); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addRecoflash} color="#0EA5E9" style={{width:"100%"}}>{editingRf ? "✅ Enregistrer les modifications" : "⚡ Ajouter la reco"}</Btn>
           </Card>
 
@@ -8670,7 +8560,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:11, color:C.sub}}>{[r.societe, r.specialite, r.datePublication].filter(Boolean).join(" · ")}</div>
                   </div>
                   <div style={{display:"flex", gap:6, flexShrink:0}}>
-                    <button onClick={()=>{ setEditingRf(r.id); setRfForm({titre:r.titre||"", societe:r.societe||"", datePublication:r.datePublication||"", specialite:r.specialite||"", urlPdf:r.urlPdf||"", resume:r.resume||"", tags:Array.isArray(r.tags)?r.tags.join(" "):r.tags||""}); window.scrollTo(0,0); }}
+                    <button onClick={()=>{ setEditingRf(r.id); setRfForm({titre:r.titre||"", societe:r.societe||"", datePublication:r.datePublication||"", specialite:r.specialite||"", urlPdf:r.urlPdf||"", resume:r.resume||""}); window.scrollTo(0,0); }}
                       style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>{ if(window.confirm("Supprimer cette reco ?")) deleteItem("recoflash","admin_recoflash",r.id); }}
                       style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
@@ -8720,9 +8610,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
             <label style={lbl}>📌 À retenir (3-5 points clés, un par ligne)</label>
             <textarea style={{...inp, minHeight:80, resize:"vertical"}} placeholder="Probabilité clinique d'abord (Wells / Genève)&#10;D-dimères ajustés à l'âge si proba faible/intermédiaire&#10;AngioTDM en 1re intention si proba forte" value={qzForm.takeaways} onChange={e=>setQzForm({...qzForm, takeaways:e.target.value})}/>
-
-            <label style={lbl}>Tags (séparés par espace)</label>
-            <input style={inp} placeholder="#EP #cardio" value={qzForm.tags} onChange={e=>setQzForm({...qzForm, tags:e.target.value})}/>
 
             {/* Éditeur des questions */}
             <div style={{marginTop:16, marginBottom:14}}>
@@ -8787,7 +8674,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
                       sources: Array.isArray(q.sources) ? q.sources.map(s => s.year ? `${s.name} (${s.year})` : s.name).join("\n") : "",
                       takeaways: Array.isArray(q.takeaways) ? q.takeaways.join("\n") : "",
                       questions: q.questions || [],
-                      tags: Array.isArray(q.tags) ? q.tags.join(" ") : (q.tags||""),
                     });
                     window.scrollTo(0,0);
                   }}
@@ -8948,7 +8834,7 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
     if (selectedSpec !== "all" && r.specialite !== selectedSpec) return false;
     const q = search.toLowerCase().trim();
     if (!q) return true;
-    const hay = [r.titre, r.societe, r.specialite, r.resume, (Array.isArray(r.tags) ? r.tags : []).join(" ")].join(" ").toLowerCase();
+    const hay = [r.titre, r.societe, r.specialite, r.resume].join(" ").toLowerCase();
     return hay.includes(q);
   });
 
@@ -8997,14 +8883,6 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
             <div style={{fontSize:11, fontWeight:800, color:"#0EA5E9", marginBottom:8, letterSpacing:.5}}>POINTS CLÉS</div>
             <div style={{fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{selected.resume}</div>
           </Card>
-        )}
-
-        {Array.isArray(selected.tags) && selected.tags.length > 0 && (
-          <div style={{display:"flex", flexWrap:"wrap", gap:6, marginTop:12}}>
-            {selected.tags.map((t, i) => (
-              <span key={i} style={{background:"#0EA5E9"+"22", color:"#0284C7", padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:700}}>{t}</span>
-            ))}
-          </div>
         )}
       </div>
     );
@@ -9092,15 +8970,6 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
                 <div style={{fontSize:11, color:C.sub, marginBottom:4}}>
                   {[r.societe, r.specialite, formatDate(r.datePublication)].filter(Boolean).join(" · ")}
                 </div>
-                {Array.isArray(r.tags) && r.tags.length > 0 && (
-                  <div style={{display:"flex", gap:4, flexWrap:"wrap", marginTop:6}}>
-                    {r.tags.slice(0, 3).map((t, i) => (
-                      <span key={i} style={{fontSize:10, fontWeight:700,
-                        background:"#0EA5E9"+"15", color:"#0284C7",
-                        padding:"2px 7px", borderRadius:6}}>{t}</span>
-                    ))}
-                  </div>
-                )}
               </div>
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </div>
@@ -19302,8 +19171,7 @@ function QuizScreen({ deepLinkId, onBack }) {
   const filtered = quizzes.filter(q =>
     !search ||
     q.title?.toLowerCase().includes(search.toLowerCase()) ||
-    q.theme?.toLowerCase().includes(search.toLowerCase()) ||
-    (q.tags || []).some(t => (t||"").toLowerCase().includes(search.toLowerCase()))
+    q.theme?.toLowerCase().includes(search.toLowerCase())
   );
 
   // Routage des sous-écrans
@@ -22315,13 +22183,13 @@ const Abg_DATA_NEURO = {
             isolement: "gouttelettes",
                                 indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours. ISOLEMENT GOUTTELETTES.",
                                 preferred: [
-                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
-                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "200 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "75 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
                                 ],
                                 alternatives: [],
                                 notRecommended: [],
                                 followUp: "Isolement gouttelettes levé après 48h d'ATB efficace. Déclaration obligatoire + prophylaxie entourage.",
-                                source: "Antibioguide CHEG 2022 — SPILF",
+                                source: "Antibioguide CHEG 2022 — SPILF, référentiel méningites SPILF 2018",
                               },
                             },
                             {
@@ -22354,13 +22222,13 @@ const Abg_DATA_NEURO = {
             isolement: "gouttelettes",
                                 indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours.",
                                 preferred: [
-                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
-                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "200 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "75 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
                                 ],
                                 alternatives: [],
                                 notRecommended: [],
                                 followUp: "Isolement gouttelettes jusqu'à 48h d'ATB efficace.",
-                                source: "Antibioguide CHEG 2022 — SPILF",
+                                source: "Antibioguide CHEG 2022 — SPILF, référentiel méningites SPILF 2018",
                               },
                             },
                             {
@@ -22374,13 +22242,13 @@ const Abg_DATA_NEURO = {
             isolement: "gouttelettes",
                                 indication: "Corticothérapie : Dexaméthasone 10 mg × 4/j pendant 4 jours.",
                                 preferred: [
-                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "300 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
-                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "100 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
+                                  { label: "Option 1", drug: "Céfotaxime IV", dose: "200 mg/kg/j en 4 perfusions ou administration continue (dose de charge 50 mg/kg sur 1h)", duration: "Selon évolution", notes: null },
+                                  { label: "Option 2", drug: "Ceftriaxone IV", dose: "75 mg/kg/j en 1 ou 2 perfusions", duration: "Selon évolution", notes: null },
                                 ],
                                 alternatives: [],
                                 notRecommended: [],
                                 followUp: null,
-                                source: "Antibioguide CHEG 2022 — SPILF",
+                                source: "Antibioguide CHEG 2022 — SPILF, référentiel méningites SPILF 2018",
                               },
                             },
                       ],
@@ -22458,10 +22326,14 @@ const Abg_DATA_NEURO = {
               type: "info",
               infoColor: Abg_C.blue,
               infoColorLight: Abg_C.blueLight,
-              infoTitle: "Interprétation de la glycorachie",
+              infoTitle: "Interprétation du LCR clair",
               infoItems: [
-                "Basse (hypoglycorachie) : < ½ de la glycémie → évoquer tuberculose, Listéria, cryptocoque",
-                "Normale : = ½ de la glycémie → évoquer herpès/VZV, entérovirus",
+                "LCR en faveur d'une étiologie VIRALE non compliquée : LCR clair, glycorachie > ½ de la glycémie concomitante, protéinorachie < 1 g/l, prédominance lymphocytaire",
+                "LCR « suspect » : glycorachie abaissée et protéinorachie > 1 g/l font douter d'une origine virale",
+                "Situations intermédiaires : lactate LCR < 3,2 mmol/l → VPN 100 %, spécificité 89 % (élimine une origine bactérienne)",
+                "Situations intermédiaires : PCT sérique ≥ 0,5 ng/ml → sensibilité 99 %, spécificité 83 % pour une origine bactérienne",
+                "Hypoglycorachie (< ½ de la glycémie) : évoquer tuberculose, Listéria, cryptocoque",
+                "Glycorachie normale (= ½ de la glycémie) : évoquer herpès/VZV, entérovirus",
               ],
               icon: "🟡",
               color: Abg_C.amber,
@@ -22541,21 +22413,40 @@ const Abg_DATA_NEURO = {
                       children: [
                         {
                               id: "meningite_lympho_herpes",
-                              label: "Herpès / VZV (méningite avec signes encéphalitiques)",
+                              label: "Méningite herpétique simple (LCR clair, sans signe de gravité)",
                               icon: "🟠",
                               color: Abg_C.amber,
                               colorLight: Abg_C.amberLight,
                               result: {
-                                condition: "Méningoencéphalite — Herpès ou VZV",
-                                indication: "PCR HSV/VZV dans le LCR.",
+                                condition: "Méningite à liquide clair — au moindre doute d'étiologie herpétique",
+                                indication: "PCR HSV/VZV dans le LCR. À instaurer au moindre doute de méningoencéphalite herpétique, même en l'absence de signe de gravité.",
                                 preferred: [
-                                  { label: "HSV", drug: "Aciclovir IV", dose: "10–15 mg/kg toutes les 8h", duration: "14–21 jours", notes: null },
-                                  { label: "VZV", drug: "Aciclovir IV", dose: "15 mg/kg toutes les 8h", duration: "14–21 jours", notes: null },
+                                  { label: "", drug: "Aciclovir IV", dose: "10 mg/kg toutes les 8h (3 fois par jour)", duration: "10 jours", notes: "Associer Amoxicilline 200 mg/kg/j si doute persistant sur une origine bactérienne (couverture Listéria)" },
                                 ],
                                 alternatives: [],
                                 notRecommended: [],
-                                followUp: "Traitement symptomatique associé.",
-                                source: "Antibioguide CHEG 2022",
+                                followUp: "Si signes de gravité (troubles de conscience, convulsions, signes de localisation) → voir Méningoencéphalite herpétique.",
+                                source: "VIDAL — Méningite aiguë de l'adulte ; Recommandations prise en charge des encéphalites infectieuses de l'adulte (Grade A)",
+                              },
+                            },
+                            {
+                              id: "meningite_lympho_encephalite_herpes",
+                              label: "Méningoencéphalite herpétique (troubles de conscience, convulsions, signes de localisation)",
+                              icon: "🔴",
+                              color: Abg_C.red,
+                              colorLight: Abg_C.redLight,
+                              result: {
+                                condition: "Méningite à liquide clair avec signes de gravité — suspicion méningoencéphalite herpétique",
+                                indication: "Diagnostic à évoquer systématiquement devant une méningite à liquide clair avec troubles de conscience, convulsions, et a fortiori signes de localisation. Traitement probabiliste à débuter sans délai (idéalement dans les 6h), outre les examens de confirmation (PCR HSV/VZV, IRM).",
+                                preferred: [
+                                  { label: "HSV — dose standard", drug: "Aciclovir IV", dose: "10 mg/kg toutes les 8h", duration: "10 jours (adapter selon évolution)", notes: null },
+                                  { label: "HSV — si vésicules cutanées ou vasculopathie à l'imagerie", drug: "Aciclovir IV", dose: "15 mg/kg toutes les 8h", duration: "10 jours (adapter selon évolution)", notes: null },
+                                  { label: "VZV", drug: "Aciclovir IV", dose: "15 mg/kg toutes les 8h (sur 1h)", duration: "14 jours", notes: null },
+                                ],
+                                alternatives: [],
+                                notRecommended: [],
+                                followUp: "Traitement symptomatique associé. Avis infectiologie/neurologie recommandé.",
+                                source: "Recommandations de prise en charge des encéphalites infectieuses de l'adulte (Grade A/B)",
                               },
                             },
                             {
@@ -31603,7 +31494,6 @@ function PediaFichesEditor() {
       content: form.content || null,
       points_cles: form.pointsCles ? form.pointsCles.split("\n").map(s=>s.trim()).filter(Boolean) : [],
       alertes: form.alertes ? form.alertes.split("\n").map(s=>s.trim()).filter(Boolean) : [],
-      tags: form.tags ? form.tags.split(/[\s,]+/).filter(Boolean) : [],
       medias,
     };
     try {
@@ -31622,7 +31512,6 @@ function PediaFichesEditor() {
       icon:f.icon||"👶", color:f.color||"#EC4899", content:f.content||"",
       pointsCles: Array.isArray(f.points_cles) ? f.points_cles.join("\n") : "",
       alertes: Array.isArray(f.alertes) ? f.alertes.join("\n") : "",
-      tags: Array.isArray(f.tags) ? f.tags.join(" ") : "",
       medias: f.medias || [],
     });
     window.scrollTo(0,0);
@@ -31680,9 +31569,6 @@ function PediaFichesEditor() {
 
         <label style={lbl}>Contenu détaillé</label>
         <textarea style={{...inp, minHeight:140, resize:"vertical", fontFamily:"inherit", whiteSpace:"pre-wrap"}} placeholder="Corps de la fiche, conduite à tenir, protocole..." value={form.content} onChange={e=>setForm({...form,content:e.target.value})}/>
-
-        <label style={lbl}>Tags (séparés par espace ou virgule)</label>
-        <input style={inp} placeholder="#pédiatrie #sédation" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
 
         <label style={lbl}>Photos / Schémas</label>
         <div style={{marginBottom:12}}>
@@ -31755,7 +31641,6 @@ function PediaMedicsEditor() {
       remarques: form.remarques.trim() || null,
       categorie: form.categorie.trim() || null,
       color: form.color || "#0EA5E9",
-      tags: form.tags ? form.tags.split(/[\s,]+/).filter(Boolean) : [],
     };
     try {
       if (editingId) await supaFetch(`/pedia_medicaments?id=eq.${editingId}`, "PATCH", payload);
@@ -31777,7 +31662,6 @@ function PediaMedicsEditor() {
       concentrationValue: m.concentration_value!=null ? String(m.concentration_value) : "",
       frequence:m.frequence||"", remarques:m.remarques||"",
       categorie:m.categorie||"", color:m.color||"#0EA5E9",
-      tags: Array.isArray(m.tags) ? m.tags.join(" ") : "",
     });
     window.scrollTo(0,0);
     const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0;
@@ -31847,9 +31731,6 @@ function PediaMedicsEditor() {
               boxShadow:"0 1px 3px rgba(0,0,0,.2)" }}/>
           ))}
         </div>
-
-        <label style={lbl}>Tags (séparés par espace ou virgule)</label>
-        <input style={inp} placeholder="#urgence #réa" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})}/>
 
         {editingId && <Btn onClick={()=>{ setEditingId(null); setForm(EMPTY); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
         <Btn onClick={save} color="#0EA5E9" style={{width:"100%"}} disabled={saving}>{saving ? "Enregistrement..." : (editingId ? "✅ Enregistrer les modifications" : "💉 Ajouter le médicament")}</Btn>
