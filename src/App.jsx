@@ -30074,6 +30074,8 @@ const PEDIA_MEDICAMENTS_DATA = [
   { id:"adr_ped",   nom:"Adrénaline",             indication:"Arrêt cardiaque",             voie:"IVD / IO",       dose_par_kg:0.01, unite:"mg",  dose_max:1,    concentration:"0,1 mg/mL (1 mg/10 mL)", concentration_value:0.1,  frequence:"Toutes les 3-5 min", remarques:"Diluer 1 amp 5 mg/5 mL dans 45 mL NaCl 0,9% = 0,1 mg/mL", categorie:"hemodynamique", color:"#DC2626" },
   { id:"adr_anaph_ped", nom:"Adrénaline (anaphylaxie)", indication:"Choc anaphylactique", voie:"IM ++++", dose_par_kg:0.01, unite:"mg", dose_max:0.5, concentration:"1 mg/mL (ampoule pure)", concentration_value:1, frequence:"2ᵉ dose à 5 min si symptômes persistants", dosePaliers:[ {max:20, dose:0.15, label:"< 20 kg"}, {max:40, dose:0.3, label:"20–40 kg"}, {max:null, dose:0.5, label:"> 40 kg"} ], remarques:"Anaphylaxie : 0,01 mg/kg (max 0,5 mg) en IM (face antéro-latérale de cuisse). En pratique : < 20 kg → 0,15 mg ; 20–40 kg → 0,3 mg ; > 40 kg → 0,5 mg. Ampoule 1 mg/mL. 2ᵉ dose à 5 min si les symptômes persistent.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"adr_aero_ped", nom:"Adrénaline (aérosol)", indication:"Laryngite / anaphylaxie (voie inhalée)", voie:"Aérosol", isAerosol:true, unite:"mg", frequence:"Renouvelable selon évolution", remarques:"Ampoule 5 mg/5 mL (1 mg/mL). Posologie 0,5 mg/kg (max 5 mg). Surveillance : fréquence cardiaque, efficacité respiratoire. Effet transitoire → surveiller l'effet rebond.", categorie:"aerosols", color:"#0EA5E9" },
+  { id:"salbu_neb_ped", nom:"Salbutamol (nébulisation)", indication:"Asthme aigu / bronchospasme", voie:"Aérosol", frequence:"< 16 kg → 2,5 mg ; ≥ 16 kg → 5 mg", remarques:"Posologie simplifiée : 2,5 mg si poids < 16 kg, 5 mg si poids ≥ 16 kg. Renouvelable en fonction du résultat clinique et de la tolérance du traitement.", categorie:"aerosols", color:"#0EA5E9" },
+  { id:"ipra_neb_ped", nom:"Ipratropium (Atrovent) nébulisation", indication:"Asthme aigu grave, en association avec un bêta2-mimétique", voie:"Aérosol", frequence:"Dose fixe : 0,25 mg", remarques:"0,25 mg (présentation Atrovent Enfants 0,25 mg dédiée). Diluer dans du sérum physiologique pour obtenir un volume total de 4 mL. À associer systématiquement à un bêta2-mimétique (Salbutamol), jamais en 1ère intention seul.", categorie:"aerosols", color:"#0EA5E9" },
   { id:"act_ped",   nom:"Acide tranexamique (Exacyl)",      indication:"Hémorragie traumatique",      voie:"IVL 10 min puis IVSE",     dose_par_kg:15,   doseParKgSeuil:{ seuilPoids:10, doseInf:10, doseSup:15 }, unite:"mg",  concentration:"100 mg/mL (0,5 g / 5 mL)", concentration_value:100, frequence:"Bolus unique, puis entretien", dilutionSeuil:{ seuilPoids:30, volInf:"50 mL", volSup:"100 mL" }, remarques:"Bolus : ≤ 10 kg → 10 mg/kg ; > 10 kg → 15 mg/kg. Prélever le volume nécessaire et diluer dans une poche de NaCl 0,9% (50 mL si ≤ 30 kg, 100 mL si > 30 kg), à passer en 10 min. PUIS entretien : 2 mg/kg/h en IVSE pendant 8h.", categorie:"hemodynamique", color:"#B91C1C" },
   { id:"striadyne_ped", nom:"Striadyne (Triphosadénine)", indication:"Tachycardie supraventriculaire", voie:"IVD FLASH", isStriadyne:true, unite:"mg", frequence:"AR si besoin", remarques:"Ampoule 20 mg / 2 mL. Posologie : 0,5 mg/kg (1ère dose) puis 1 mg/kg à 3 min (max 20 mg/dose). Prévenir le patient (sensation de malaise brève). Scope + défibrillateur à proximité.", categorie:"hemodynamique", color:"#DC2626" },
   { id:"cordarone_ped", nom:"Amiodarone (Cordarone)",       indication:"Trouble du rythme / ACR rythmes chocables", voie:"IVD / IVL", dose_par_kg:5, unite:"mg", concentration:"50 mg/mL (2 amp pures = 300 mg/6 mL)", concentration_value:50, frequence:"ACR : après le 3ᵉ choc", remarques:"Posologie : 5 mg/kg. Préparation : 2 ampoules pures = 300 mg / 6 mL (50 mg/mL). Ampoule 150 mg/3 mL.", categorie:"hemodynamique", color:"#DC2626" },
@@ -30082,6 +30084,8 @@ const PEDIA_MEDICAMENTS_DATA = [
   { id:"bicar_ped", nom:"Bicarbonate de sodium 4,2%", indication:"Intoxication grave aux stabilisants de membrane", voie:"IVL", isVolumeParKg:true, mlParKg:2, unite:"mL", frequence:"Jusqu'à normalisation des QRS", remarques:"Flacon 250 mL. Posologie 2 mL/kg en IVL, à passer jusqu'à normalisation des QRS. Pur.", categorie:"antidotes", color:"#059669" },
   { id:"cyanokit_ped", nom:"Hydroxocobalamine (Cyanokit)", indication:"Intoxication au cyanure (fumées d'incendie)", voie:"Perfusion IV", isCyanokit:true, unite:"mg", frequence:"Sur 10 min", remarques:"Flacon poudre 5 g. Posologie 70 mg/kg sans dépasser 5 g, sur 10 min. Reconstituer avec 200 mL NaCl 0,9% (25 mg/mL).", categorie:"antidotes", color:"#059669" },
   { id:"diazepam_ir_ped", nom:"Diazépam (Valium) intrarectal", indication:"Crise convulsive", voie:"Intrarectal", dose_par_kg:0.5, unite:"mg", dose_max:10, concentration:"5 mg/mL (10 mg / 2 mL)", concentration_value:5, arrondiVolume:0.1, frequence:"Dose unique", remarques:"Ampoule 10 mg/2 mL, pure. Posologie 0,5 mg/kg en intrarectal sans dépasser 10 mg. Administrer avec une canule/seringue adaptée.", categorie:"antiepileptique", color:"#9333EA" },
+  { id:"rivotril_iv_ped", nom:"Clonazépam (Rivotril) IV", indication:"État de mal épileptique", voie:"IVL très lente", dose_par_kg:0.015, unite:"mg", dose_max:1.5, concentration:"0,5 mg/mL après dilution (1 mg + 1 mL solvant)", concentration_value:0.5, arrondiVolume:0.05, frequence:"Dose de charge unique", remarques:"Ampoule 1 mg/1 mL à diluer avec l'ampoule de solvant fournie (1 mL) → 0,5 mg/mL. Posologie 0,015 mg/kg en IV très lente, sans dépasser 1,5 mg. Recommandation SRLF/SFMU 2018.", categorie:"antiepileptique", color:"#9333EA" },
+  { id:"buccolam_ped", nom:"Midazolam buccal (Buccolam)", indication:"Crise convulsive prolongée (voie buccale)", voie:"Buccal", isBuccolam:true, frequence:"Dose fixe selon l'âge", remarques:"Seringues préremplies par tranche d'âge, étiquette colorée. Administrer lentement entre la gencive et la joue. 1 seule dose par soignant non professionnel ; appeler les secours si la crise persiste après 10 min. Contre-indiqué avant 3 mois.", categorie:"antiepileptique", color:"#9333EA" },
 
   // ── Analgésie ──────────────────────────────────────────────────────────
   { id:"mor_ped",   nom:"Morphine",                indication:"Douleur modérée à sévère (> 6 mois)",    voie:"IVD titration",  dose_par_kg:0.1,  unite:"mg",  dose_max:10,   concentration:"1 mg/mL (10 mg/10 mL)", concentration_value:1, frequence:"Puis 0,05 mg/kg toutes les 5 min si besoin", remarques:"Protocole valable à partir de 6 mois. Diluer 1 amp 10 mg/1 mL dans 9 mL NaCl 0,9% = 1 mg/mL. Max = dose adulte.", categorie:"analgesie", color:"#7C3AED" },
@@ -30376,6 +30380,71 @@ function PediaVolumeCard({ medic, poids, color }) {
 }
 
 // ── Carte spéciale pédia : Atropine (concentration selon poids, dose unique) ──
+// Cas spécial : Buccolam (midazolam buccal) — dosage par TRANCHE D'ÂGE fixe (RCP officiel),
+// indépendant du poids. Nécessite que l'utilisateur ait saisi l'âge (pas seulement le poids).
+function PediaBuccolamCard({ medic, ageAnnees, color }) {
+  const C = useC();
+
+  const TRANCHES = [
+    { min:0.25, max:0.5,  dose:2.5, vol:0.5, label:"3 mois à 6 mois", etiquette:"Jaune", etiquetteColor:"#EAB308", hopital:true },
+    { min:0.5,  max:1,    dose:2.5, vol:0.5, label:"> 6 mois à < 1 an", etiquette:"Jaune", etiquetteColor:"#EAB308", hopital:false },
+    { min:1,    max:5,    dose:5,   vol:1,   label:"1 an à < 5 ans", etiquette:"Bleue", etiquetteColor:"#2563EB", hopital:false },
+    { min:5,    max:10,   dose:7.5, vol:1.5, label:"5 ans à < 10 ans", etiquette:"Mauve", etiquetteColor:"#9333EA", hopital:false },
+    { min:10,   max:null, dose:10,  vol:2,   label:"10 ans à adulte", etiquette:"Orange", etiquetteColor:"#EA580C", hopital:false },
+  ];
+
+  const tranche = ageAnnees != null
+    ? TRANCHES.find(t => ageAnnees >= t.min && (t.max == null || ageAnnees < t.max))
+    : null;
+  const tropJeune = ageAnnees != null && ageAnnees < 0.25;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`,
+      borderRadius:14, padding:"14px 16px", marginBottom:10}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8, marginBottom:6}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15, fontWeight:800, color:C.text}}>{medic.nom}</div>
+          {medic.amp && <div style={{fontSize:11, color:C.sub, marginTop:2}}>{medic.amp}</div>}
+        </div>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"3px 8px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      {ageAnneesEmpty(ageAnnees) ? (
+        <div style={{background:color+"12", border:`1px solid ${color}44`, borderRadius:10, padding:"9px 11px", fontSize:11.5, color:C.sub, fontStyle:"italic"}}>
+          Basculez en saisie « Par âge » ci-dessus pour afficher la dose (dosage par tranche d'âge, indépendant du poids).
+        </div>
+      ) : tropJeune ? (
+        <div style={{background:"#FEF2F2", border:"1px solid #FCA5A5", borderRadius:10, padding:"10px 12px", fontSize:12.5, color:"#991B1B", fontWeight:600}}>
+          Contre-indiqué avant 3 mois.
+        </div>
+      ) : tranche && (
+        <>
+          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
+            <div style={{width:16, height:16, borderRadius:4, background:tranche.etiquetteColor, flexShrink:0}}/>
+            <div>
+              <div style={{fontSize:20, fontWeight:900, color:C.text}}>{tranche.dose} mg <span style={{fontSize:13, fontWeight:700, color:C.sub}}>({tranche.vol} mL)</span></div>
+              <div style={{fontSize:10, color:C.sub}}>{tranche.label} — étiquette {tranche.etiquette}</div>
+            </div>
+          </div>
+          {tranche.hopital && (
+            <div style={{background:"#FEF2F2", border:"1px solid #FCA5A5", borderRadius:10, padding:"9px 11px", fontSize:11.5, color:"#991B1B", fontWeight:700, marginBottom:8}}>
+              ⚠️ 3 à 6 mois : administration en milieu hospitalier uniquement (surveillance + matériel de réanimation disponible).
+            </div>
+          )}
+        </>
+      )}
+
+      {medic.remarques && (
+        <div style={{marginTop:8, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+          {medic.remarques}
+        </div>
+      )}
+    </div>
+  );
+}
+function ageAnneesEmpty(a) { return a == null || isNaN(a) || a <= 0; }
+
 function PediaAtropineCard({ medic, poids, color }) {
   const C = useC();
   const dilue = poids <= 20;            // ≤ 20 kg : dilué
@@ -30597,9 +30666,14 @@ function PediaDoseCardPreview({ medic }) {
   );
 }
 
-function PediaDoseCard({ medic, poids }) {
+function PediaDoseCard({ medic, poids, ageAnnees }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
+
+  // Cas spécial : Buccolam (dosage par tranche d'ÂGE, pas par poids)
+  if (medic.isBuccolam) {
+    return <PediaBuccolamCard medic={medic} ageAnnees={ageAnnees} color={color}/>;
+  }
 
   // Sans poids : aperçu simple, sans calcul (évite les NaN dans les cartes spéciales)
   if (!poids) {
@@ -30890,6 +30964,7 @@ function PediaDoses({ onBack, deepLinkId }) {
   const [mode, setMode] = useState("poids");
   const [poids, setPoids] = useState("");
   const [age, setAge] = useState("");
+  const [ageUnit, setAgeUnit] = useState("annees"); // "annees" | "mois"
   const [search, setSearch] = useState(deepLinkId || "");
   const [openCats, setOpenCats] = useState({}); // toutes repliées par défaut
   // Le deepLinkId peut arriver après le premier rendu (timing de navigation) : on réagit à son changement
@@ -30903,7 +30978,13 @@ function PediaDoses({ onBack, deepLinkId }) {
 
   const poidsEff = mode === "poids"
     ? (parseFloat(poids) || null)
-    : estimatePoids(age);
+    : estimatePoids(ageUnit === "mois" ? (parseFloat(age) || 0) / 12 : age);
+
+  // Âge réel en années (pour les médicaments dosés par tranche d'âge, ex: Buccolam) —
+  // disponible seulement en mode "âge" (en mode "poids", l'âge exact n'est pas connu).
+  const ageAnneesEff = mode === "age"
+    ? (ageUnit === "mois" ? (parseFloat(age) || 0) / 12 : (parseFloat(age) || null))
+    : null;
 
   const toggleCat = (key) => setOpenCats(p => ({...p, [key]: !p[key]}));
 
@@ -30948,12 +31029,26 @@ function PediaDoses({ onBack, deepLinkId }) {
         ))}
       </div>
 
+      {/* Sous-toggle Années / Mois — visible seulement en mode âge */}
+      {mode === "age" && (
+        <div style={{display:"flex", gap:8, marginBottom:10}}>
+          {[{id:"annees",label:"Années"},{id:"mois",label:"Mois"}].map(u => (
+            <button key={u.id} onClick={()=>{ setAgeUnit(u.id); setAge(""); }} style={{
+              flex:1, padding:"7px", borderRadius:8, cursor:"pointer", fontSize:12, fontWeight:700,
+              border:`1.5px solid ${ageUnit===u.id ? "#0EA5E9" : C.border}`,
+              background: ageUnit===u.id ? "#E0F2FE" : C.white,
+              color: ageUnit===u.id ? "#0369A1" : C.sub,
+            }}>{u.label}</button>
+          ))}
+        </div>
+      )}
+
       {/* Saisie */}
       <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:8, boxSizing:"border-box"}}>
         <input type="number" inputMode="numeric"
           value={mode==="poids" ? poids : age}
           onChange={e => mode==="poids" ? setPoids(e.target.value) : setAge(e.target.value)}
-          placeholder={mode==="poids" ? "Poids en kg" : "Âge en années"}
+          placeholder={mode==="poids" ? "Poids en kg" : (ageUnit==="mois" ? "Âge en mois" : "Âge en années")}
           style={{flex:1, minWidth:0, padding:"14px 12px", borderRadius:12,
             border:`2px solid ${poidsEff ? "#0EA5E9" : C.border}`,
             fontSize:24, fontWeight:900, color:C.navy, background:C.white,
@@ -30962,7 +31057,7 @@ function PediaDoses({ onBack, deepLinkId }) {
         />
         <div style={{flexShrink:0, background: poidsEff ? "#0EA5E9" : C.bg, borderRadius:10, padding:"10px 14px"}}>
           <span style={{fontSize:15, fontWeight:800, color: poidsEff ? "#fff" : C.sub}}>
-            {mode==="poids" ? "kg" : "ans"}
+            {mode==="poids" ? "kg" : (ageUnit==="mois" ? "mois" : "ans")}
           </span>
         </div>
       </div>
@@ -30998,7 +31093,7 @@ function PediaDoses({ onBack, deepLinkId }) {
         ) : (
           <div>
             {filtered.map(m => (
-              <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>
+              <PediaDoseCard key={m.id} medic={m} poids={poidsEff} ageAnnees={ageAnneesEff}/>
             ))}
           </div>
         )
@@ -31053,7 +31148,7 @@ function PediaDoses({ onBack, deepLinkId }) {
                 {/* Médicaments de la catégorie */}
                 {openCats[cat.key] === true && (
                   <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                    {cat.items.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff}/>)}
+                    {cat.items.map(m => <PediaDoseCard key={m.id} medic={m} poids={poidsEff} ageAnnees={ageAnneesEff}/>)}
                   </div>
                 )}
               </div>
