@@ -2953,7 +2953,7 @@ function NotePersonnelleFlottante({ module, itemId }) {
     <>
       <button onClick={openModal} title={hasNote ? "Voir ma note personnelle" : "Ajouter une note personnelle"} style={{
         position:"fixed", bottom:84, right:20, zIndex:150,
-        width:48, height:48, borderRadius:"50%", border:"none", cursor:"pointer",
+        width:48, height:48, borderRadius:"50%", cursor:"pointer",
         background: hasNote ? "#EAB308" : C.white,
         boxShadow: hasNote ? "0 3px 12px rgba(234,179,8,.5)" : "0 2px 10px rgba(0,0,0,.15)",
         border: hasNote ? "none" : `1.5px solid ${C.border}`,
@@ -6676,7 +6676,13 @@ function GesteDetail({geste, onBack}) {
     const m = url.match(/(?:embed\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
     return m ? m[1] : null;
   };
+  const extractVimeoId = url => {
+    if(!url) return null;
+    const m = url.match(/vimeo\.com\/(?:.*\/)?(\d+)/);
+    return m ? m[1] : null;
+  };
   const ytId = extractYoutubeId(geste.videoUrl);
+  const vimeoId = !ytId ? extractVimeoId(geste.videoUrl) : null;
   const COLOR = geste.color || C.red;
 
   // Helper : section avec icône-label + contenu en carte (style Dilutions)
@@ -6835,19 +6841,23 @@ function GesteDetail({geste, onBack}) {
       )}
 
       {/* Vidéo YouTube */}
-      {ytId && (
-        <a href={`https://www.youtube.com/watch?v=${ytId}`} target="_blank" rel="noreferrer"
+      {(ytId || vimeoId || geste.videoUrl) && (
+        <a href={ytId ? `https://www.youtube.com/watch?v=${ytId}` : vimeoId ? `https://vimeo.com/${vimeoId}` : geste.videoUrl} target="_blank" rel="noreferrer"
           style={{display:"flex", alignItems:"center", gap:14,
             background:C.white, border:`1px solid ${C.border}`,
             borderRadius:14, padding:"14px 16px", marginTop:4, marginBottom:16,
             textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)"}}>
-          <div style={{background:"#FF0000", borderRadius:10, width:46, height:46, flexShrink:0,
+          <div style={{background: ytId ? "#FF0000" : vimeoId ? "#1AB7EA" : C.sub, borderRadius:10, width:46, height:46, flexShrink:0,
             display:"flex", alignItems:"center", justifyContent:"center"}}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+            {vimeoId ? (
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M22.396 7.164c-.093 2.026-1.507 4.799-4.245 8.32-2.83 3.68-5.229 5.516-7.19 5.516-1.216 0-2.244-1.126-3.079-3.379C7.031 15.293 6.176 11.47 5.03 10.256c-.256-.273-1.11-.007-2.559.8L1.605 9.98c1.518-1.335 3.014-2.669 4.487-4.004C8.073 4.169 9.508 3.485 10.44 3.402c2.191-.212 3.541 1.288 4.046 4.5.546 3.464.923 5.618 1.133 6.462.629 2.86 1.322 4.288 2.08 4.288.588 0 1.472-.926 2.652-2.783 1.176-1.858 1.807-3.27 1.893-4.243.171-1.6-.462-2.402-1.892-2.402-.674 0-1.368.155-2.08.46 1.38-4.529 4.018-6.729 7.911-6.596 2.887.076 4.25 1.949 4.09 5.616-.013.3-.041.593-.084.884z"/></svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+            )}
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
-            <div style={{fontSize:11, color:C.sub}}>Ouvre YouTube dans votre navigateur</div>
+            <div style={{fontSize:11, color:C.sub}}>Ouvre {ytId ? "YouTube" : vimeoId ? "Vimeo" : "la vidéo"} dans votre navigateur</div>
           </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
             <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
@@ -8480,8 +8490,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>Complications (1 par ligne)</label>
             <textarea style={{...inp, height:60, resize:"vertical"}} value={gForm.complications} onChange={e=>setGForm({...gForm,complications:e.target.value})} placeholder={"Intubation oesophagienne\nPneumothorax..."}/>
 
-            <label style={lbl}>{"Lien video YouTube (optionnel)"}</label>
-            <input style={inp} placeholder="https://youtube.com/watch?v=..." value={gForm.videoUrl} onChange={e=>setGForm({...gForm,videoUrl:e.target.value})}/>
+            <label style={lbl}>{"Lien vidéo YouTube ou Vimeo (optionnel)"}</label>
+            <input style={inp} placeholder="https://youtube.com/watch?v=... ou https://vimeo.com/..." value={gForm.videoUrl} onChange={e=>setGForm({...gForm,videoUrl:e.target.value})}/>
 
             <label style={lbl}>{"Crédit photo / vidéo (optionnel)"}</label>
             <input style={inp} placeholder="Ex: © Dr Martin, CHU Timone — CC BY-NC" value={gForm.credit} onChange={e=>setGForm({...gForm,credit:e.target.value})}/>
@@ -30107,10 +30117,7 @@ const PEDIA_MEDICAMENTS_DATA = [
   { id:"man_ped",   nom:"Mannitol 20%",              indication:"HTIC",                       voie:"IVDL 10 min",    dose_par_kg:3,    unite:"mL",  dose_max:150,  concentration:"Solution à 20%", concentration_value:null, frequence:"Dose unique", remarques:"Poche 250 mL : retirer le volume non utilisé selon poids. Voir cartes.", categorie:"osmotherapie", color:"#CA8A04" },
   // ── Antibiotique ───────────────────────────────────────────────────────
   { id:"amx_ped",   nom:"Amoxicilline-Ac. clavulanique", indication:"Infection — sepsis",    voie:"IVL 30 min",     dose_par_kg:50,   unite:"mg",  dose_max:3000, concentration:"Variable selon flacon (50 mg/mL)", concentration_value:50, frequence:"Toutes les 8h", remarques:"Reconstituer chaque flacon dans 10 mL EPPI. Voir cartes pour volume.", categorie:"antibiotique", color:"#EA580C" },
-  { id:"ctx_digestif_ped", nom:"Ceftriaxone (Rocéphine) — infection intra-abdo / urinaire / pneumonie", indication:"Infection intra-abdominale, infection urinaire compliquée (pyélonéphrite), pneumonie communautaire ou nosocomiale", voie:"IV", dose_par_kg:80, unite:"mg", dose_max:4000, concentration:"100 mg/mL après reconstitution", concentration_value:100, frequence:"1×/j (2×/j si dose > 2g/j)", remarques:"Fourchette RCP officielle : 50 à 80 mg/kg/j en 1 injection. Dose retenue : borne haute (80 mg/kg), sans dépasser 4 g. Si dose > 2 g/j : possibilité de répartir en 2 injections (toutes les 12h).", categorie:"antibiotique", color:"#EA580C" },
-  { id:"ctx_peau_os_ped", nom:"Ceftriaxone (Rocéphine) — peau/tissus mous, os/articulations, neutropénie fébrile", indication:"Infection compliquée de la peau et des tissus mous, infection ostéo-articulaire, neutropénie fébrile d'origine bactérienne suspectée", voie:"IV", dose_par_kg:100, unite:"mg", dose_max:4000, concentration:"100 mg/mL après reconstitution", concentration_value:100, frequence:"1×/j (2×/j si dose > 2g/j)", remarques:"Fourchette RCP officielle : 50 à 100 mg/kg/j en 1 injection, sans dépasser 4 g. Dose retenue : borne haute (100 mg/kg). Si dose > 2 g/j : possibilité de répartir en 2 injections (toutes les 12h).", categorie:"antibiotique", color:"#EA580C" },
-  { id:"ctx_meningite_ped", nom:"Ceftriaxone (Rocéphine) — méningite bactérienne", indication:"Méningite bactérienne", voie:"IV", dose_par_kg:100, unite:"mg", dose_max:4000, concentration:"100 mg/mL après reconstitution", concentration_value:100, frequence:"1×/j (2×/j si dose > 2g/j)", remarques:"Fourchette RCP officielle : 80 à 100 mg/kg/j en 1 injection, sans dépasser 4 g. Dose retenue : borne haute (100 mg/kg). Si dose > 2 g/j : possibilité de répartir en 2 injections (toutes les 12h).", categorie:"antibiotique", color:"#EA580C" },
-  { id:"ctx_endocardite_ped", nom:"Ceftriaxone (Rocéphine) — endocardite bactérienne", indication:"Endocardite bactérienne", voie:"IV", dose_par_kg:100, unite:"mg", dose_max:4000, concentration:"100 mg/mL après reconstitution", concentration_value:100, frequence:"1×/j (2×/j si dose > 2g/j)", remarques:"Dose RCP officielle : 100 mg/kg/j en 1 injection, sans dépasser 4 g. Si dose > 2 g/j : possibilité de répartir en 2 injections (toutes les 12h).", categorie:"antibiotique", color:"#EA580C" },
+  { id:"ceftriaxone_ped", nom:"Ceftriaxone (Rocéphine)", indication:"Infection bactérienne sévère (choix de l'indication dans la fiche)", voie:"IV", isRocephine:true, categorie:"antibiotique", color:"#EA580C" },
 ];
 
 // Config affichage catégories (même ordre que cartes Urg'Ara)
@@ -30386,6 +30393,71 @@ function PediaVolumeCard({ medic, poids, color }) {
 // ── Carte spéciale pédia : Atropine (concentration selon poids, dose unique) ──
 // Cas spécial : Buccolam (midazolam buccal) — dosage par TRANCHE D'ÂGE fixe (RCP officiel),
 // indépendant du poids. Nécessite que l'utilisateur ait saisi l'âge (pas seulement le poids).
+// Cas spécial : Ceftriaxone (Rocéphine) — plusieurs indications, chacune avec son propre
+// mg/kg et son propre plafond ; l'utilisateur choisit l'indication, la dose se recalcule.
+function PediaRocephineCard({ medic, poids, color }) {
+  const C = useC();
+  const INDICATIONS = [
+    { key:"digestif", label:"Infection intra-abdo / urinaire / pneumonie", doseParKg:80, doseMax:4000, fourchette:"50 à 80 mg/kg/j" },
+    { key:"peau_os",  label:"Peau / tissus mous / os-articulations / neutropénie fébrile", doseParKg:100, doseMax:4000, fourchette:"50 à 100 mg/kg/j" },
+    { key:"meningite",label:"Méningite bactérienne", doseParKg:100, doseMax:4000, fourchette:"80 à 100 mg/kg/j" },
+    { key:"endocardite",label:"Endocardite bactérienne", doseParKg:100, doseMax:4000, fourchette:"100 mg/kg/j" },
+  ];
+  const [selKey, setSelKey] = useState(INDICATIONS[0].key);
+  const sel = INDICATIONS.find(i => i.key === selKey);
+
+  const doseBrute = sel.doseParKg * poids;
+  const capped = doseBrute > sel.doseMax;
+  const dose = Math.round((capped ? sel.doseMax : doseBrute) * 100) / 100;
+  const conc = 100; // mg/mL après reconstitution
+  const volume = Math.round((dose / conc) * 10) / 10;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+
+      <div style={{fontSize:11, fontWeight:700, color:C.sub, margin:"8px 0 6px"}}>Indication</div>
+      <div style={{display:"flex", flexDirection:"column", gap:6, marginBottom:10}}>
+        {INDICATIONS.map(i => {
+          const isSel = i.key === selKey;
+          return (
+            <button key={i.key} onClick={()=>setSelKey(i.key)} style={{
+              width:"100%", background: isSel ? color+"18" : C.bg,
+              border:`2px solid ${isSel ? color : C.border}`, borderRadius:10,
+              padding:"8px 11px", cursor:"pointer", textAlign:"left", touchAction:"manipulation",
+              fontSize:12, color:isSel?color:C.text, fontWeight:isSel?800:500,
+            }}>
+              {i.label}
+              <div style={{fontSize:10, color:C.sub, marginTop:2, fontWeight:500}}>{i.fourchette}, max {i.doseMax/1000} g</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{display:"flex", gap:16, borderTop:`1px solid ${C.border}`, paddingTop:10}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>DOSE (pour {poids} kg)</div>
+          <div style={{fontSize:20, fontWeight:900, color:C.text}}>{dose} <span style={{fontSize:12}}>mg</span></div>
+          <div style={{fontSize:9, color:C.sub, marginTop:2}}>{sel.doseParKg} mg/kg (borne haute)</div>
+        </div>
+        <div style={{flex:1, borderLeft:`1px solid ${C.border}`, paddingLeft:16}}>
+          <div style={{fontSize:10, color:C.sub, fontWeight:700}}>VOLUME</div>
+          <div style={{fontSize:20, fontWeight:900, color}}>{volume} <span style={{fontSize:12}}>mL</span></div>
+          <div style={{fontSize:9, color:C.sub, marginTop:2}}>à 100 mg/mL</div>
+        </div>
+      </div>
+      {capped && <div style={{marginTop:8, fontSize:11, fontWeight:800, color:"#DC2626"}}>⚠️ Dose plafonnée à {sel.doseMax/1000} g</div>}
+
+      <div style={{marginTop:10, fontSize:11, color:C.sub, lineHeight:1.5, fontStyle:"italic"}}>
+        1×/j (2×/j si dose &gt; 2 g/j). Reconstitution à 100 mg/mL. Dose retenue = borne haute de la fourchette RCP.
+      </div>
+    </div>
+  );
+}
+
 function PediaBuccolamCard({ medic, ageAnnees, color }) {
   const C = useC();
 
@@ -30684,6 +30756,10 @@ function PediaDoseCard({ medic, poids, ageAnnees }) {
     return <PediaDoseCardPreview medic={medic}/>;
   }
 
+  // Cas spécial : Ceftriaxone (Rocéphine) — plusieurs indications, chacune avec son propre mg/kg
+  if (medic.isRocephine) {
+    return <PediaRocephineCard medic={medic} poids={poids} color={color}/>;
+  }
   // Cas spécial : Striadyne (2 doses successives, concentration selon poids)
   if (medic.isStriadyne) {
     return <PediaStriadyneCard medic={medic} poids={poids} color={color}/>;
