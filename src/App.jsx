@@ -2064,6 +2064,13 @@ function ImageLightbox({ src, credit, onClose }) {
   const lastTouchDist = useRef(null);
   const imgRef = useRef(null);
 
+  // Signale au geste de swipe-retour global (dans AppInner) qu'une image plein écran
+  // est ouverte, pour qu'il ne déclenche pas un retour pendant un zoom/déplacement.
+  useEffect(()=>{
+    window.__lightboxOpen = true;
+    return ()=>{ window.__lightboxOpen = false; };
+  },[]);
+
   // Fermer avec Échap
   useEffect(()=>{
     const h = e => { if(e.key==="Escape") onClose(); };
@@ -7476,18 +7483,18 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [tab, setTab] = useState("home");
   const [saved, setSaved] = useState(null);
   const [submittingKey, setSubmittingKey] = useState(null); // anti double-clic sur les boutons "Ajouter"
-  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], tags:"", hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
-  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[], tags:"" });
+  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
+  const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[] });
   const [ecgConfirmed, setEcgConfirmed] = useState(false);
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
-  const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[], tags:"" });
-  const [dForm, setDForm] = useState({ title:"", categorie:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
-  const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
-  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
-  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", tags:"", evolution:"", medias:[] });
+  const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[] });
+  const [dForm, setDForm] = useState({ title:"", categorie:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
+  const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
+  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
+  const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", evolution:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
-  const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"", tags:"" });
-  const [qzForm, setQzForm] = useState({ title:"", theme:"", description:"", icon:"🧠", color:"#6366F1", estimatedMin:5, sources:"", takeaways:"", questions:[], tags:"" });
+  const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"" });
+  const [qzForm, setQzForm] = useState({ title:"", theme:"", description:"", icon:"🧠", color:"#6366F1", estimatedMin:5, sources:"", takeaways:"", questions:[] });
 
   const [editingE, setEditingE] = useState(null);
   const [editingI, setEditingI] = useState(null);
@@ -8233,7 +8240,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>{"Crédit photo / document (optionnel)"}</label>
             <input style={inp} placeholder="Ex: © Dr Martin, CHU Timone — CC BY-NC" value={dForm.credit||""} onChange={e=>setDForm({...dForm,credit:e.target.value})}/>
 
-            {editingD && <Btn onClick={()=>{ setEditingD(null); setDForm({ title:"", categorie:"", tags:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingD && <Btn onClick={()=>{ setEditingD(null); setDForm({ title:"", categorie:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addDivers} color={C.navy} style={{width:"100%"}}>{editingD ? "✅ Enregistrer les modifications" : "Ajouter la fiche"}</Btn>
           </Card>
           {customDivers.length>0 && (
@@ -8393,7 +8400,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               accept="image/*,video/*,application/pdf"
             />
 
-            {editingDil && <Btn onClick={()=>{ setEditingDil(null); setDilForm({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", tags:"", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingDil && <Btn onClick={()=>{ setEditingDil(null); setDilForm({ title:"", nomCommercial:"", subtitle:"", color:"#E05260", presentation:"", indication:"", dilutionStandard:"", administration:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addDilution} color={C.red} style={{width:"100%"}}>{editingDil ? "✅ Enregistrer les modifications" : "Ajouter la dilution"}</Btn>
           </Card>
 
@@ -8503,7 +8510,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", tags:"", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
@@ -8658,7 +8665,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
             </div>
 
             <Btn onClick={addQuiz} color="#6366F1" style={{width:"100%"}}>{editingQz ? "💾 Enregistrer les modifications" : "✅ Créer le quiz"}</Btn>
-            {editingQz && <Btn onClick={()=>{ setEditingQz(null); setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[],tags:""}); }} color={C.sub} style={{width:"100%", marginTop:6}}>Annuler la modification</Btn>}
+            {editingQz && <Btn onClick={()=>{ setEditingQz(null); setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[]}); }} color={C.sub} style={{width:"100%", marginTop:6}}>Annuler la modification</Btn>}
           </div>
 
           {/* Liste des quiz existants */}
@@ -31632,7 +31639,7 @@ function PediaFichesEditor() {
   const inp = { width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:14, color:C.text, background:C.white, outline:"none", marginBottom:12, boxSizing:"border-box" };
   const lbl = { fontSize:12, fontWeight:700, color:C.text, marginBottom:6, display:"block" };
 
-  const EMPTY = { title:"", subtitle:"", category:"", icon:"👶", color:"#EC4899", content:"", pointsCles:"", alertes:"", tags:"", medias:[] };
+  const EMPTY = { title:"", subtitle:"", category:"", icon:"👶", color:"#EC4899", content:"", pointsCles:"", alertes:"", medias:[] };
   const [fiches, setFiches] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [editingId, setEditingId] = useState(null);
@@ -31785,7 +31792,7 @@ function PediaMedicsEditor() {
   const inp = { width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.border}`, fontSize:14, color:C.text, background:C.white, outline:"none", marginBottom:12, boxSizing:"border-box" };
   const lbl = { fontSize:12, fontWeight:700, color:C.text, marginBottom:6, display:"block" };
 
-  const EMPTY = { nom:"", indication:"", voie:"", doseParKg:"", unite:"mg", doseMax:"", concentration:"", concentrationValue:"", frequence:"", remarques:"", categorie:"", color:"#0EA5E9", tags:"" };
+  const EMPTY = { nom:"", indication:"", voie:"", doseParKg:"", unite:"mg", doseMax:"", concentration:"", concentrationValue:"", frequence:"", remarques:"", categorie:"", color:"#0EA5E9" };
   const [medics, setMedics] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [editingId, setEditingId] = useState(null);
@@ -37121,9 +37128,10 @@ function AppInner() {
           const dx = e.changedTouches[0].clientX - (contentRef.current._swipeX || 0);
           const dy = e.changedTouches[0].clientY - (contentRef.current._swipeY || 0);
           // Swipe horizontal > 80px et plus horizontal que vertical → goBack
-          // Désactivé sur ECG (gêne le défilement/zoom des tracés)
+          // Désactivé sur ECG (gêne le défilement/zoom des tracés) et pendant
+          // la visionneuse d'image plein écran (gêne le zoom/déplacement photo).
           if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-            if (dx > 0 && screen !== "home" && screen !== "ecg" && screen !== "antibioguide") goBack(); // swipe droite = retour
+            if (dx > 0 && screen !== "home" && screen !== "ecg" && screen !== "antibioguide" && !window.__lightboxOpen) goBack(); // swipe droite = retour
           }
         }}
       >
