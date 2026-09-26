@@ -6674,6 +6674,70 @@ function GestesScreen({ deepLinkId, onBack }) {
   );
 }
 
+function VideoThumbCard({url, title, extractYoutubeId, extractVimeoId, C}) {
+  const ytId = extractYoutubeId(url);
+  const vimeoId = !ytId ? extractVimeoId(url) : null;
+  const [vimeoThumb, setVimeoThumb] = useState(null);
+  useEffect(() => {
+    if (!vimeoId) return;
+    let cancelled = false;
+    fetch(`https://vimeo.com/api/oembed.json?url=https://vimeo.com/${vimeoId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (!cancelled && data && data.thumbnail_url) setVimeoThumb(data.thumbnail_url); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vimeoId]);
+
+  if (!ytId && !vimeoId) {
+    // Lien vidéo non reconnu (autre plateforme) → on garde le lien texte simple
+    return (
+      <a href={url} target="_blank" rel="noreferrer"
+        style={{display:"flex", alignItems:"center", gap:14,
+          background:C.white, border:`1px solid ${C.border}`,
+          borderRadius:14, padding:"14px 16px", marginBottom:10,
+          textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)"}}>
+        <div style={{background:C.sub, borderRadius:10, width:46, height:46, flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center"}}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>{title || "Voir la vidéo"}</div>
+          <div style={{fontSize:11, color:C.sub}}>Ouvre la vidéo dans votre navigateur</div>
+        </div>
+      </a>
+    );
+  }
+
+  const thumbSrc = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : vimeoThumb;
+  const badgeColor = ytId ? "#FF0000" : "#1AB7EA";
+  const platformName = ytId ? "YouTube" : "Vimeo";
+  const href = ytId ? `https://www.youtube.com/watch?v=${ytId}` : `https://vimeo.com/${vimeoId}`;
+
+  return (
+    <a href={href} target="_blank" rel="noreferrer"
+      style={{display:"block", marginBottom:12, textDecoration:"none"}}>
+      <div style={{position:"relative", width:"100%", aspectRatio:"16/9", borderRadius:14,
+        overflow:"hidden", background:"#0F172A", boxShadow:"0 2px 8px rgba(26,58,92,.08)"}}>
+        {thumbSrc && (
+          <img src={thumbSrc} alt={title || "Vidéo"} style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.85}}/>
+        )}
+        <div style={{position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)",
+          width:56, height:56, borderRadius:"50%", background:"rgba(0,0,0,0.55)",
+          display:"flex", alignItems:"center", justifyContent:"center", border:"2px solid rgba(255,255,255,0.85)"}}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="white" style={{marginLeft:3}}><path d="M8 5v14l11-7z"/></svg>
+        </div>
+        <div style={{position:"absolute", bottom:8, right:8, background:"rgba(0,0,0,0.7)", color:"#fff",
+          fontSize:10, fontWeight:700, padding:"3px 7px", borderRadius:5, display:"flex", alignItems:"center", gap:4}}>
+          ▶ {platformName}
+        </div>
+      </div>
+      {title && (
+        <div style={{fontSize:13, fontWeight:700, color:C.text, marginTop:6, paddingLeft:2}}>{title}</div>
+      )}
+    </a>
+  );
+}
+
 function GesteDetail({geste, onBack}) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
@@ -6688,8 +6752,10 @@ function GesteDetail({geste, onBack}) {
     const m = url.match(/vimeo\.com\/(?:.*\/)?(\d+)/);
     return m ? m[1] : null;
   };
-  const ytId = extractYoutubeId(geste.videoUrl);
-  const vimeoId = !ytId ? extractVimeoId(geste.videoUrl) : null;
+  // Compatibilité : anciens gestes n'ayant qu'un videoUrl unique → traité comme 1 vidéo sans titre
+  const videoList = (geste.videos && geste.videos.length)
+    ? geste.videos
+    : (geste.videoUrl ? [{title:"", url:geste.videoUrl}] : []);
   const COLOR = geste.color || C.red;
 
   // Helper : section avec icône-label + contenu en carte (style Dilutions)
@@ -6847,30 +6913,14 @@ function GesteDetail({geste, onBack}) {
         </Section>
       )}
 
-      {/* Vidéo YouTube */}
-      {(ytId || vimeoId || geste.videoUrl) && (
-        <a href={ytId ? `https://www.youtube.com/watch?v=${ytId}` : vimeoId ? `https://vimeo.com/${vimeoId}` : geste.videoUrl} target="_blank" rel="noreferrer"
-          style={{display:"flex", alignItems:"center", gap:14,
-            background:C.white, border:`1px solid ${C.border}`,
-            borderRadius:14, padding:"14px 16px", marginTop:4, marginBottom:16,
-            textDecoration:"none", boxShadow:"0 2px 8px rgba(26,58,92,.06)"}}>
-          <div style={{background: ytId ? "#FF0000" : vimeoId ? "#1AB7EA" : C.sub, borderRadius:10, width:46, height:46, flexShrink:0,
-            display:"flex", alignItems:"center", justifyContent:"center"}}>
-            {vimeoId ? (
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M22.396 7.164c-.093 2.026-1.507 4.799-4.245 8.32-2.83 3.68-5.229 5.516-7.19 5.516-1.216 0-2.244-1.126-3.079-3.379C7.031 15.293 6.176 11.47 5.03 10.256c-.256-.273-1.11-.007-2.559.8L1.605 9.98c1.518-1.335 3.014-2.669 4.487-4.004C8.073 4.169 9.508 3.485 10.44 3.402c2.191-.212 3.541 1.288 4.046 4.5.546 3.464.923 5.618 1.133 6.462.629 2.86 1.322 4.288 2.08 4.288.588 0 1.472-.926 2.652-2.783 1.176-1.858 1.807-3.27 1.893-4.243.171-1.6-.462-2.402-1.892-2.402-.674 0-1.368.155-2.08.46 1.38-4.529 4.018-6.729 7.911-6.596 2.887.076 4.25 1.949 4.09 5.616-.013.3-.041.593-.084.884z"/></svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
-            )}
-          </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:2}}>Voir la vidéo</div>
-            <div style={{fontSize:11, color:C.sub}}>Ouvre {ytId ? "YouTube" : vimeoId ? "Vimeo" : "la vidéo"} dans votre navigateur</div>
-          </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2">
-            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
-            <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-        </a>
+      {/* Vidéos (YouTube / Vimeo) — miniatures cliquables */}
+      {videoList.length > 0 && (
+        <div style={{marginBottom:16}}>
+          {videoList.map((v,i)=>(
+            <VideoThumbCard key={i} url={v.url} title={v.title}
+              extractYoutubeId={extractYoutubeId} extractVimeoId={extractVimeoId} C={C}/>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -7490,7 +7540,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[] });
   const [dForm, setDForm] = useState({ title:"", categorie:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
-  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", imageUrl:"", imageData:null, medias:[] });
+  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", evolution:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"" });
@@ -7612,16 +7662,17 @@ function AdminScreenInner({ onNewItem, onBack }) {
       etapes:   typeof gForm.etapes==="string"?gForm.etapes.split("\n").filter(Boolean):gForm.etapes,
       pieges:   typeof gForm.pieges==="string"?gForm.pieges.split("\n").filter(Boolean):gForm.pieges,
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
+      videos:(gForm.videos||[]).filter(v=>v && v.url && v.url.trim()),
     };
     if(editingG !== null) {
       const item = {...gForm, id:editingG, ...parsed};
       await updateItem("gestes","admin_gestes",item,["image"]);
-      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste modifié !");
     } else {
       const item = {...gForm, id:Date.now(), ...parsed};
       const newItem = await addItem("gestes","admin_gestes",item,["image"]);
-      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videoUrl:"",credit:"",imageUrl:"",imageData:null,medias:[]});
+      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
       showSaved("Geste ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
@@ -8497,8 +8548,18 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>Complications (1 par ligne)</label>
             <textarea style={{...inp, height:60, resize:"vertical"}} value={gForm.complications} onChange={e=>setGForm({...gForm,complications:e.target.value})} placeholder={"Intubation oesophagienne\nPneumothorax..."}/>
 
-            <label style={lbl}>{"Lien vidéo YouTube ou Vimeo (optionnel)"}</label>
-            <input style={inp} placeholder="https://youtube.com/watch?v=... ou https://vimeo.com/..." value={gForm.videoUrl} onChange={e=>setGForm({...gForm,videoUrl:e.target.value})}/>
+            <label style={lbl}>{"Vidéos YouTube ou Vimeo (optionnel)"}</label>
+            {(gForm.videos||[]).map((v,i)=>(
+              <div key={i} style={{display:"flex", gap:6, marginBottom:6, alignItems:"center"}}>
+                <input style={{...inp, flex:"0 0 38%"}} placeholder="Titre (optionnel)" value={v.title||""}
+                  onChange={e=>{ const arr=[...gForm.videos]; arr[i]={...arr[i], title:e.target.value}; setGForm({...gForm, videos:arr}); }}/>
+                <input style={{...inp, flex:1}} placeholder="https://youtube.com/watch?v=... ou https://vimeo.com/..." value={v.url||""}
+                  onChange={e=>{ const arr=[...gForm.videos]; arr[i]={...arr[i], url:e.target.value}; setGForm({...gForm, videos:arr}); }}/>
+                <button onClick={()=>{ const arr=gForm.videos.filter((_,j)=>j!==i); setGForm({...gForm, videos:arr}); }}
+                  style={{background:"none", border:"none", color:C.red, fontSize:20, cursor:"pointer", padding:"0 4px", flexShrink:0}}>✕</button>
+              </div>
+            ))}
+            <Btn onClick={()=>setGForm({...gForm, videos:[...(gForm.videos||[]), {title:"", url:""}]})} color={C.sub} style={{width:"100%", marginBottom:14}}>+ Ajouter une vidéo</Btn>
 
             <label style={lbl}>{"Crédit photo / vidéo (optionnel)"}</label>
             <input style={inp} placeholder="Ex: © Dr Martin, CHU Timone — CC BY-NC" value={gForm.credit} onChange={e=>setGForm({...gForm,credit:e.target.value})}/>
@@ -8510,7 +8571,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videoUrl:"", credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videos:[], credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
@@ -8525,7 +8586,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:13, fontWeight:700, color:C.text}}>{g.icon} {g.title}</div>
                   </div>
                   <div style={{display:"flex", gap:6}}>
-                    <button onClick={()=>{ setEditingG(g.id); setGForm({...g, materiel:Array.isArray(g.materiel)?g.materiel.join("\n"):g.materiel||"", etapes:Array.isArray(g.etapes)?g.etapes.join("\n"):g.etapes||"", pieges:Array.isArray(g.pieges)?g.pieges.join("\n"):g.pieges||"", complications:Array.isArray(g.complications)?g.complications.join("\n"):g.complications||""}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingG(g.id); setGForm({...g, materiel:Array.isArray(g.materiel)?g.materiel.join("\n"):g.materiel||"", etapes:Array.isArray(g.etapes)?g.etapes.join("\n"):g.etapes||"", pieges:Array.isArray(g.pieges)?g.pieges.join("\n"):g.pieges||"", complications:Array.isArray(g.complications)?g.complications.join("\n"):g.complications||"", videos:(g.videos&&g.videos.length)?g.videos:(g.videoUrl?[{title:"",url:g.videoUrl}]:[])}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("gestes","admin_gestes",g.id)}
                       style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>
                       Suppr.
