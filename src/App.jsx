@@ -4807,6 +4807,10 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initial); // pré-coché en mode édition
 
+  // Brouillon auto-sauvegardé — protège une rédaction longue (RETEX/cas clinique)
+  // contre une interruption. N'agit qu'en mode "nouvelle publication" (pas en édition).
+  const draft = useDraftAutosave("retex_draft_submit", form, setForm, isEdit);
+
   const CATS = ["Réanimation","Cardiologie","Neurologie","Traumatologie","SMUR","Pédiatrie","Toxicologie","Infectiologie","Autre"];
 
   const inp = {
@@ -4831,6 +4835,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     await onSubmit(form);
     setSaving(false);
     setConfirmed(false);
+    draft.clear();
   }
 
   return (
@@ -4840,6 +4845,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
         <div style={{fontSize:17, fontWeight:900, color:C.navy}}>{isEdit ? "✏️ Modifier la publication" : "📝 Nouvelle publication"}</div>
         <button onClick={onCancel} style={{background:"none", border:"none", color:C.sub, fontSize:22, cursor:"pointer"}}>✕</button>
       </div>
+      {!isEdit && <DraftBanner draft={draft} itemLabel="une publication"/>}
 
       {/* 2 onglets */}
       <div style={{display:"flex", gap:8, marginBottom:16}}>
@@ -7610,7 +7616,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const iDraft = useDraftAutosave("admin_draft_imagerie", iForm, setIForm, editingI !== null);
   const aDraft = useDraftAutosave("admin_draft_agenda", aForm, setAForm, editingA !== null);
   const dDraft = useDraftAutosave("admin_draft_divers", dForm, setDForm, editingD !== null);
-  const rDraft = useDraftAutosave("admin_draft_retex", rForm, setRForm, false);
+  // (rForm/addRetex ne sont plus utilisés : l'onglet RETEX admin réutilise RetexSubmitForm,
+  // qui gère désormais son propre brouillon — voir "retex_draft_submit".)
   const rfDraft = useDraftAutosave("admin_draft_recoflash", rfForm, setRfForm, editingRf !== null);
   const qzDraft = useDraftAutosave("admin_draft_quiz", qzForm, setQzForm, editingQz !== null);
 
@@ -7719,7 +7726,6 @@ function AdminScreenInner({ onNewItem, onBack }) {
     const newItem = await addRetexItem(item);
     setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",evolution:"",medias:[]});
     setRetexAdminConfirmed(false);
-    rDraft.clear();
     showSaved("Publication ajoutée !");
     if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
   }
