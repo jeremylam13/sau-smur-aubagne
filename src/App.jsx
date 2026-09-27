@@ -33800,6 +33800,42 @@ function CalcAdulteCard({ medic, poids }) {
   );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// CalcChoixScreen : écran de choix Adulte / Pédiatrique, cible de l'onglet
+// "Calc doses" de la barre du bas (regroupe calcAdulte + pedia en un seul tap)
+// ────────────────────────────────────────────────────────────────────────────
+function CalcChoixScreen({ onNav }) {
+  const C = useC();
+  const CHOICES = [
+    { id:"calcAdulte", icon:"⚖️", label:"Calcul de doses — Adulte", desc:"Posologies par médicament", color:"#0891B2", bg:"#CFFAFE" },
+    { id:"pedia",      icon:"👶", label:"Calcul de doses — Pédiatrie", desc:"Doses selon le poids ou l'âge", color:"#EC4899", bg:"#FCE7F3" },
+  ];
+  return (
+    <div>
+      <div style={{fontSize:18, fontWeight:800, color:C.navy, marginBottom:4}}>Calcul de doses</div>
+      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Choisissez la population concernée</div>
+      <div style={{display:"flex", flexDirection:"column", gap:10}}>
+        {CHOICES.map(ch => (
+          <button key={ch.id} onClick={()=>onNav(ch.id)} style={{
+            display:"flex", alignItems:"center", gap:14, background:C.white,
+            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${ch.color}`,
+            borderRadius:16, padding:"18px 16px", cursor:"pointer", textAlign:"left",
+            WebkitTapHighlightColor:"transparent",
+          }}>
+            <div style={{background:ch.bg, borderRadius:14, width:52, height:52, flexShrink:0,
+              display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>{ch.icon}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15, fontWeight:800, color:C.text}}>{ch.label}</div>
+              <div style={{fontSize:12, color:C.sub, marginTop:2}}>{ch.desc}</div>
+            </div>
+            <span style={{color:ch.color, fontSize:20}}>›</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Écran principal ──
 function CalcAdulteScreen({ onBack, deepLinkId }) {
   const C = useC();
@@ -36954,10 +36990,11 @@ function AppInner() {
 
   const tabs = [
     {id:"home",       icon:"🏠", label:"Accueil"},
-    {id:"favoris",    icon:"⭐", label:"Favoris"},
     {id:"gestes",     icon:"✂️",  label:"Gestes"},
-    {id:"scores",     icon:"🧮", label:"Scores"},
     {id:"dilutions",  icon:"💉", label:"Dilutions"},
+    {id:"calcChoix",  icon:"⚖️",  label:"Calc doses"},
+    {id:"antibioguide", icon:"🦠", label:"Antibio"},
+    {id:"scores",     icon:"🧮", label:"Scores"},
     {id:"annuaire",   icon:"📒", label:"Contacts", hideForConsultatif:true},
   ].filter(t => !t.hideForConsultatif || role !== "consultatif");
 
@@ -37109,6 +37146,7 @@ function AppInner() {
         {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
         {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack} deepLinkId={deepLink}/>}
         {screen==="calcAdulte" && <CalcAdulteScreen key={"calcAdulte-"+navVersion} onBack={goBack} deepLinkId={deepLink}/>}
+        {screen==="calcChoix"  && <CalcChoixScreen key={"calcChoix-"+navVersion} onNav={navigate}/>}
         {screen==="echo"       && <EchoScreen key={"echo-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
