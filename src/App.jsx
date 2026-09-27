@@ -28227,6 +28227,20 @@ function AntibioguideApp({ deepLinkModuleId, deepLinkNodeId, onBackApp } = {}) {
     return null;
   });
 
+  // Le deepLink peut arriver après le premier rendu (le routeur global réinitialise
+  // puis redéfinit la cible de façon asynchrone) : on réagit à son changement.
+  useEffect(() => {
+    if (!deepLinkModuleId) return;
+    setActiveModule(deepLinkModuleId);
+    if (deepLinkNodeId) {
+      const cfg = Abg_MODULE_DATA[deepLinkModuleId];
+      const path = cfg ? Abg_findNodePath(cfg.data, deepLinkNodeId) : null;
+      setDirectNode(path ? path[path.length - 1] : null);
+    } else {
+      setDirectNode(null);
+    }
+  }, [deepLinkModuleId, deepLinkNodeId]);
+
   const handleSelect = (moduleId, node = null) => {
     setActiveModule(moduleId);
     setDirectNode(node || null);
