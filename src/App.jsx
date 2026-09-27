@@ -2544,6 +2544,31 @@ function HomeScreen({onNav}) {
         )}
       </div>
 
+      {/* ⚖️ Widget rapide : Calcul de doses — choix direct Adulte / Pédiatrie ⚖️ */}
+      {!isSearching && (
+        <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderRadius:16, padding:14, marginBottom:18}}>
+          <div style={{fontSize:12, fontWeight:800, color:C.navy, marginBottom:10, letterSpacing:.3}}>⚖️ Calcul de doses</div>
+          <div style={{display:"flex", gap:10}}>
+            <button onClick={()=>onNav("calcAdulte")} style={{
+              flex:1, background:"#CFFAFE", border:"none", borderRadius:12,
+              padding:"12px 6px", cursor:"pointer", display:"flex", flexDirection:"column",
+              alignItems:"center", gap:5, WebkitTapHighlightColor:"transparent",
+            }}>
+              <span style={{fontSize:22}}>⚖️</span>
+              <span style={{fontSize:11, fontWeight:800, color:"#0891B2"}}>Adulte</span>
+            </button>
+            <button onClick={()=>onNav("pedia", {id:"__DOSES_HOME__"})} style={{
+              flex:1, background:"#FCE7F3", border:"none", borderRadius:12,
+              padding:"12px 6px", cursor:"pointer", display:"flex", flexDirection:"column",
+              alignItems:"center", gap:5, WebkitTapHighlightColor:"transparent",
+            }}>
+              <span style={{fontSize:22}}>👶</span>
+              <span style={{fontSize:11, fontWeight:800, color:"#EC4899"}}>Pédiatrie</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ★ Paire Formation : Quiz du Jour + Entraînement ECG (50/50) ★ */}
       {!isSearching && (() => {
         const ecgPool = [...ECGS, ...(store.ecgs||[])].filter(e => e && (e.imageData || e.imageUrl));
@@ -29911,7 +29936,7 @@ function PediaScreen({ onBack, deepLinkId }) {
   if (section === "scores" && dedieSel === "carvajal")  return <CarvajalCalculator onBack={()=>setDedieSel(null)}/>;
   if (section === "scores" && scoreSel) return <PediaScoreCalc score={scoreSel} onBack={()=>setScoreSel(null)}/>;
   if (section === "acr")    return <AcrPediaScreen onBack={()=>setSection("home")}/>;
-  if (section === "doses")  return <PediaDoses onBack={()=>setSection("home")} deepLinkId={deepLinkId}/>;
+  if (section === "doses")  return <PediaDoses onBack={()=>setSection("home")} deepLinkId={deepLinkId === "__DOSES_HOME__" ? undefined : deepLinkId}/>;
   if (section === "normes") return <PediaNormes onBack={()=>setSection("home")}/>;
   if (section === "fiches") return <PediaFiches fiches={fiches} loading={loading} selected={ficheSel} setSelected={setFicheSel} onBack={()=>{ setFicheSel(null); setSection("home"); }}/>;
   if (section === "scores") return (
@@ -33816,7 +33841,7 @@ function CalcChoixScreen({ onNav }) {
       <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Choisissez la population concernée</div>
       <div style={{display:"flex", flexDirection:"column", gap:10}}>
         {CHOICES.map(ch => (
-          <button key={ch.id} onClick={()=>onNav(ch.id)} style={{
+          <button key={ch.id} onClick={()=>onNav(ch.id, ch.id==="pedia" ? {id:"__DOSES_HOME__"} : undefined)} style={{
             display:"flex", alignItems:"center", gap:14, background:C.white,
             border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${ch.color}`,
             borderRadius:16, padding:"18px 16px", cursor:"pointer", textAlign:"left",
@@ -36993,7 +37018,6 @@ function AppInner() {
     {id:"gestes",     icon:"✂️",  label:"Gestes"},
     {id:"dilutions",  icon:"💉", label:"Dilutions"},
     {id:"calcChoix",  icon:"⚖️",  label:"Calc doses"},
-    {id:"antibioguide", icon:"🦠", label:"Antibio"},
     {id:"scores",     icon:"🧮", label:"Scores"},
     {id:"annuaire",   icon:"📒", label:"Contacts", hideForConsultatif:true},
   ].filter(t => !t.hideForConsultatif || role !== "consultatif");
