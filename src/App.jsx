@@ -7249,20 +7249,36 @@ function DilutionScreen({ deepLinkId, onBack }) {
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState("all");
   const { toggleFavori, isFavori } = useFavoris();
+  const searchInputRef = React.useRef(null);
 
   const allDilutions = [...DILUTIONS, ...store.dilutions];
 
   useEffect(()=>{ if(deepLinkId && allDilutions.length){ const it=allDilutions.find(x=>x.id===deepLinkId||x.id===Number(deepLinkId)); if(it) setSelected(it); } },[deepLinkId, store.dilutions]);
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
+  // Curseur automatique dans la recherche à l'ouverture de la liste (gain de temps en urgence)
+  useEffect(()=>{ if(!selected && !deepLinkId && searchInputRef.current) searchInputRef.current.focus(); },[]);
 
   const filtered = allDilutions.filter(d => {
     // Filtre catégorie
     if (selectedCat === "favoris") { if (!isFavori("dilution", d.id)) return false; }
     else if (selectedCat !== "all") { if (d.categorie !== selectedCat) return false; }
-    // Filtre recherche
-    const q = search.toLowerCase();
-    return (d.title||"").toLowerCase().includes(q);
+    // Filtre recherche — nom DCI et nom commercial (ex: "Levophed" doit trouver "Noradrénaline")
+    const q = search.toLowerCase().trim();
+    if (!q) return true;
+    return (d.title||"").toLowerCase().includes(q) || (d.nomCommercial||"").toLowerCase().includes(q);
   }).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
+
+  // Regroupement alphabétique — uniquement quand aucune recherche/filtre n'est active,
+  // pour donner un repère visuel rapide façon répertoire sur une liste de ~20+ fiches
+  const showAlphaGroups = !search.trim() && selectedCat === "all" && filtered.length > 8;
+  const alphaGroups = showAlphaGroups ? (() => {
+    const groups = {};
+    filtered.forEach(d => {
+      const letter = (d.title||"?").trim().charAt(0).toUpperCase();
+      (groups[letter] = groups[letter] || []).push(d);
+    });
+    return Object.keys(groups).sort((a,b)=>a.localeCompare(b,'fr')).map(letter => ({ letter, items: groups[letter] }));
+  })() : null;
 
   if(selected) {
     // 9 rubriques pédagogiques — ordre logique de lecture clinique
@@ -7395,9 +7411,10 @@ function DilutionScreen({ deepLinkId, onBack }) {
         borderRadius:14, padding:"11px 14px", marginBottom:20}}>
         <span style={{fontSize:15, opacity:.5}}>{"🔍"}</span>
         <input
+          ref={searchInputRef}
           value={search}
           onChange={e=>setSearch(e.target.value)}
-          placeholder="Rechercher une dilution, tag..."
+          placeholder="Rechercher une molécule, nom commercial..."
           style={{flex:1, border:"none", outline:"none", fontSize:13,
             color:C.text, background:"transparent", fontFamily:"inherit"}}
         />
@@ -7454,12 +7471,12 @@ function DilutionScreen({ deepLinkId, onBack }) {
       </div>
 
       {/* Liste */}
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {filtered.map(d=>(
+      {(() => {
+        const DilCard = ({ d }) => (
           <button key={d.id} onClick={()=>setSelected(d)}
             style={{background:C.white, border:`1px solid ${C.border}`,
               borderRadius:16, padding:"16px", cursor:"pointer", textAlign:"left",
-              borderLeft:`4px solid ${d.color||C.red}`}}>
+              borderLeft:`4px solid ${d.color||C.red}`, width:"100%"}}>
             <div style={{display:"flex", alignItems:"center", gap:12}}>
               <div style={{
                 background:(d.color||C.red)+"22", borderRadius:12, width:48, height:48,
@@ -7467,6 +7484,7 @@ function DilutionScreen({ deepLinkId, onBack }) {
               }}>{"💉"}</div>
               <div style={{flex:1, minWidth:0}}>
                 <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{d.title}</div>
+                {d.nomCommercial && <div style={{fontSize:11.5, color:C.sub, fontStyle:"italic", marginBottom:2}}>{d.nomCommercial}</div>}
                 {d.subtitle && <div style={{fontSize:11, color:C.sub, marginBottom:5}}>{d.subtitle}</div>}
                 <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
                   {d.schema && <span style={{fontSize:10, fontWeight:700,
@@ -7480,18 +7498,38 @@ function DilutionScreen({ deepLinkId, onBack }) {
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </div>
           </button>
-        ))}
-        {filtered.length===0 && allDilutions.length===0 && (
-          <div style={{textAlign:"center", padding:"50px 20px", color:C.sub}}>
-            <div style={{fontSize:52, marginBottom:12}}>{"💉"}</div>
-            <div style={{fontSize:15, fontWeight:700, color:C.navy, marginBottom:8}}>Aucune dilution pour le moment</div>
-            <div style={{fontSize:12, lineHeight:1.6}}>Ajoutez des fiches dilution depuis l'Éditeur de fiches</div>
+        );
+
+        if (alphaGroups) {
+          return (
+            <div style={{display:"flex", flexDirection:"column", gap:16}}>
+              {alphaGroups.map(g => (
+                <div key={g.letter}>
+                  <div style={{fontSize:12, fontWeight:900, color:C.sub, marginBottom:8, paddingLeft:2}}>{g.letter}</div>
+                  <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                    {g.items.map(d => <DilCard key={d.id} d={d}/>)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        }
+        return (
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {filtered.map(d => <DilCard key={d.id} d={d}/>)}
           </div>
-        )}
-        {filtered.length===0 && allDilutions.length>0 && (
-          <div style={{textAlign:"center", color:C.sub, padding:30, fontSize:13}}>Aucun resultat pour "{search}"</div>
-        )}
-      </div>
+        );
+      })()}
+      {filtered.length===0 && allDilutions.length===0 && (
+        <div style={{textAlign:"center", padding:"50px 20px", color:C.sub}}>
+          <div style={{fontSize:52, marginBottom:12}}>{"💉"}</div>
+          <div style={{fontSize:15, fontWeight:700, color:C.navy, marginBottom:8}}>Aucune dilution pour le moment</div>
+          <div style={{fontSize:12, lineHeight:1.6}}>Ajoutez des fiches dilution depuis l'Éditeur de fiches</div>
+        </div>
+      )}
+      {filtered.length===0 && allDilutions.length>0 && (
+        <div style={{textAlign:"center", color:C.sub, padding:30, fontSize:13}}>Aucun resultat pour "{search}"</div>
+      )}
     </div>
   );
 }
@@ -28396,7 +28434,10 @@ function ScoresScreen({ deepLinkId, onBack }) {
   const C = useC();
   const [selectedCat, setSelectedCat] = useState("all");
   const [selected, setSelected] = useState(null);
+  const [search, setSearch] = useState("");
+  const searchInputRef = React.useRef(null);
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[selected]);
+  useEffect(()=>{ if(!selected && !deepLinkId && searchInputRef.current) searchInputRef.current.focus(); },[]);
   const { toggleFavori, isFavori } = useFavoris();
 
   // Deep link : si un id arrive depuis les favoris, ouvre direct le score
@@ -28407,13 +28448,26 @@ function ScoresScreen({ deepLinkId, onBack }) {
     }
   }, [deepLinkId]);
 
+  const q = search.toLowerCase().trim();
   const filtered = (
     selectedCat === "favoris"
       ? SCORES_LIST.filter(s => isFavori("score", s.id))
       : selectedCat === "all"
         ? SCORES_LIST
         : SCORES_LIST.filter(s => s.category === selectedCat)
-  ).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
+  ).filter(s => !q || (s.title||"").toLowerCase().includes(q) || (s.subtitle||"").toLowerCase().includes(q))
+   .sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
+
+  // Regroupement alphabétique — repère rapide façon répertoire quand la liste n'est pas filtrée
+  const showAlphaGroups = !q && selectedCat === "all" && filtered.length > 8;
+  const alphaGroups = showAlphaGroups ? (() => {
+    const groups = {};
+    filtered.forEach(s => {
+      const letter = (s.title||"?").trim().charAt(0).toUpperCase();
+      (groups[letter] = groups[letter] || []).push(s);
+    });
+    return Object.keys(groups).sort((a,b)=>a.localeCompare(b,'fr')).map(letter => ({ letter, items: groups[letter] }));
+  })() : null;
 
   // Routing vers le calculateur sélectionné
   // (fonction plutôt que "return" direct, pour pouvoir superposer le bouton
@@ -28484,6 +28538,25 @@ function ScoresScreen({ deepLinkId, onBack }) {
         </div>
       </div>
 
+      {/* Recherche */}
+      <div style={{display:"flex", alignItems:"center", gap:10,
+        background:C.white, border:`1px solid ${C.border}`,
+        borderRadius:14, padding:"11px 14px", marginBottom:14}}>
+        <span style={{fontSize:15, opacity:.5}}>{"🔍"}</span>
+        <input
+          ref={searchInputRef}
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+          placeholder="Rechercher un score (Glasgow, Wells, qSOFA...)"
+          style={{flex:1, border:"none", outline:"none", fontSize:13,
+            color:C.text, background:"transparent", fontFamily:"inherit"}}
+        />
+        {search && (
+          <button onClick={()=>setSearch("")}
+            style={{background:"none", border:"none", color:C.sub, cursor:"pointer", fontSize:15, padding:0}}>✕</button>
+        )}
+      </div>
+
       {/* Filtres catégories — ligne compacte sans scroll */}
       <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:4, marginBottom:12}}>
         {(() => {
@@ -28532,8 +28605,8 @@ function ScoresScreen({ deepLinkId, onBack }) {
       </div>
 
       {/* Liste des scores */}
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {filtered.map(s => {
+      {(() => {
+        const ScoreCard = ({ s }) => {
           const fav = isFavori("score", s.id);
           return (
             <div key={s.id} style={{
@@ -28568,22 +28641,44 @@ function ScoresScreen({ deepLinkId, onBack }) {
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </div>
           );
-        })}
+        };
 
-        {filtered.length === 0 && (
-          <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
-            <div style={{fontSize:48, marginBottom:12}}>{selectedCat === "favoris" ? "⭐" : "🧮"}</div>
-            <div style={{fontSize:14, fontWeight:700, color:C.navy, marginBottom:6}}>
-              {selectedCat === "favoris" ? "Aucun score favori" : "Aucun score pour le moment"}
+        if (alphaGroups) {
+          return (
+            <div style={{display:"flex", flexDirection:"column", gap:16}}>
+              {alphaGroups.map(g => (
+                <div key={g.letter}>
+                  <div style={{fontSize:12, fontWeight:900, color:C.sub, marginBottom:8, paddingLeft:2}}>{g.letter}</div>
+                  <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                    {g.items.map(s => <ScoreCard key={s.id} s={s}/>)}
+                  </div>
+                </div>
+              ))}
             </div>
+          );
+        }
+        return (
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {filtered.map(s => <ScoreCard key={s.id} s={s}/>)}
+          </div>
+        );
+      })()}
+
+      {filtered.length === 0 && (
+        <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
+          <div style={{fontSize:48, marginBottom:12}}>{selectedCat === "favoris" ? "⭐" : "🧮"}</div>
+          <div style={{fontSize:14, fontWeight:700, color:C.navy, marginBottom:6}}>
+            {q ? `Aucun résultat pour "${search}"` : selectedCat === "favoris" ? "Aucun score favori" : "Aucun score pour le moment"}
+          </div>
+          {!q && (
             <div style={{fontSize:12, lineHeight:1.5}}>
               {selectedCat === "favoris"
                 ? "Appuie sur l'étoile d'un score pour l'ajouter à tes favoris et le retrouver ici rapidement."
                 : "Les calculateurs (Glasgow, GBS, Wells, qSOFA…) seront ajoutés un par un dans cette section."}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
