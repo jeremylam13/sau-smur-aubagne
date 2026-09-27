@@ -2234,6 +2234,7 @@ function useGlobalSearch(store) {
       scores: SCORES_LIST,
       quizzes: store.quizzes||[],
       recoflash: store.recoflash||[],
+      antibioguide: Abg_MODULES,
     };
     setAllData(base);
   },[store]);
@@ -2331,6 +2332,18 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     if(matchSearch(hay, query))
       results.push({type:"reco", icon:"📋", color:"#0891B2", bg:"#CFFAFE",
         title:rf.title, sub:rf.subtitle||rf.source||"Recommandation", nav:"recoflash", id:rf.id});
+  });
+
+  // Antibioguide — recherche dans tout l'arbre de chaque module
+  (allData.antibioguide||[]).forEach(mod=>{
+    const cfg = Abg_MODULE_DATA[mod.id];
+    if(!cfg || !cfg.data) return;
+    const found = Abg_searchInTree(cfg.data, query, mod.id, mod.label);
+    found.slice(0,3).forEach(r=>{
+      results.push({type:"antibioguide", icon:cfg.icon||"🦠", color:"#0891B2", bg:"#CFFAFE",
+        title:r.node.label, sub:mod.label+(r.path.length?" › "+r.path.join(" › "):""),
+        nav:"antibioguide", id:{moduleId:r.moduleId, nodeId:r.node.id}});
+    });
   });
 
   // Médicaments — calculateur de doses adulte
@@ -2678,6 +2691,14 @@ function FavorisScreen({ onNav }) {
   const typeLabels = {
     retex:"RETEX / Cas", ecg:"ECG", icono:"Imagerie",
     agenda:"Agenda", divers:"Divers", geste:"Geste urgent", dilution:"Dilution",
+    antibioguide:"Antibioguide",
+  };
+
+  // Antibioguide stocke son favori avec un id texte (moduleId__nodeId) + champs séparés ;
+  // il faut reconstruire l'objet {moduleId, nodeId} attendu par AntibioguideScreen à la navigation.
+  const goToFavori = (f) => {
+    if (f.type === "antibioguide") onNav(f.nav, {id:{moduleId:f.abgModuleId, nodeId:f.abgNodeId}});
+    else onNav(f.nav, f);
   };
 
   if(favoris.length === 0) return (
@@ -2728,7 +2749,7 @@ function FavorisScreen({ onNav }) {
                 animation:"fadeIn .2s ease",
               }}>
                 {/* Icône */}
-                <button onClick={()=>onNav(f.nav, f)} style={{
+                <button onClick={()=>goToFavori(f)} style={{
                   background:f.color+"22", borderRadius:10,
                   width:40, height:40, display:"flex", alignItems:"center",
                   justifyContent:"center", fontSize:20, flexShrink:0,
@@ -2737,7 +2758,7 @@ function FavorisScreen({ onNav }) {
                   {renderShortcutIcon(f.icon, 20, "#0891B2")}
                 </button>
                 {/* Titre */}
-                <button onClick={()=>onNav(f.nav, f)} style={{
+                <button onClick={()=>goToFavori(f)} style={{
                   flex:1, minWidth:0, background:"none", border:"none",
                   cursor:"pointer", textAlign:"left", padding:0,
                 }}>
@@ -27974,6 +27995,7 @@ function Abg_Breadcrumb({ path, onNavigate }) {
 
 function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
   const cfg = Abg_MODULE_DATA[moduleId];
+  const { toggleFavori, isFavori } = useFavoris();
   const [path, setPath] = useState(() => {
     if (directNode) {
       // Reconstruire le chemin complet depuis la racine jusqu'au nœud cible
@@ -28022,9 +28044,15 @@ function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
   return (
     <div style={{ background: Abg_C.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "0 0 40px", overflowX: "hidden", width: "100%", boxSizing: "border-box" }}>
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0", boxSizing: "border-box", width: "100%" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: Abg_C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 14, padding: 0, WebkitTapHighlightColor: "transparent" }}>
-          « Retour
-        </button>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <button onClick={onBack} style={{ background: "none", border: "none", color: Abg_C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: 0, WebkitTapHighlightColor: "transparent" }}>
+            « Retour
+          </button>
+          {current.result && !current.children && (
+            <StarBtn filled={isFavori("antibioguide", moduleId+"__"+current.id)} color="#0891B2"
+              onToggle={()=>toggleFavori({id:moduleId+"__"+current.id, abgModuleId:moduleId, abgNodeId:current.id, type:"antibioguide", title:current.label, icon:cfg.icon||"🦠", color:"#0891B2", nav:"antibioguide"})}/>
+          )}
+        </div>
         <h2 style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
           <span>{cfg.icon}</span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{cfg.title}</span>
