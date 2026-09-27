@@ -37022,7 +37022,7 @@ function AppInner() {
 
           {/* Cloche notifications */}
           <div style={{position:"relative"}}>
-            <button onClick={()=>{ setNotifOpen(o=>{ const nv=!o; if(nv) markSeen(); return nv; }); }} style={{
+            <button onClick={()=>{ setNotifOpen(o=>{ const nv=!o; if(!nv) markSeen(); return nv; }); }} style={{
               background: notifOpen ? "rgba(255,255,255,.25)" : "rgba(255,255,255,.12)",
               border: "1.5px solid rgba(255,255,255,.25)",
               borderRadius:10, width:36, height:36, cursor:"pointer",
@@ -37043,7 +37043,7 @@ function AppInner() {
                 notifs={notifs}
                 onNav={navigate}
                 onClear={()=>{ clearAll(); setNotifOpen(false); }}
-                onClose={()=>setNotifOpen(false)}
+                onClose={()=>{ markSeen(); setNotifOpen(false); }}
                 theme={theme}
               />
             )}
