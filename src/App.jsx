@@ -7509,6 +7509,71 @@ function AdminScreen({ onNewItem, onBack }) {
   return <AdminScreenInner onNewItem={onNewItem} onBack={onBack}/>;
 }
 
+// Sauvegarde automatique de brouillon (localStorage) pour un formulaire admin —
+// protège une saisie longue (ex: fiche Dilution ou Geste) contre une interruption
+// (fermeture accidentelle, urgence, changement d'onglet...). Ne s'active qu'en
+// mode "création" : on ne mélange jamais un brouillon avec les données d'une
+// fiche existante en cours de modification.
+function useDraftAutosave(key, form, setForm, isEditing) {
+  const [draftAvailable, setDraftAvailable] = useState(false);
+
+  useEffect(() => {
+    try { if (window.localStorage.getItem(key)) setDraftAvailable(true); } catch(e) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (isEditing) return;
+    const hasContent = Object.values(form).some(v =>
+      Array.isArray(v) ? v.length > 0 : (typeof v === "string" ? v.trim().length > 0 : !!v)
+    );
+    if (!hasContent) return;
+    const t = setTimeout(() => {
+      try { window.localStorage.setItem(key, JSON.stringify(form)); } catch(e) {}
+    }, 700);
+    return () => clearTimeout(t);
+  }, [form, isEditing, key]);
+
+  const restore = () => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) setForm(JSON.parse(raw));
+    } catch(e) {}
+    setDraftAvailable(false);
+  };
+  const discard = () => {
+    try { window.localStorage.removeItem(key); } catch(e) {}
+    setDraftAvailable(false);
+  };
+  const clear = () => {
+    try { window.localStorage.removeItem(key); } catch(e) {}
+  };
+
+  return { draftAvailable, restore, discard, clear };
+}
+
+// Petit bandeau d'alerte affiché quand un brouillon non enregistré est trouvé
+function DraftBanner({ draft, itemLabel }) {
+  if (!draft.draftAvailable) return null;
+  return (
+    <div style={{display:"flex", alignItems:"center", gap:10, background:"#FEF3C7",
+      border:"1px solid #FCD34D", borderRadius:10, padding:"10px 12px", marginBottom:14}}>
+      <span style={{fontSize:18, flexShrink:0}}>📝</span>
+      <div style={{flex:1, fontSize:12, color:"#92400E", lineHeight:1.4}}>
+        Brouillon non enregistré trouvé{itemLabel ? " pour "+itemLabel : ""}.
+      </div>
+      <button onClick={draft.restore} style={{background:"#F59E0B", color:"#fff", border:"none",
+        borderRadius:8, padding:"6px 10px", fontSize:11, fontWeight:800, cursor:"pointer", flexShrink:0}}>
+        Reprendre
+      </button>
+      <button onClick={draft.discard} style={{background:"none", color:"#92400E", border:"none",
+        fontSize:11, fontWeight:700, cursor:"pointer", flexShrink:0, textDecoration:"underline"}}>
+        Ignorer
+      </button>
+    </div>
+  );
+}
+
 function AdminScreenInner({ onNewItem, onBack }) {
   const C = useC();
   const { store, addItem, updateItem, removeItem } = useData();
@@ -7536,6 +7601,11 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [editingG, setEditingG] = useState(null);
   const [editingRf, setEditingRf] = useState(null);
   const [editingQz, setEditingQz] = useState(null);
+
+  // Brouillons auto-sauvegardés — Dilutions et Gestes sont les formulaires les
+  // plus longs à remplir, donc les plus coûteux à perdre en cas d'interruption.
+  const dilDraft = useDraftAutosave("admin_draft_dilution", dilForm, setDilForm, editingDil !== null);
+  const gDraft = useDraftAutosave("admin_draft_geste", gForm, setGForm, editingG !== null);
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
@@ -7650,11 +7720,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
       const item = {...gForm, id:editingG, ...parsed};
       await updateItem("gestes","admin_gestes",item,["image"]);
       setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
+      gDraft.clear();
       showSaved("Geste modifié !");
     } else {
       const item = {...gForm, id:Date.now(), ...parsed};
       const newItem = await addItem("gestes","admin_gestes",item,["image"]);
       setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
+      gDraft.clear();
       showSaved("Geste ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
     }
@@ -7666,11 +7738,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
       const item = {...dilForm, id:editingDil, color:dilForm.color||"#E05260"};
       await updateItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setEditingDil(null); setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      dilDraft.clear();
       showSaved("Dilution modifiée !");
     } else {
       const item = {...dilForm, id:Date.now(), color:dilForm.color||"#E05260"};
       const newItem = await addItem("dilutions","admin_dilutions",item,["schema","photo"]);
       setDilForm({title:"",categorie:"",nomCommercial:"",subtitle:"",color:"#E05260",presentation:"",conditionnement:"",mecanismeAction:"",indication:"",contreIndications:"",pharmacocinetique:"",posologie:"",dilutionStandard:"",administration:"",effetsIndesirables:"",surveillance:"",antidote:"",interactions:"",schemaUrl:"",schemaData:null,photoUrl:"",photoData:null,medias:[]});
+      dilDraft.clear();
       showSaved("Dilution ajoutée !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"💉",color:item.color||"#E05260",nav:"dilutions"});
     }
@@ -8287,6 +8361,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{"💉"} {editingDil ? "✏️ Modifier la dilution" : "Nouvelle dilution"}</div>
+            {!editingDil && <DraftBanner draft={dilDraft} itemLabel="une dilution"/>}
 
             {/* Nom DCI + couleur */}
             <div style={{display:"flex", gap:8}}>
@@ -8449,6 +8524,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{"✂️"} {editingG ? "✏️ Modifier le geste" : "Nouveau geste"}</div>
+            {!editingG && <DraftBanner draft={gDraft} itemLabel="un geste"/>}
 
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Cricothyrotomie" value={gForm.title} onChange={e=>setGForm({...gForm,title:e.target.value})}/>
