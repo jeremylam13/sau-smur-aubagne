@@ -1613,11 +1613,20 @@ function Btn({children, onClick, color, outline, disabled, style={}}) {
   );
 }
 
-function BackBtn({onClick}) {
+function BackBtn({onClick, label="Retour"}) {
   const C = useC();
   return (
-    <button onClick={onClick} style={{background:"none", border:"none", color:C.sub, fontWeight:700, fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", gap:6, marginBottom:16}}>
-      « Retour
+    <button onClick={onClick} style={{
+      display:"flex", alignItems:"center", gap:6,
+      background:"none", border:"none", cursor:"pointer",
+      color:C.sub, fontWeight:700, fontSize:13,
+      padding:"4px 0", marginBottom:16,
+      WebkitTapHighlightColor:"transparent",
+    }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      {label}
     </button>
   );
 }
@@ -5890,20 +5899,7 @@ function ECGScreen({ deepLinkId, onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <ScreenHeader icon="❤️" title="ECG" subtitle={`${ecgs.length} tracé${ecgs.length>1?"s":""}`} color="#E05260"/>
 
       {/* Encart entraînement à la lecture d'ECG */}
@@ -6057,20 +6053,7 @@ function IconoScreen({ deepLinkId, onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <ScreenHeader icon="🖼️" title="Imagerie" subtitle={`${allCases.length} cas`} color="#9B59B6"/>
       {allCases.length===0 && (
         <div style={{textAlign:"center", padding:"40px 20px", color:C.sub}}>
@@ -6310,20 +6293,7 @@ function AgendaScreen({ deepLinkId, onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <ScreenHeader icon="📅" title="Agenda" color="#0891B2"/>
 
       {allEvents.length===0 ? (
@@ -6575,20 +6545,7 @@ function GestesScreen({ deepLinkId, onBack }) {
 
   return (
     <div style={{minHeight:"100vh"}}>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:C.redLight, borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"✂️"}</div>
@@ -7016,20 +6973,7 @@ function DiversScreen({ deepLinkId, onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <ScreenHeader icon="⚡" title="Base de connaissances" color="#0EA5E9"/>
       <div style={{display:"flex", alignItems:"center", gap:10, background:C.white, border:`1px solid ${C.border}`, borderRadius:12, padding:"10px 14px", marginBottom:16}}>
         <span style={{fontSize:14, opacity:.5}}>{"🔍"}</span>
@@ -7391,20 +7335,7 @@ function DilutionScreen({ deepLinkId, onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       {/* Header */}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:"#DC2626"+"22", borderRadius:12, width:44, height:44,
@@ -7807,20 +7738,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       {/* Notification de sauvegarde */}
       {saved && (
         <div style={{background:C.greenLight, border:`1px solid ${C.green}`, borderRadius:10,
@@ -8991,20 +8909,7 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
   // Vue liste
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
         <div style={{background:"#0EA5E9"+"22", borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"⚡"}</div>
@@ -19290,20 +19195,7 @@ function QuizScreen({ deepLinkId, onBack }) {
   const COLOR = "#6366F1";
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <div style={{
         background: `linear-gradient(135deg, ${COLOR} 0%, #4338CA 100%)`,
         borderRadius: 16,
@@ -28046,7 +27938,8 @@ function Abg_ModuleView({ moduleId, onBack, directNode, onSelectModule }) {
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0", boxSizing: "border-box", width: "100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <button onClick={onBack} style={{ background: "none", border: "none", color: Abg_C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, padding: 0, WebkitTapHighlightColor: "transparent" }}>
-            « Retour
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Retour
           </button>
           {current.result && !current.children && (
             <StarBtn filled={isFavori("antibioguide", moduleId+"__"+current.id)} color="#0891B2"
@@ -28228,7 +28121,8 @@ function Abg_HomeScreen({ onSelect, onBackApp }) {
       <div style={{ maxWidth: 640, margin: "0 auto", padding: "0" }}>
         {onBackApp && (
           <button onClick={onBackApp} style={{ background: "none", border: "none", color: Abg_C.sub, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 16, padding: 0, WebkitTapHighlightColor: "transparent" }}>
-            « Retour
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Accueil
           </button>
         )}
         <h2 style={{ color: Abg_C.navy, fontWeight: 800, fontSize: 18, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
@@ -28426,20 +28320,7 @@ function ScoresScreen({ deepLinkId, onBack }) {
   // Vue liste
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"none", border:"none", cursor:"pointer",
-          color:"#64748B", fontSize:12, fontWeight:700,
-          padding:"4px 0", marginBottom:10,
-          WebkitTapHighlightColor:"transparent",
-        }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6"/>
-          </svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
         <div style={{background:"#0D9488"+"22", borderRadius:12, width:44, height:44,
           display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>{"🧮"}</div>
@@ -28962,12 +28843,7 @@ function SondageScreen({ onBack }) {
 
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
 
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:18}}>
         <div style={{background:"#F3E8FF", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>📊</div>
@@ -30080,12 +29956,7 @@ function PediaScreen({ onBack, deepLinkId }) {
   // ── Accueil du module ──
   return (
     <div>
-      {onBack && (
-        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
 
       <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:8}}>
         <div style={{background:"#FCE7F3", borderRadius:12, width:44, height:44, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22}}>👶</div>
@@ -36551,12 +36422,7 @@ function EchoScreen({ onBack }) {
 
   return (
     <div style={{maxWidth:"100%", overflowX:"hidden"}}>
-      {onBack && (
-        <button onClick={onBack} style={{display:"flex", alignItems:"center", gap:4, background:"none", border:"none", cursor:"pointer", color:"#64748B", fontSize:12, fontWeight:700, padding:"4px 0", marginBottom:10}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-          Accueil
-        </button>
-      )}
+      {onBack && <BackBtn onClick={onBack} label="Accueil"/>}
       <div style={{marginBottom:18}}>
         <div style={{fontSize:22, fontWeight:800, color:C.navy, display:"flex", alignItems:"center", gap:8}}><IconeSonde size={24} color="#0891B2"/> Échographie</div>
         <div style={{fontSize:12, color:C.sub}}>POCUS aux urgences</div>
