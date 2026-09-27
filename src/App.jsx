@@ -6893,14 +6893,16 @@ function GesteDetail({geste, onBack}) {
         </Section>
       )}
 
-      {/* Vidéos (YouTube / Vimeo) — miniatures cliquables */}
+      {/* Vidéos (YouTube / Vimeo) — section repliable, miniatures cliquables */}
       {videoList.length > 0 && (
-        <div style={{marginBottom:16}}>
-          {videoList.map((v,i)=>(
-            <VideoThumbCard key={i} url={v.url} title={v.title}
-              extractYoutubeId={extractYoutubeId} extractVimeoId={extractVimeoId} C={C}/>
-          ))}
-        </div>
+        <Section icon="🎬" label="Vidéo(s)" color="#1AB7EA">
+          <div style={{padding:14}}>
+            {videoList.map((v,i)=>(
+              <VideoThumbCard key={i} url={v.url} title={v.title}
+                extractYoutubeId={extractYoutubeId} extractVimeoId={extractVimeoId} C={C}/>
+            ))}
+          </div>
+        </Section>
       )}
     </div>
   );
