@@ -33801,36 +33801,42 @@ function CalcAdulteCard({ medic, poids }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// CalcChoixScreen : écran de choix Adulte / Pédiatrique, cible de l'onglet
-// "Calc doses" de la barre du bas (regroupe calcAdulte + pedia en un seul tap)
+// CalcChoixModal : petite fenêtre (popup) de choix Adulte / Pédiatrique,
+// déclenchée depuis l'onglet "Calc doses" de la barre du bas et l'encart
+// "Calcul de doses" de l'accueil — pas un nouvel écran, juste un overlay léger.
 // ────────────────────────────────────────────────────────────────────────────
-function CalcChoixScreen({ onNav }) {
+function CalcChoixModal({ onClose, onChoose }) {
   const C = useC();
   const CHOICES = [
-    { id:"calcAdulte", icon:"⚖️", label:"Calcul de doses — Adulte", desc:"Posologies par médicament", color:"#0891B2", bg:"#CFFAFE" },
-    { id:"pedia",      icon:"👶", label:"Calcul de doses — Pédiatrie", desc:"Doses selon le poids ou l'âge", color:"#EC4899", bg:"#FCE7F3" },
+    { id:"calcAdulte", icon:"⚖️", label:"Adulte", desc:"Posologies par médicament", color:"#0891B2", bg:"#CFFAFE" },
+    { id:"pedia",      icon:"👶", label:"Pédiatrie", desc:"Doses selon le poids ou l'âge", color:"#EC4899", bg:"#FCE7F3" },
   ];
   return (
-    <div>
-      <div style={{fontSize:18, fontWeight:800, color:C.navy, marginBottom:4}}>Calcul de doses</div>
-      <div style={{fontSize:12, color:C.sub, marginBottom:16}}>Choisissez la population concernée</div>
-      <div style={{display:"flex", flexDirection:"column", gap:10}}>
-        {CHOICES.map(ch => (
-          <button key={ch.id} onClick={()=>onNav(ch.id, ch.id==="pedia" ? {id:"__DOSES_HOME__"} : undefined)} style={{
-            display:"flex", alignItems:"center", gap:14, background:C.white,
-            border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${ch.color}`,
-            borderRadius:16, padding:"18px 16px", cursor:"pointer", textAlign:"left",
-            WebkitTapHighlightColor:"transparent",
-          }}>
-            <div style={{background:ch.bg, borderRadius:14, width:52, height:52, flexShrink:0,
-              display:"flex", alignItems:"center", justifyContent:"center", fontSize:24}}>{ch.icon}</div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:15, fontWeight:800, color:C.text}}>{ch.label}</div>
-              <div style={{fontSize:12, color:C.sub, marginTop:2}}>{ch.desc}</div>
-            </div>
-            <span style={{color:ch.color, fontSize:20}}>›</span>
-          </button>
-        ))}
+    <div onClick={onClose} style={{
+      position:"fixed", inset:0, background:"rgba(15,23,42,.5)", zIndex:200,
+      display:"flex", alignItems:"center", justifyContent:"center", padding:24,
+    }}>
+      <div onClick={e=>e.stopPropagation()} style={{
+        background:C.white, borderRadius:20, padding:20, width:"100%", maxWidth:340,
+        boxShadow:"0 12px 40px rgba(0,0,0,.25)",
+      }}>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14}}>
+          <div style={{fontSize:16, fontWeight:800, color:C.navy}}>⚖️ Calcul de doses</div>
+          <button onClick={onClose} style={{background:"none", border:"none", cursor:"pointer", color:C.sub, fontSize:18, lineHeight:1, padding:4, WebkitTapHighlightColor:"transparent"}}>✕</button>
+        </div>
+        <div style={{display:"flex", gap:10}}>
+          {CHOICES.map(ch => (
+            <button key={ch.id} onClick={()=>onChoose(ch.id)} style={{
+              flex:1, background:ch.bg, border:"none", borderRadius:14,
+              padding:"16px 8px", cursor:"pointer", display:"flex", flexDirection:"column",
+              alignItems:"center", gap:6, WebkitTapHighlightColor:"transparent",
+            }}>
+              <span style={{fontSize:26}}>{ch.icon}</span>
+              <span style={{fontSize:13, fontWeight:800, color:ch.color}}>{ch.label}</span>
+              <span style={{fontSize:9.5, color:C.sub, textAlign:"center", lineHeight:1.3}}>{ch.desc}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -36918,6 +36924,7 @@ function AppInner() {
   const { notifs, pushNotif, clearAll, markSeen, unread } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [calcChoixOpen, setCalcChoixOpen] = useState(false);
   const { profile, roleLabel, role } = useAuth();
   const unreadCount = unread;
 
@@ -36957,6 +36964,8 @@ function AppInner() {
   }, [unreadCount]);
 
   function navigate(screenId, favoriItem) {
+    // "Calc doses" : petite fenêtre de choix Adulte/Pédiatrie, pas un nouvel écran
+    if (screenId === "calcChoix") { setCalcChoixOpen(true); return; }
     // Pousser l'écran courant dans l'historique sauf si c'est déjà le même ou si on va sur home
     setScreenHistory(h => {
       if (screenId === "home") return []; // retour accueil = reset historique
@@ -37145,7 +37154,6 @@ function AppInner() {
         {screen==="sondages"   && <SondageScreen key={"sondages-"+navVersion} onBack={goBack}/>}
         {screen==="pedia"      && <PediaScreen key={"pedia-"+navVersion} onBack={goBack} deepLinkId={deepLink}/>}
         {screen==="calcAdulte" && <CalcAdulteScreen key={"calcAdulte-"+navVersion} onBack={goBack} deepLinkId={deepLink}/>}
-        {screen==="calcChoix"  && <CalcChoixScreen key={"calcChoix-"+navVersion} onNav={navigate}/>}
         {screen==="echo"       && <EchoScreen key={"echo-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
@@ -37153,7 +37161,7 @@ function AppInner() {
 
       <div style={{position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:theme.white, borderTop:`1px solid ${theme.border}`, display:"flex", padding:"8px 0 12px", boxShadow:"0 -4px 20px rgba(26,58,92,.08)", transition:"background .25s"}}>
         {tabs.map(t=>(
-          <button key={t.id} onClick={()=>{ setScreen(t.id); setNavVersion(v=>v+1); }} style={{flex:1, background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, padding:"4px 0", touchAction:"manipulation", WebkitTapHighlightColor:"transparent"}}>
+          <button key={t.id} onClick={()=>{ if (t.id === "calcChoix") { setCalcChoixOpen(true); } else { setScreen(t.id); setNavVersion(v=>v+1); } }} style={{flex:1, background:"none", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, padding:"4px 0", touchAction:"manipulation", WebkitTapHighlightColor:"transparent"}}>
             <div style={{position:"relative", display:"inline-block"}}>
               <span style={{fontSize:18, filter:screen===t.id?"none":"grayscale(40%) opacity(0.7)"}}>{t.icon}</span>
               {t.badge && screen!==t.id && (
@@ -37171,6 +37179,18 @@ function AppInner() {
           </button>
         ))}
       </div>
+
+      {/* Petite fenêtre : choix Calcul de doses Adulte / Pédiatrie */}
+      {calcChoixOpen && (
+        <CalcChoixModal
+          onClose={()=>setCalcChoixOpen(false)}
+          onChoose={(id)=>{
+            setCalcChoixOpen(false);
+            if (id === "pedia") navigate("pedia", {id:"__DOSES_HOME__"});
+            else navigate("calcAdulte");
+          }}
+        />
+      )}
     </div>
   );
 }
