@@ -6466,17 +6466,8 @@ function MaterielChecklist({ geste, color }) {
   const secColor = C.blue;
 
   return (
-    <div style={{marginBottom:14}}>
-      <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:7}}>
-        <div style={{background:secColor+"18", borderRadius:10, width:34, height:34,
-          display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, flexShrink:0}}>
-          🧰
-        </div>
-        <span style={{fontSize:12, fontWeight:800, color:secColor, letterSpacing:.5, textTransform:"uppercase"}}>Matériel nécessaire</span>
-      </div>
-      <div style={{background:C.white, borderRadius:14, border:`1.5px solid ${secColor}30`,
-        borderLeft:`4px solid ${secColor}`, boxShadow:"0 2px 8px rgba(26,58,92,.05)", overflow:"hidden"}}>
-        <div style={{padding:"12px 14px"}}>
+    <CollapsibleSection icon="🧰" label="Matériel nécessaire" color={secColor} C={C}>
+      <div style={{margin:"-14px", padding:"12px 14px"}}>
           {/* Barre de progression + réinitialiser */}
           <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:12}}>
             <div style={{flex:1, height:8, background:C.border, borderRadius:20, overflow:"hidden"}}>
@@ -6516,9 +6507,8 @@ function MaterielChecklist({ geste, color }) {
               );
             })}
           </div>
-        </div>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -6758,21 +6748,11 @@ function GesteDetail({geste, onBack}) {
     : (geste.videoUrl ? [{title:"", url:geste.videoUrl}] : []);
   const COLOR = geste.color || C.red;
 
-  // Helper : section avec icône-label + contenu en carte (style Dilutions)
+  // Helper : section repliable avec icône-label + contenu en carte (style Dilutions)
   const Section = ({ icon, label, color, children }) => (
-    <div style={{marginBottom:14}}>
-      <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:7}}>
-        <div style={{background:color+"18", borderRadius:10, width:34, height:34,
-          display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, flexShrink:0}}>
-          {icon}
-        </div>
-        <span style={{fontSize:12, fontWeight:800, color:color, letterSpacing:.5, textTransform:"uppercase"}}>{label}</span>
-      </div>
-      <div style={{background:C.white, borderRadius:14, border:`1.5px solid ${color}30`,
-        borderLeft:`4px solid ${color}`, boxShadow:"0 2px 8px rgba(26,58,92,.05)", overflow:"hidden"}}>
-        {children}
-      </div>
-    </div>
+    <CollapsibleSection icon={icon} label={label} color={color} C={C}>
+      <div style={{margin:"-14px", overflow:"hidden", borderRadius:14}}>{children}</div>
+    </CollapsibleSection>
   );
 
   return (
@@ -7227,6 +7207,39 @@ const DILUTION_CATS = [
   { key:"pediatrie", label:"Pédiatrie", icon:"👶", color:"#EC4899" },
 ];
 
+function CollapsibleSection({ icon, label, color, C, children, defaultOpen=false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{marginBottom:12}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{
+        width:"100%", display:"flex", alignItems:"center", gap:7, marginBottom: open ? 7 : 0,
+        background:"none", border:"none", padding:0, cursor:"pointer", textAlign:"left",
+        WebkitTapHighlightColor:"transparent"
+      }}>
+        <div style={{
+          background:color+"18", borderRadius:10, width:34, height:34,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, flexShrink:0
+        }}>{icon}</div>
+        <span style={{fontSize:12, fontWeight:800, color:color, letterSpacing:.5, textTransform:"uppercase", flex:1}}>{label}</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5"
+          style={{transform: open ? "rotate(180deg)" : "rotate(0deg)", transition:"transform 0.2s", flexShrink:0}}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          background:C.white, borderRadius:14, padding:14,
+          border:`1.5px solid ${color}30`,
+          borderLeft:`4px solid ${color}`,
+          boxShadow:"0 2px 8px rgba(26,58,92,.05)"
+        }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DilutionScreen({ deepLinkId, onBack }) {
   const C = useC();
   const { store } = useData();
@@ -7308,27 +7321,13 @@ function DilutionScreen({ deepLinkId, onBack }) {
         {/* Note personnelle — stockage local, avant Présentation */}
         <NotePersonnelle module="dilution" itemId={selected.id}/>
 
-        {/* Sections */}
+        {/* Sections (repliables) */}
         {sections.map(s => selected[s.key] ? (
-          <div key={s.key} style={{marginBottom:12}}>
-            <div style={{display:"flex", alignItems:"center", gap:7, marginBottom:7}}>
-              <div style={{
-                background:s.color+"18", borderRadius:10, width:34, height:34,
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, flexShrink:0
-              }}>{s.icon}</div>
-              <span style={{fontSize:12, fontWeight:800, color:s.color, letterSpacing:.5, textTransform:"uppercase"}}>{s.label}</span>
-            </div>
-            <div style={{
-              background:C.white, borderRadius:14, padding:14,
-              border:`1.5px solid ${s.color}30`,
-              borderLeft:`4px solid ${s.color}`,
-              boxShadow:"0 2px 8px rgba(26,58,92,.05)"
-            }}>
-              <pre style={{fontSize:13, color:C.text, margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit", lineHeight:1.75}}>
-                {selected[s.key]}
-              </pre>
-            </div>
-          </div>
+          <CollapsibleSection key={s.key} icon={s.icon} label={s.label} color={s.color} C={C}>
+            <pre style={{fontSize:13, color:C.text, margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit", lineHeight:1.75}}>
+              {selected[s.key]}
+            </pre>
+          </CollapsibleSection>
         ) : null)}
 
         {/* Alerte voie si VVC */}
