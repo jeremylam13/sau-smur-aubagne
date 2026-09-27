@@ -2451,7 +2451,7 @@ function HomeScreen({onNav}) {
 
   const shortcuts = [
     // ── Ligne 1 : action immédiate ──
-    {id:"calcAdulte",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
+    {id:"calcChoix",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
     {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
@@ -2543,31 +2543,6 @@ function HomeScreen({onNav}) {
           />
         )}
       </div>
-
-      {/* ⚖️ Widget rapide : Calcul de doses — choix direct Adulte / Pédiatrie ⚖️ */}
-      {!isSearching && (
-        <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderRadius:16, padding:14, marginBottom:18}}>
-          <div style={{fontSize:12, fontWeight:800, color:C.navy, marginBottom:10, letterSpacing:.3}}>⚖️ Calcul de doses</div>
-          <div style={{display:"flex", gap:10}}>
-            <button onClick={()=>onNav("calcAdulte")} style={{
-              flex:1, background:"#CFFAFE", border:"none", borderRadius:12,
-              padding:"12px 6px", cursor:"pointer", display:"flex", flexDirection:"column",
-              alignItems:"center", gap:5, WebkitTapHighlightColor:"transparent",
-            }}>
-              <span style={{fontSize:22}}>⚖️</span>
-              <span style={{fontSize:11, fontWeight:800, color:"#0891B2"}}>Adulte</span>
-            </button>
-            <button onClick={()=>onNav("pedia", {id:"__DOSES_HOME__"})} style={{
-              flex:1, background:"#FCE7F3", border:"none", borderRadius:12,
-              padding:"12px 6px", cursor:"pointer", display:"flex", flexDirection:"column",
-              alignItems:"center", gap:5, WebkitTapHighlightColor:"transparent",
-            }}>
-              <span style={{fontSize:22}}>👶</span>
-              <span style={{fontSize:11, fontWeight:800, color:"#EC4899"}}>Pédiatrie</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* ★ Paire Formation : Quiz du Jour + Entraînement ECG (50/50) ★ */}
       {!isSearching && (() => {
