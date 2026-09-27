@@ -7606,9 +7606,17 @@ function AdminScreenInner({ onNewItem, onBack }) {
   // plus longs à remplir, donc les plus coûteux à perdre en cas d'interruption.
   const dilDraft = useDraftAutosave("admin_draft_dilution", dilForm, setDilForm, editingDil !== null);
   const gDraft = useDraftAutosave("admin_draft_geste", gForm, setGForm, editingG !== null);
+  const eDraft = useDraftAutosave("admin_draft_ecg", eForm, setEForm, editingE !== null);
+  const iDraft = useDraftAutosave("admin_draft_imagerie", iForm, setIForm, editingI !== null);
+  const aDraft = useDraftAutosave("admin_draft_agenda", aForm, setAForm, editingA !== null);
+  const dDraft = useDraftAutosave("admin_draft_divers", dForm, setDForm, editingD !== null);
+  const rDraft = useDraftAutosave("admin_draft_retex", rForm, setRForm, false);
+  const rfDraft = useDraftAutosave("admin_draft_recoflash", rfForm, setRfForm, editingRf !== null);
+  const qzDraft = useDraftAutosave("admin_draft_quiz", qzForm, setQzForm, editingQz !== null);
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
+  const cDraft = useDraftAutosave("admin_draft_contact", cForm, setCForm, false);
 
   // Les listes viennent du DataStore global
   const customEcgs = store.ecgs;
@@ -7632,11 +7640,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
       const item = {...eForm, id:editingE, points, color:"#E05260"};
       await updateItem("ecgs","admin_ecgs",item,["image","image2"]);
       setEditingE(null); setEForm(ecgReset);
+      eDraft.clear();
       showSaved("ECG modifié !");
     } else {
       const item = {...eForm, id:Date.now(), points, revealed:false, color:"#E05260"};
       const newItem = await addItem("ecgs","admin_ecgs",item,["image","image2"]);
       setEForm(ecgReset); setEcgConfirmed(false);
+      eDraft.clear();
       showSaved("ECG ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"❤️",color:"#E05260",nav:"ecg"});
     }
@@ -7651,11 +7661,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
         const item = {...iForm, id:editingI, color:"#9B59B6"};
         await updateItem("imagerie","admin_imagerie",item,["image"]);
         setEditingI(null); setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[]});
+        iDraft.clear();
         showSaved("Cas modifié !");
       } else {
         const item = {...iForm, id:Date.now(), revealed:false, color:"#9B59B6"};
         const newItem = await addItem("imagerie","admin_imagerie",item,["image"]);
         setIForm({title:"",type:"Scanner",context:"",question:"",diag:"",imageUrl:"",imageData:null,medias:[],mediasApres:[]}); setImagerieConfirmed(false);
+        iDraft.clear();
         showSaved("Cas ajouté !");
         if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🩻",color:"#9B59B6",nav:"imagerie"});
       }
@@ -7671,11 +7683,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
       const item = {...aForm, id:editingA, color:colors[aForm.type]||C.blue};
       await updateItem("agenda","admin_agenda",item,["image"]);
       setEditingA(null); setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[]});
+      aDraft.clear();
       showSaved("Événement modifié !");
     } else {
       const item = {...aForm, id:Date.now(), color:colors[aForm.type]||C.blue};
       const newItem = await addItem("agenda","admin_agenda",item,["image"]);
       setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[]});
+      aDraft.clear();
       showSaved("Événement ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
     }
@@ -7687,11 +7701,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
       const item = {...dForm, id:editingD};
       await updateItem("divers","admin_divers",item,["image"]);
       setEditingD(null); setDForm({title:"",categorie:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
+      dDraft.clear();
       showSaved("Fiche modifiée !");
     } else {
       const item = {...dForm, id:Date.now()};
       const newItem = await addItem("divers","admin_divers",item,["image"]);
       setDForm({title:"",categorie:"",content:"",imageUrl:"",imageData:null,credit:"",medias:[]});
+      dDraft.clear();
       showSaved("Fiche ajoutée !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
     }
@@ -7703,6 +7719,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
     const newItem = await addRetexItem(item);
     setRForm({type:"retex",title:"",author:"",date:"",lieu:"",contexte:"",situation:"",bien:"",difficultes:"",amelio:"",takehome:"",recit:"",evolution:"",medias:[]});
     setRetexAdminConfirmed(false);
+    rDraft.clear();
     showSaved("Publication ajoutée !");
     if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🔬",color:"#2E9E6B",nav:"retex"});
   }
@@ -7757,11 +7774,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
         const item = {...rfForm, id:editingRf};
         await updateItem("recoflash","admin_recoflash",item,[]);
         setEditingRf(null); setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:""});
+        rfDraft.clear();
         showSaved("Reco modifiée !");
       } else {
         const item = {...rfForm, id:Date.now()};
         const newItem = await addItem("recoflash","admin_recoflash",item,[]);
         setRfForm({titre:"",societe:"",datePublication:"",specialite:"",urlPdf:"",resume:""});
+        rfDraft.clear();
         showSaved("Reco ajoutée !");
         if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.titre,icon:"⚡",color:"#0EA5E9",nav:"recoflash"});
       }
@@ -7795,11 +7814,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
         await updateItem("quizzes","admin_quizzes",{...payload, id:editingQz},[]);
         setEditingQz(null);
         setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[]});
+        qzDraft.clear();
         showSaved("Quiz modifié !");
       } else {
         const item = {...payload, id:Date.now()};
         const newItem = await addItem("quizzes","admin_quizzes",item,[]);
         setQzForm({title:"",theme:"",description:"",icon:"🧠",color:"#6366F1",estimatedMin:5,sources:"",takeaways:"",questions:[]});
+        qzDraft.clear();
         showSaved("Quiz ajouté !");
         if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"🧠",color:"#6366F1",nav:"quiz"});
       }
@@ -7970,6 +7991,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingE ? "✏️ Modifier l'ECG" : "+ Nouvel ECG"}</div>
+            {!editingE && <DraftBanner draft={eDraft} itemLabel="un ECG"/>}
             <label style={lbl}>Titre * (ex: Douleur thoracique H 58 ans)</label>
             <input style={inp} placeholder="Titre du cas" value={eForm.title} onChange={e=>setEForm({...eForm,title:e.target.value})}/>
             <label style={lbl}>Contexte clinique</label>
@@ -8095,6 +8117,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingI ? "✏️ Modifier le cas imagerie" : "+ Nouveau cas imagerie"}</div>
+            {!editingI && <DraftBanner draft={iDraft} itemLabel="un cas d'imagerie"/>}
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Titre du cas" value={iForm.title} onChange={e=>setIForm({...iForm,title:e.target.value})}/>
             <label style={lbl}>{"Type d'imagerie"}</label>
@@ -8220,6 +8243,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingA ? "✏️ Modifier l'événement" : "+ Nouvel evenement"}</div>
+            {!editingA && <DraftBanner draft={aDraft} itemLabel="un événement"/>}
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Reunion de service" value={aForm.title} onChange={e=>setAForm({...aForm,title:e.target.value})}/>
             <label style={lbl}>Type</label>
@@ -8302,6 +8326,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingD ? "✏️ Modifier la fiche" : "+ Nouvelle fiche"}</div>
+            {!editingD && <DraftBanner draft={dDraft} itemLabel="une fiche"/>}
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Dilution Ketamine" value={dForm.title} onChange={e=>setDForm({...dForm,title:e.target.value})}/>
             <label style={lbl}>Contenu</label>
@@ -8648,6 +8673,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
         <div>
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingRf ? "✏️ Modifier la reco" : "+ Nouvelle Reco Flash"}</div>
+            {!editingRf && <DraftBanner draft={rfDraft} itemLabel="une Reco Flash"/>}
 
             <label style={lbl}>Titre * (ex: Prise en charge du sepsis 2024)</label>
             <input style={inp} placeholder="Titre de la recommandation" value={rfForm.titre} onChange={e=>setRfForm({...rfForm,titre:e.target.value})}/>
@@ -8700,6 +8726,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
           {/* Formulaire ajout/édition quiz */}
           <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>{editingQz ? "✏️ Modifier le quiz" : "+ Nouveau Quiz"}</div>
+            {!editingQz && <DraftBanner draft={qzDraft} itemLabel="un quiz"/>}
 
             <label style={lbl}>Titre du quiz *</label>
             <input style={inp} placeholder="Ex: Embolie pulmonaire — diagnostic" value={qzForm.title} onChange={e=>setQzForm({...qzForm, title:e.target.value})}/>
@@ -8815,6 +8842,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
           {/* Formulaire ajout contact */}
           <div style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:16, marginBottom:18}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:14}}>➕ Ajouter un contact</div>
+            <DraftBanner draft={cDraft} itemLabel="un contact"/>
 
             <div style={{marginBottom:10}}>
               <div style={{fontSize:11, fontWeight:700, color:C.sub, marginBottom:4}}>NOM *</div>
@@ -8864,6 +8892,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               const newContact = { id:Date.now(), nom:cForm.nom.trim(), categorie:cForm.categorie.trim(), role:cForm.role.trim(), telephones:tels };
               await addItem("contacts","admin_contacts",newContact,[]);
               setCForm({ nom:"", categorie:"", role:"", telephones:[{label:"",numero:""}] });
+              cDraft.clear();
               showSaved("Contact ajouté !");
             }} style={{width:"100%", background:C.navy, color:"#fff", border:"none", borderRadius:10, padding:"11px 0", fontSize:14, fontWeight:800, cursor:"pointer"}}>
               💾 Enregistrer le contact
