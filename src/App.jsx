@@ -6749,8 +6749,8 @@ function GesteDetail({geste, onBack}) {
   const COLOR = geste.color || C.red;
 
   // Helper : section repliable avec icône-label + contenu en carte (style Dilutions)
-  const Section = ({ icon, label, color, children }) => (
-    <CollapsibleSection icon={icon} label={label} color={color} C={C}>
+  const Section = ({ icon, label, color, children, defaultOpen }) => (
+    <CollapsibleSection icon={icon} label={label} color={color} C={C} defaultOpen={defaultOpen}>
       <div style={{margin:"-14px", overflow:"hidden", borderRadius:14}}>{children}</div>
     </CollapsibleSection>
   );
@@ -6839,7 +6839,7 @@ function GesteDetail({geste, onBack}) {
 
       {/* Étapes */}
       {(geste.etapes||[]).length > 0 && (
-        <Section icon="📋" label="Étapes" color={COLOR}>
+        <Section icon="📋" label="Étapes" color={COLOR} defaultOpen={true}>
           <div>
             {geste.etapes.map((step,i)=>(
               <div key={i} style={{
@@ -6862,7 +6862,7 @@ function GesteDetail({geste, onBack}) {
 
       {/* Pièges */}
       {(geste.pieges||[]).length > 0 && (
-        <Section icon="⚠️" label="Points critiques / Pièges" color="#D97706">
+        <Section icon="⚠️" label="Points critiques / Pièges" color="#D97706" defaultOpen={true}>
           <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:10}}>
             {geste.pieges.map((p,i)=>(
               <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10,
@@ -7325,7 +7325,7 @@ function DilutionScreen({ deepLinkId, onBack }) {
 
         {/* Sections (repliables) */}
         {sections.map(s => selected[s.key] ? (
-          <CollapsibleSection key={s.key} icon={s.icon} label={s.label} color={s.color} C={C}>
+          <CollapsibleSection key={s.key} icon={s.icon} label={s.label} color={s.color} C={C} defaultOpen={s.key==="dilutionStandard"}>
             <pre style={{fontSize:13, color:C.text, margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit", lineHeight:1.75}}>
               {selected[s.key]}
             </pre>
