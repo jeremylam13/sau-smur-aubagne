@@ -37100,6 +37100,193 @@ function AuthGate() {
   );
 }
 
+// ── Guide d'utilisation : contenu descriptif de chaque module, groupé par catégorie ──
+const GUIDE_CATEGORIES = [
+  {
+    id:"vitales", label:"Urgences vitales", icon:"🚑", color:"#DC2626", bg:"#FEE2E2",
+    modules:[
+      { nav:"gestes", icon:"✂️", title:"Gestes urgents", desc:"Le pas-à-pas illustré des gestes qui sauvent : cathéter sus-pubien, drainage, voies d'abord, ORL... Indications, contre-indications, matériel nécessaire coché en checklist, étapes numérotées et pièges à éviter — pensé pour être suivi geste en main pendant la procédure." },
+      { nav:"dilutions", icon:"💉", title:"Dilutions", desc:"Comment préparer et diluer les drogues d'urgence sans se tromper : concentrations, volumes, débits — la référence à consulter en pleine urgence, quand chaque seconde compte." },
+      { nav:"calcChoix", icon:"⚖️", title:"Calcul de doses", desc:"La bonne dose au bon patient, adulte ou enfant : posologies par médicament, ajustées automatiquement selon le poids. Fini le calcul mental sous pression." },
+      { nav:"pedia", icon:"👶", title:"Pédiatrie", desc:"L'espace dédié à l'enfant : doses pédiatriques par poids ou âge, scores spécifiques (Westley, PEWS, déshydratation), tout ce qui change quand le patient est petit." },
+      { nav:"checklists", icon:"📋", title:"Checklists", desc:"Les checklists de sécurité à dérouler avant un geste ou une procédure à risque, pour ne rien oublier au mauvais moment." },
+    ],
+  },
+  {
+    id:"decision", label:"Aide à la décision", icon:"🧭", color:"#0891B2", bg:"#CFFAFE",
+    modules:[
+      { nav:"antibioguide", icon:"🦠", title:"Antibioguide", desc:"L'antibiothérapie probabiliste organe par organe et pathologie par pathologie : la bonne molécule, la bonne dose, la bonne durée, sans rouvrir un protocole PDF de 40 pages." },
+      { nav:"scores", icon:"🧮", title:"Scores", desc:"Tous les scores cliniques du quotidien (Glasgow, CHA2DS2-VASc, qSOFA...) avec calcul automatique et interprétation immédiate." },
+      { nav:"recoflash", icon:"⚡", title:"Reco Flash", desc:"Les recommandations condensées à l'essentiel, pour une réponse en quelques secondes sur une question de pratique courante." },
+      { nav:"imagerie", icon:"🩻", title:"Imagerie", desc:"Une bibliothèque de cas d'imagerie commentés, pour affiner l'œil sur les images qui comptent." },
+      { nav:"ecg", icon:"❤️", title:"ECG", desc:"Une bibliothèque de tracés ECG à décrypter, pour s'entraîner à la lecture et ne pas passer à côté d'un tracé piégeux." },
+      { nav:"echo", icon:"🩺", title:"Échographie", desc:"Les protocoles d'échographie clinique au lit du patient (FAST, écho pulmonaire...), utiles en traumato comme en médecine interne." },
+    ],
+  },
+  {
+    id:"service", label:"Vie du service", icon:"🏥", color:"#0F172A", bg:"#F1F5F9",
+    modules:[
+      { nav:"annuaire", icon:"📒", title:"Contacts", desc:"L'annuaire du service, de l'hôpital et des spécialités externes : le bon numéro, tout de suite, sans chercher.", hideForConsultatif:true },
+      { nav:"agenda", icon:"📅", title:"Agenda", desc:"Le planning et les événements du service, toujours sous la main." },
+      { nav:"sondages", icon:"📊", title:"Sondages", desc:"Les sondages internes à l'équipe, pour donner son avis en quelques clics." },
+      { nav:"divers", icon:"⚡", title:"Divers", desc:"Documents et informations diverses du service qui ne rentrent dans aucune autre case." },
+    ],
+  },
+  {
+    id:"formation", label:"Formation", icon:"🎓", color:"#7C3AED", bg:"#F3E8FF",
+    modules:[
+      { nav:"retex", icon:"🔬", title:"RETEX / Cas cliniques", desc:"Des cas cliniques réels partagés par l'équipe, discutés et analysés, pour apprendre collectivement de chaque situation." },
+      { nav:"quiz", icon:"🧠", title:"Quiz", desc:"Des quiz pour tester ses connaissances et réviser en s'amusant, seul ou entre collègues." },
+    ],
+  },
+  {
+    id:"favoris", label:"Favoris", icon:"⭐", color:"#F59E0B", bg:"#FEF7E8",
+    modules:[
+      { nav:"favoris", icon:"⭐", title:"Favoris", desc:"Tous les gestes, médicaments et fiches mis de côté pour un accès instantané, sans repasser par les menus." },
+    ],
+  },
+];
+
+function GuideScreen({ onBack, onNav }) {
+  const C = useC();
+  const { role } = useAuth();
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+
+  const groups = GUIDE_CATEGORIES.map(cat => ({
+    ...cat,
+    modules: cat.modules.filter(m => !m.hideForConsultatif || role !== "consultatif")
+      .filter(m => !q || m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q)),
+  })).filter(cat => cat.modules.length > 0);
+
+  return (
+    <div>
+      <div style={{display:"flex", alignItems:"center", marginBottom:14}}>
+        <BackBtn onClick={onBack}/>
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:19, fontWeight:900, color:C.navy, marginBottom:4}}>📖 Guide d'utilisation</div>
+        <div style={{fontSize:12.5, color:C.sub, lineHeight:1.5}}>Ce que fait chaque module de l'application, en un coup d'œil.</div>
+      </div>
+
+      <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Rechercher un module..."
+        style={{width:"100%", boxSizing:"border-box", padding:"11px 14px", borderRadius:12, border:`1px solid ${C.border}`, background:C.white, color:C.text, fontSize:14, marginBottom:20}}/>
+
+      {groups.length === 0 && (
+        <div style={{textAlign:"center", color:C.sub, fontSize:13, padding:"30px 0"}}>Aucun module ne correspond à « {query} ».</div>
+      )}
+
+      {groups.map(cat => (
+        <div key={cat.id} style={{marginBottom:22}}>
+          <div style={{display:"flex", alignItems:"center", gap:8, marginBottom:10}}>
+            <span style={{fontSize:16}}>{cat.icon}</span>
+            <span style={{fontSize:13, fontWeight:800, color:cat.color, letterSpacing:.2}}>{cat.label}</span>
+          </div>
+          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+            {cat.modules.map(m => (
+              <button key={m.nav+m.title} onClick={()=>onNav(m.nav)} style={{
+                display:"flex", alignItems:"flex-start", gap:12, textAlign:"left",
+                background:C.white, border:`1px solid ${C.border}`, borderRadius:14,
+                padding:"13px 14px", cursor:"pointer", WebkitTapHighlightColor:"transparent",
+              }}>
+                <div style={{background:cat.bg, borderRadius:10, width:38, height:38, flexShrink:0,
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:19}}>{m.icon}</div>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:13.5, fontWeight:800, color:C.text, marginBottom:3}}>{m.title}</div>
+                  <div style={{fontSize:12, color:C.sub, lineHeight:1.5}}>{m.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Panneau Réglages : bottom-sheet regroupant mode nuit, compte, gestion des comptes (admin), guide ──
+function SettingsPanel({ onClose, onOpenAccount, onOpenAccounts, onOpenGuide }) {
+  const C = useC();
+  const { dark, toggleDark } = useThemeToggle();
+  const { profile, roleLabel, isAdmin } = useAuth();
+
+  return (
+    <div onClick={onClose} style={{position:"fixed", inset:0, background:"rgba(15,23,42,.5)", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%", maxWidth:420, background:C.white, borderRadius:"20px 20px 0 0", padding:"10px 18px 26px", maxHeight:"85vh", overflowY:"auto"}}>
+        <div style={{width:40, height:4, borderRadius:4, background:C.border, margin:"0 auto 14px"}}/>
+
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16}}>
+          <div style={{fontSize:16, fontWeight:900, color:C.navy}}>⚙️ Réglages</div>
+          <button onClick={onClose} style={{background:"none", border:"none", fontSize:20, color:C.sub, cursor:"pointer"}}>✕</button>
+        </div>
+
+        {/* Mode nuit */}
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between",
+          background:C.bg, borderRadius:12, padding:"12px 14px", marginBottom:10}}>
+          <div style={{display:"flex", alignItems:"center", gap:10}}>
+            <span style={{fontSize:18}}>{dark ? "🌙" : "☀️"}</span>
+            <span style={{fontSize:13.5, fontWeight:700, color:C.text}}>Mode nuit</span>
+          </div>
+          <button onClick={toggleDark} style={{
+            width:44, height:26, borderRadius:20, border:"none", cursor:"pointer", position:"relative",
+            background: dark ? C.blue : C.border, transition:"background .2s", flexShrink:0,
+          }}>
+            <div style={{position:"absolute", top:3, left: dark ? 21 : 3, width:20, height:20, borderRadius:"50%",
+              background:"#fff", transition:"left .2s", boxShadow:"0 1px 3px rgba(0,0,0,.3)"}}/>
+          </button>
+        </div>
+
+        {/* Compte */}
+        <button onClick={onOpenAccount} style={{
+          width:"100%", display:"flex", alignItems:"center", gap:12, textAlign:"left",
+          background:C.bg, border:"none", borderRadius:12, padding:"12px 14px", marginBottom:10,
+          cursor:"pointer", WebkitTapHighlightColor:"transparent",
+        }}>
+          <span style={{width:32, height:32, borderRadius:"50%", background:C.blueLight, color:C.blue,
+            display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:900, flexShrink:0}}>
+            {(profile?.prenom?.[0]||profile?.email?.[0]||"?").toUpperCase()}
+          </span>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{fontSize:13.5, fontWeight:800, color:C.text}}>{profile?.prenom} {profile?.nom}</div>
+            <div style={{fontSize:11.5, color:C.sub}}>{roleLabel}</div>
+          </div>
+          <span style={{color:C.sub, fontSize:14}}>›</span>
+        </button>
+
+        {/* Gestion des comptes — admin uniquement */}
+        {isAdmin && (
+          <button onClick={onOpenAccounts} style={{
+            width:"100%", display:"flex", alignItems:"center", gap:12, textAlign:"left",
+            background:C.bg, border:"none", borderRadius:12, padding:"12px 14px", marginBottom:16,
+            cursor:"pointer", WebkitTapHighlightColor:"transparent",
+          }}>
+            <span style={{width:32, height:32, borderRadius:10, background:"#F1F5F9", color:"#0F172A",
+              display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0}}>👥</span>
+            <div style={{flex:1, fontSize:13.5, fontWeight:800, color:C.text}}>Gestion des comptes</div>
+            <span style={{color:C.sub, fontSize:14}}>›</span>
+          </button>
+        )}
+        {!isAdmin && <div style={{marginBottom:6}}/>}
+
+        {/* Guide d'utilisation */}
+        <button onClick={onOpenGuide} style={{
+          width:"100%", display:"flex", alignItems:"center", gap:12, textAlign:"left",
+          background:"linear-gradient(135deg, #0891B2 0%, #0E7490 100%)", border:"none", borderRadius:14,
+          padding:"14px 16px", cursor:"pointer", WebkitTapHighlightColor:"transparent",
+        }}>
+          <span style={{fontSize:22, flexShrink:0}}>📖</span>
+          <div style={{flex:1, minWidth:0}}>
+            <div style={{fontSize:13.5, fontWeight:800, color:"#fff"}}>Guide d'utilisation</div>
+            <div style={{fontSize:11.5, color:"rgba(255,255,255,.85)", lineHeight:1.4}}>Ce que fait chaque module, en un coup d'œil</div>
+          </div>
+          <span style={{color:"#fff", fontSize:14}}>›</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AppInner() {
   const [screen, setScreen] = useState("home");
   const [screenHistory, setScreenHistory] = useState([]);
@@ -37143,6 +37330,7 @@ function AppInner() {
   const { notifs, pushNotif, clearAll, markSeen, unread } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [calcChoixOpen, setCalcChoixOpen] = useState(false);
   const { profile, roleLabel, role } = useAuth();
   const unreadCount = unread;
@@ -37272,18 +37460,6 @@ function AppInner() {
           </button>
         </div>
         <div style={{display:"flex", alignItems:"center", gap:10}}>
-          {/* Toggle Nuit / Jour */}
-          <button onClick={toggleDark} title={dark?"Mode jour":"Mode nuit"} style={{
-            background: dark ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.15)",
-            border: "1.5px solid rgba(255,255,255,.25)",
-            borderRadius:20, padding:"3px 10px", cursor:"pointer",
-            display:"flex", alignItems:"center", gap:5, color:"#fff",
-            fontSize:13, fontWeight:700, transition:"all .2s"
-          }}>
-            <span style={{fontSize:15}}>{dark ? "☀️" : "🌙"}</span>
-            <span style={{fontSize:10, letterSpacing:.3}}>{dark ? "Jour" : "Nuit"}</span>
-          </button>
-
           {/* Cloche notifications */}
           <div style={{position:"relative"}}>
             <button onClick={()=>{ setNotifOpen(o=>{ const nv=!o; if(!nv) markSeen(); return nv; }); }} style={{
@@ -37313,20 +37489,23 @@ function AppInner() {
             )}
           </div>
 
-          {/* Bouton Mon compte */}
-          <button onClick={()=>setAccountOpen(true)} title={roleLabel} style={{
-            background: "rgba(255,255,255,.12)",
+          {/* Bouton Réglages */}
+          <button onClick={()=>setSettingsOpen(true)} title="Réglages" style={{
+            background: settingsOpen ? "rgba(255,255,255,.25)" : "rgba(255,255,255,.12)",
             border: "1.5px solid rgba(255,255,255,.25)",
-            borderRadius:10, height:36, minWidth:36, padding:"0 10px", cursor:"pointer",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-            fontSize:13, fontWeight:800, color:"#fff", transition:"all .2s"
-          }}>
-            <span style={{
-              width:22, height:22, borderRadius:"50%", background:"rgba(255,255,255,.25)",
-              display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:900,
-            }}>{(profile?.prenom?.[0]||profile?.email?.[0]||"?").toUpperCase()}</span>
-          </button>
+            borderRadius:10, width:36, height:36, cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            fontSize:18, transition:"all .2s"
+          }}>⚙️</button>
           {accountOpen && <AccountModal onClose={()=>setAccountOpen(false)}/>}
+          {settingsOpen && (
+            <SettingsPanel
+              onClose={()=>setSettingsOpen(false)}
+              onOpenAccount={()=>{ setSettingsOpen(false); setAccountOpen(true); }}
+              onOpenAccounts={()=>{ setSettingsOpen(false); navigate("comptes"); }}
+              onOpenGuide={()=>{ setSettingsOpen(false); navigate("guide"); }}
+            />
+          )}
           {showBadgePrompt && <BadgePermissionPrompt onAccept={handleAcceptBadgePrompt} onDismiss={handleDismissBadgePrompt}/>}
         </div>
       </div>
@@ -37376,6 +37555,7 @@ function AppInner() {
         {screen==="echo"       && <EchoScreen key={"echo-"+navVersion} onBack={goBack}/>}
         {screen==="annuaire"   && <AnnuaireScreen key={"annuaire-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="admin"      && <AdminScreen onNewItem={pushNotif} onBack={goBack}/>}
+        {screen==="guide"      && <GuideScreen key={"guide-"+navVersion} onBack={goBack} onNav={navigate}/>}
       </div>
 
       <div style={{position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:420, background:theme.white, borderTop:`1px solid ${theme.border}`, display:"flex", padding:"8px 0 12px", boxShadow:"0 -4px 20px rgba(26,58,92,.08)", transition:"background .25s"}}>
