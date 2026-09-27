@@ -2726,13 +2726,16 @@ function FavorisScreen({ onNav }) {
   const typeLabels = {
     retex:"RETEX / Cas", ecg:"ECG", icono:"Imagerie",
     agenda:"Agenda", divers:"Divers", geste:"Geste urgent", dilution:"Dilution",
-    antibioguide:"Antibioguide",
+    antibioguide:"Antibioguide", medic_adulte:"Calc. doses adulte", medic_pedia:"Calc. doses pédiatrie",
   };
 
   // Antibioguide stocke son favori avec un id texte (moduleId__nodeId) + champs séparés ;
   // il faut reconstruire l'objet {moduleId, nodeId} attendu par AntibioguideScreen à la navigation.
+  // Médicaments (calc adulte/pédia) : le deep-link attend le NOM du médicament (utilisé
+  // pour pré-remplir la recherche), pas l'id stable stocké comme clé du favori.
   const goToFavori = (f) => {
     if (f.type === "antibioguide") onNav(f.nav, {id:{moduleId:f.abgModuleId, nodeId:f.abgNodeId}});
+    else if (f.type === "medic_adulte" || f.type === "medic_pedia") onNav(f.nav, {id:f.medicName});
     else onNav(f.nav, f);
   };
 
@@ -30190,7 +30193,28 @@ const PEDIA_MEDS_IN = [
 ];
 
 // Composant carte médicament intranasal pédiatrique
+// Wrapper léger : ajoute l'étoile favoris en surimpression au coin de la carte
 function PediaDoseCardIN({ medic, poids }) {
+  const C = useC();
+  const { toggleFavori, isFavori } = useFavoris();
+  const fav = isFavori("medic_pedia", medic.id);
+  return (
+    <div style={{position:"relative"}}>
+      <PediaDoseCardINInner medic={medic} poids={poids}/>
+      <button onClick={(e)=>{ e.stopPropagation(); toggleFavori({id:medic.id, medicName:medic.nom, type:"medic_pedia", title:medic.nom, icon:"👶", color:"#F59E0B", nav:"pedia"}); }}
+        title={fav ? "Retirer des favoris" : "Ajouter aux favoris"}
+        style={{position:"absolute", top:-8, right:-8, width:30, height:30, borderRadius:"50%",
+          background: fav ? "#F59E0B" : C.white, border:`1.5px solid ${fav ? "#F59E0B" : C.border}`,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, lineHeight:1,
+          cursor:"pointer", boxShadow:"0 2px 6px rgba(0,0,0,.15)", zIndex:2, color: fav ? "#fff" : C.sub,
+          WebkitTapHighlightColor:"transparent"}}>
+        {fav ? "★" : "☆"}
+      </button>
+    </div>
+  );
+}
+
+function PediaDoseCardINInner({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#7C3AED";
   const ESPACE_MORT = 0.1;
@@ -30750,7 +30774,29 @@ function PediaDoseCardPreview({ medic }) {
   );
 }
 
+// Wrapper léger : ajoute l'étoile favoris en surimpression au coin de la carte,
+// sans toucher aux variantes internes (Buccolam, Rocéphine, Striadyne, etc.)
 function PediaDoseCard({ medic, poids, ageAnnees }) {
+  const C = useC();
+  const { toggleFavori, isFavori } = useFavoris();
+  const fav = isFavori("medic_pedia", medic.id);
+  return (
+    <div style={{position:"relative"}}>
+      <PediaDoseCardInner medic={medic} poids={poids} ageAnnees={ageAnnees}/>
+      <button onClick={(e)=>{ e.stopPropagation(); toggleFavori({id:medic.id, medicName:medic.nom, type:"medic_pedia", title:medic.nom, icon:"👶", color:"#F59E0B", nav:"pedia"}); }}
+        title={fav ? "Retirer des favoris" : "Ajouter aux favoris"}
+        style={{position:"absolute", top:-8, right:-8, width:30, height:30, borderRadius:"50%",
+          background: fav ? "#F59E0B" : C.white, border:`1.5px solid ${fav ? "#F59E0B" : C.border}`,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, lineHeight:1,
+          cursor:"pointer", boxShadow:"0 2px 6px rgba(0,0,0,.15)", zIndex:2, color: fav ? "#fff" : C.sub,
+          WebkitTapHighlightColor:"transparent"}}>
+        {fav ? "★" : "☆"}
+      </button>
+    </div>
+  );
+}
+
+function PediaDoseCardInner({ medic, poids, ageAnnees }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
 
@@ -33597,7 +33643,29 @@ function CalcAdulteCardPreview({ medic }) {
   );
 }
 
+// Wrapper léger : ajoute l'étoile favoris en surimpression au coin de la carte,
+// sans toucher aux ~12 variantes internes (PSE, palier, protocole, etc.)
 function CalcAdulteCard({ medic, poids }) {
+  const C = useC();
+  const { toggleFavori, isFavori } = useFavoris();
+  const fav = isFavori("medic_adulte", medic.id);
+  return (
+    <div style={{position:"relative"}}>
+      <CalcAdulteCardInner medic={medic} poids={poids}/>
+      <button onClick={(e)=>{ e.stopPropagation(); toggleFavori({id:medic.id, medicName:medic.nom, type:"medic_adulte", title:medic.nom, icon:"💊", color:"#F59E0B", nav:"calcAdulte"}); }}
+        title={fav ? "Retirer des favoris" : "Ajouter aux favoris"}
+        style={{position:"absolute", top:-8, right:-8, width:30, height:30, borderRadius:"50%",
+          background: fav ? "#F59E0B" : C.white, border:`1.5px solid ${fav ? "#F59E0B" : C.border}`,
+          display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, lineHeight:1,
+          cursor:"pointer", boxShadow:"0 2px 6px rgba(0,0,0,.15)", zIndex:2, color: fav ? "#fff" : C.sub,
+          WebkitTapHighlightColor:"transparent"}}>
+        {fav ? "★" : "☆"}
+      </button>
+    </div>
+  );
+}
+
+function CalcAdulteCardInner({ medic, poids }) {
   const C = useC();
   const color = medic.color || "#0EA5E9";
 
