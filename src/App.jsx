@@ -2371,12 +2371,34 @@ function GlobalSearch({query, allData, onNav, onClose}) {
         title:m.nom, sub:(m.categorie||"Calc. doses pédiatrie"), nav:"pedia", id:m.nom});
   });
 
+  // Regroupement par catégorie — ordre pensé pour l'usage clinique (le plus
+  // souvent cherché en premier), plutôt qu'une liste plate mélangeant tout.
+  const CATEGORY_ORDER = [
+    {type:"geste",        label:"Gestes urgents"},
+    {type:"dilution",     label:"Dilutions"},
+    {type:"antibioguide", label:"Antibioguide"},
+    {type:"medic_adulte", label:"Calc. doses — Adulte"},
+    {type:"medic_pedia",  label:"Calc. doses — Pédiatrie"},
+    {type:"score",        label:"Scores"},
+    {type:"ecg",          label:"ECG"},
+    {type:"imagerie",     label:"Imagerie"},
+    {type:"reco",         label:"Reco Flash"},
+    {type:"retex",        label:"RETEX / Cas cliniques"},
+    {type:"divers",       label:"Divers"},
+    {type:"quiz",         label:"Quiz"},
+    {type:"agenda",       label:"Agenda"},
+    {type:"annuaire",     label:"Contacts"},
+  ];
+  const grouped = {};
+  results.forEach(r => { (grouped[r.type] = grouped[r.type] || []).push(r); });
+  const groups = CATEGORY_ORDER.map(c => ({...c, items:grouped[c.type]||[]})).filter(g => g.items.length>0);
+
   return (
     <div style={{position:"absolute", top:"100%", left:0, right:0, zIndex:100,
       background:C.white, borderRadius:"0 0 16px 16px",
       boxShadow:"0 8px 32px rgba(26,58,92,.18)",
       border:`1px solid ${C.border}`, borderTop:"none",
-      maxHeight:320, overflowY:"auto"}}>
+      maxHeight:360, overflowY:"auto"}}>
       {results.length===0 ? (
         <div style={{padding:"20px 16px", textAlign:"center", color:C.sub, fontSize:13}}>
           <div style={{fontSize:28, marginBottom:6}}>{"🔍"}</div>
@@ -2387,26 +2409,30 @@ function GlobalSearch({query, allData, onNav, onClose}) {
           <div style={{padding:"8px 16px 4px", fontSize:10, fontWeight:800, color:C.sub, letterSpacing:.5}}>
             {results.length} RESULTAT{results.length>1?"S":""}
           </div>
-          {results.map((r,i)=>(
-            <button key={i} onClick={()=>{ onNav(r.nav, r.id ? {id:r.id} : undefined); onClose(); }}
-              style={{width:"100%", background:"none", border:"none", borderTop:`1px solid ${C.border}`,
-                padding:"10px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10,
-                textAlign:"left"}}>
-              <div style={{background:r.bg, borderRadius:9, width:34, height:34, display:"flex",
-                alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0}}>
-                {renderShortcutIcon(r.icon, 16, "#0891B2")}
+          {groups.map(g => (
+            <div key={g.type}>
+              <div style={{padding:"8px 16px 4px", fontSize:10, fontWeight:800, color:g.items[0].color,
+                letterSpacing:.4, textTransform:"uppercase", background:g.items[0].bg+"55"}}>
+                {g.label} · {g.items.length}
               </div>
-              <div style={{flex:1, minWidth:0}}>
-                <div style={{fontSize:13, fontWeight:700, color:C.text,
-                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.title}</div>
-                <div style={{fontSize:11, color:C.sub,
-                  overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.sub}</div>
-              </div>
-              <div style={{fontSize:10, fontWeight:700, color:r.color, background:r.bg,
-                padding:"2px 7px", borderRadius:6, flexShrink:0, textTransform:"uppercase", letterSpacing:.3}}>
-                {r.type}
-              </div>
-            </button>
+              {g.items.map((r,i)=>(
+                <button key={i} onClick={()=>{ onNav(r.nav, r.id ? {id:r.id} : undefined); onClose(); }}
+                  style={{width:"100%", background:"none", border:"none", borderTop:`1px solid ${C.border}`,
+                    padding:"10px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10,
+                    textAlign:"left"}}>
+                  <div style={{background:r.bg, borderRadius:9, width:34, height:34, display:"flex",
+                    alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0}}>
+                    {renderShortcutIcon(r.icon, 16, "#0891B2")}
+                  </div>
+                  <div style={{flex:1, minWidth:0}}>
+                    <div style={{fontSize:13, fontWeight:700, color:C.text,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.title}</div>
+                    <div style={{fontSize:11, color:C.sub,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.sub}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
           ))}
         </div>
       )}
