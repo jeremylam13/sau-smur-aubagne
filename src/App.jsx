@@ -5506,7 +5506,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
     if(filter==="recit") return x.type==="recit";
     return true;
   }).filter(x=>
-    !search || x.title?.toLowerCase().includes(search.toLowerCase())
+    !search || matchSearch(x.title||"", search)
   );
 
   if(editing) return (
@@ -6558,10 +6558,9 @@ function GestesScreen({ deepLinkId, onBack }) {
       const gCat = (g.category || g.categorie || "").toLowerCase().trim();
       if (gCat !== selectedCategory) return false;
     }
-    // Filtre recherche
-    const q = search.toLowerCase();
-    if(!q) return true;
-    return (g.title + (g.indications||"")).toLowerCase().includes(q);
+    // Filtre recherche — insensible aux accents et à la casse
+    if(!search.trim()) return true;
+    return matchSearch(g.title + (g.indications||""), search);
   })
   .sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
@@ -6966,7 +6965,7 @@ function DiversScreen({ deepLinkId, onBack }) {
   useEffect(()=>{ if(selected){ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; } },[selected]);
 
   const filtered = allDivers.filter(d =>
-    (d.title||"").toLowerCase().includes(search.toLowerCase())
+    matchSearch(d.title||"", search)
   );
 
   if(selected) {
@@ -7077,10 +7076,9 @@ function AnnuaireScreenInner({ deepLinkId, onBack }) {
   const cats = ["Tous", ...Array.from(new Set(contacts.map(p=>p.categorie||"Autre").filter(Boolean)))];
 
   const filtered = contacts.filter(p => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || (p.nom||"").toLowerCase().includes(q) || (p.role||"").toLowerCase().includes(q) || (p.tel||"").includes(q);
+    const matches = !search.trim() || matchSearch((p.nom||"")+" "+(p.role||"")+" "+(p.tel||""), search);
     const matchCat = filterCat==="Tous" || (p.categorie||"Autre")===filterCat;
-    return matchSearch && matchCat;
+    return matches && matchCat;
   });
 
   if(selected) {
@@ -7262,10 +7260,10 @@ function DilutionScreen({ deepLinkId, onBack }) {
     // Filtre catégorie
     if (selectedCat === "favoris") { if (!isFavori("dilution", d.id)) return false; }
     else if (selectedCat !== "all") { if (d.categorie !== selectedCat) return false; }
-    // Filtre recherche — nom DCI et nom commercial (ex: "Levophed" doit trouver "Noradrénaline")
-    const q = search.toLowerCase().trim();
-    if (!q) return true;
-    return (d.title||"").toLowerCase().includes(q) || (d.nomCommercial||"").toLowerCase().includes(q);
+    // Filtre recherche — nom DCI et nom commercial, insensible aux accents
+    // (ex: "Levophed" doit trouver "Noradrénaline", "meningite" doit trouver "méningite")
+    if (!search.trim()) return true;
+    return matchSearch((d.title||"")+" "+(d.nomCommercial||""), search);
   }).sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   // Regroupement alphabétique — uniquement quand aucune recherche/filtre n'est active,
@@ -9055,10 +9053,8 @@ function RecoFlashScreen({ deepLinkId, onBack }) {
   // Filtres recherche + spécialité
   const filtered = sorted.filter(r => {
     if (selectedSpec !== "all" && r.specialite !== selectedSpec) return false;
-    const q = search.toLowerCase().trim();
-    if (!q) return true;
-    const hay = [r.titre, r.societe, r.specialite, r.resume].join(" ").toLowerCase();
-    return hay.includes(q);
+    if (!search.trim()) return true;
+    return matchSearch([r.titre, r.societe, r.specialite, r.resume].filter(Boolean).join(" "), search);
   });
 
   function formatDate(d) {
@@ -19378,10 +19374,8 @@ function QuizScreen({ deepLinkId, onBack }) {
     }
   }, [deepLinkId, quizzes]);
 
-  const filtered = quizzes.filter(q =>
-    !search ||
-    q.title?.toLowerCase().includes(search.toLowerCase()) ||
-    q.theme?.toLowerCase().includes(search.toLowerCase())
+  const filtered = quizzes.filter(qz =>
+    !search.trim() || matchSearch((qz.title||"")+" "+(qz.theme||""), search)
   );
 
   // Routage des sous-écrans
@@ -28307,8 +28301,8 @@ function Abg_HomeScreen({ onSelect, onBackApp }) {
   const [globalResults, setGlobalResults] = useState([]);
 
   const filtered = Abg_MODULES.filter(m => {
-    const q = search.toLowerCase();
-    return (m.label||"").toLowerCase().includes(q) || (m.subtitle||"").toLowerCase().includes(q) || (m.tags||[]).some(t => (t||"").toLowerCase().includes(q));
+    if (!search.trim()) return true;
+    return matchSearch((m.label||"")+" "+(m.subtitle||"")+" "+(m.tags||[]).join(" "), search);
   });
 
   const handleSearch = (q) => {
@@ -28475,14 +28469,14 @@ function ScoresScreen({ deepLinkId, onBack }) {
     }
   }, [deepLinkId]);
 
-  const q = search.toLowerCase().trim();
+  const q = normSearch(search.trim());
   const filtered = (
     selectedCat === "favoris"
       ? SCORES_LIST.filter(s => isFavori("score", s.id))
       : selectedCat === "all"
         ? SCORES_LIST
         : SCORES_LIST.filter(s => s.category === selectedCat)
-  ).filter(s => !q || (s.title||"").toLowerCase().includes(q) || (s.subtitle||"").toLowerCase().includes(q))
+  ).filter(s => !q || matchSearch((s.title||"")+" "+(s.subtitle||""), search))
    .sort((a,b) => a.title.localeCompare(b.title, 'fr', {sensitivity:'base'}));
 
   // Regroupement alphabétique — repère rapide façon répertoire quand la liste n'est pas filtrée
@@ -37269,12 +37263,12 @@ function GuideScreen({ onBack, onNav }) {
   const C = useC();
   const { role } = useAuth();
   const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
+  const q = normSearch(query.trim());
 
   const groups = GUIDE_CATEGORIES.map(cat => ({
     ...cat,
     modules: cat.modules.filter(m => !m.hideForConsultatif || role !== "consultatif")
-      .filter(m => !q || m.title.toLowerCase().includes(q) || m.desc.toLowerCase().includes(q)),
+      .filter(m => !q || matchSearch(m.title+" "+m.desc, query)),
   })).filter(cat => cat.modules.length > 0);
 
   return (
