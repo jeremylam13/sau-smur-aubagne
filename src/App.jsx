@@ -31361,12 +31361,15 @@ function PediaDoses({ onBack, deepLinkId }) {
     !q || matchSearch(m.nom+(m.indication||"")+(m.categorie||""), search)
   );
 
+  const alphaSort = (a,b) => (a.nom||"").localeCompare(b.nom||"", 'fr', {sensitivity:'base'});
+
   // Groupement par catégorie dans l'ordre PEDIA_DOSE_CATS, puis "Autre" pour le reste
+  // (médicaments triés par ordre alphabétique au sein de chaque catégorie)
   const grouped = PEDIA_DOSE_CATS.map(cat => ({
     ...cat,
-    items: filtered.filter(m => m.categorie === cat.key),
+    items: filtered.filter(m => m.categorie === cat.key).sort(alphaSort),
   })).filter(cat => cat.items.length > 0);
-  const autreItems = filtered.filter(m => !PEDIA_DOSE_CATS.find(c => c.key === m.categorie));
+  const autreItems = filtered.filter(m => !PEDIA_DOSE_CATS.find(c => c.key === m.categorie)).sort(alphaSort);
   if (autreItems.length > 0) grouped.push({ key:"autre", label:"Autre", icon:"📋", color:"#64748B", bg:"#F1F5F9", items:autreItems });
 
   return (
@@ -31459,7 +31462,7 @@ function PediaDoses({ onBack, deepLinkId }) {
           </div>
         ) : (
           <div>
-            {filtered.map(m => (
+            {[...filtered].sort(alphaSort).map(m => (
               <PediaDoseCard key={m.id} medic={m} poids={poidsEff} ageAnnees={ageAnneesEff}/>
             ))}
           </div>
@@ -31493,7 +31496,7 @@ function PediaDoses({ onBack, deepLinkId }) {
               </button>
               {openCats.analgesie_in === true && (
                 <div style={{display:"flex", flexDirection:"column", gap:8}}>
-                  {PEDIA_MEDS_IN.map(m => <PediaDoseCardIN key={m.id} medic={m} poids={poidsEff}/>)}
+                  {[...PEDIA_MEDS_IN].sort(alphaSort).map(m => <PediaDoseCardIN key={m.id} medic={m} poids={poidsEff}/>)}
                 </div>
               )}
             </div>
@@ -32279,18 +32282,9 @@ const CALC_ADULTE_MEDICAMENTS = [
     id:"propofol_analgesie", cat:"sedation_proc", groupe:"Sédation procédurale",
     nom:"Propofol", amp:"200 mg / 20 mL", preparation:"Pure (10 mg/mL).", concentration:10, unite:"mg",
     doseMin:0.5, doseMax:0.5,
-    voie:"IVD lente",
-    indication:"Sédation procédurale, en association avec la kétamine.",
-    remarques:"0,5 mg/kg. Titration prudente, réduire chez le sujet âgé ou hémodynamiquement instable.",
-    color:"#7C3AED",
-  },
-  {
-    id:"propofol_cee", cat:"sedation_proc", groupe:"Sédation procédurale",
-    nom:"Propofol", amp:"200 mg / 20 mL", preparation:"Pure (10 mg/mL).", concentration:10, unite:"mg",
-    doseMin:0.5, doseMax:0.5,
     voie:"IVDL sur 30s",
-    indication:"Sédation pour cardioversion électrique externe (CEE).",
-    remarques:"0,5 mg/kg. Surveiller apnée et hypotension.",
+    indication:"Sédation procédurale (en association avec la kétamine) ou sédation pour cardioversion électrique externe (CEE).",
+    remarques:"0,5 mg/kg. Titration prudente, réduire chez le sujet âgé ou hémodynamiquement instable. Surveiller apnée et hypotension.",
     color:"#7C3AED",
   },
   {
@@ -34200,6 +34194,7 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
   const q = normSearch(search);
   const searchResults = q
     ? CALC_ADULTE_MEDICAMENTS.filter(m => matchSearch(m.nom+(m.indication||"")+(m.groupe||""), search))
+        .sort((a,b) => (a.nom||"").localeCompare(b.nom||"", 'fr', {sensitivity:'base'}))
     : null;
 
   return (
@@ -34287,7 +34282,8 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
       ) : poidsNum < 50 ? null : (
         <div>
           {CALC_ADULTE_CATS.map(cat => {
-            const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key);
+            const meds = CALC_ADULTE_MEDICAMENTS.filter(m => m.cat === cat.key)
+              .sort((a,b) => (a.nom||"").localeCompare(b.nom||"", 'fr', {sensitivity:'base'}));
             const open = openCats[cat.key] === true;
             return (
               <div key={cat.key} style={{marginBottom:12}}>
