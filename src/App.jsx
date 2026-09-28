@@ -8598,6 +8598,33 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>Titre *</label>
             <input style={inp} placeholder="Ex: Cricothyrotomie" value={gForm.title} onChange={e=>setGForm({...gForm,title:e.target.value})}/>
 
+            <label style={lbl}>Photo principale (affichée en haut de la fiche)</label>
+            <label style={{display:"flex", alignItems:"center", gap:10, background:gForm.imageUrl?"#E8F7F1":"#F0F4F8", border:`2px dashed ${gForm.imageUrl?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:14}}>
+              <span style={{fontSize:22}}>{"📎"}</span>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:12, fontWeight:700, color:gForm.imageUrl?C.green:C.navy, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{gForm.imageUrl ? (gForm.imageUrl.startsWith("http")?"Image uploadée ✓":gForm.imageUrl) : "Cliquer pour choisir une image"}</div>
+                <div style={{fontSize:10, color:C.sub}}>{"Formats acceptes : .jpg, .png"}</div>
+              </div>
+              {gForm.imageUrl && <span style={{color:C.green, fontWeight:800, fontSize:16}}>{"✓"}</span>}
+              <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = async ev => {
+                  const dataUrl = ev.target.result;
+                  setGForm(f => ({...f, imageUrl:"⏳ Upload en cours...", imageData:dataUrl}));
+                  try {
+                    const publicUrl = await uploadMedia(file.name, dataUrl);
+                    setGForm(f => ({...f, imageUrl: publicUrl, imageData: dataUrl}));
+                  } catch(err) {
+                    alert("Erreur upload image : " + err.message);
+                    setGForm(f => ({...f, imageUrl:"", imageData:null}));
+                  }
+                };
+                reader.readAsDataURL(file);
+              }}/>
+            </label>
+
             <label style={lbl}>{"Icone"}</label>
             <div style={{display:"flex", gap:6, marginBottom:10, flexWrap:"wrap"}}>
               {["✂️","🫁","🦴","🫀","💉","🧠","🩺","🔬","⚡","🩹"].map(ic=>(
@@ -8685,7 +8712,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videos:[], credit:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
