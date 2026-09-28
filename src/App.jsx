@@ -30356,12 +30356,15 @@ const PEDIA_MEDICAMENTS_DATA = [
   // ── Antibiotique ───────────────────────────────────────────────────────
   { id:"amx_ped",   nom:"Amoxicilline-Ac. clavulanique", indication:"Infection — sepsis",    voie:"IVL 30 min",     dose_par_kg:50,   unite:"mg",  dose_max:3000, concentration:"Variable selon flacon (50 mg/mL)", concentration_value:50, frequence:"Toutes les 8h", remarques:"Reconstituer chaque flacon dans 10 mL EPPI. Voir cartes pour volume.", categorie:"antibiotique", color:"#EA580C" },
   { id:"ceftriaxone_ped", nom:"Ceftriaxone (Rocéphine)", indication:"Infection bactérienne sévère (choix de l'indication dans la fiche)", voie:"IV", isRocephine:true, categorie:"antibiotique", color:"#EA580C" },
+  // ── Corticoïdes ────────────────────────────────────────────────────────
+  { id:"betamethasone_ped", nom:"Bétaméthasone (Célestène)", indication:"Laryngite (croup)", voie:"Per os", isGouttesParKg:true, gttParKg:15, frequence:"Dose unique, à renouveler selon évolution sur avis médical", remarques:"15 gouttes/kg en une prise. Flacon buvable à 0,05%.", categorie:"corticoides", color:"#0D9488" },
 ];
 
 // Config affichage catégories (même ordre que cartes Urg'Ara)
 const PEDIA_DOSE_CATS = [
   { key:"hemodynamique", label:"Hémodynamique",              icon:"❤️",  color:"#DC2626", bg:"#FEE2E2" },
   { key:"aerosols",     label:"Aérosols",                   icon:"💨",  color:"#0EA5E9", bg:"#E0F2FE" },
+  { key:"corticoides",   label:"Corticoïdes",                icon:"🌬️",  color:"#0D9488", bg:"#CCFBF1" },
   { key:"analgesie",     label:"Analgésie",                  icon:"💊",  color:"#7C3AED", bg:"#F3E8FF" },
   { key:"isr",           label:"Induction séquence rapide",  icon:"⚡",  color:"#0891B2", bg:"#CFFAFE" },
   { key:"sedation",      label:"Sédation",                   icon:"😴",  color:"#6366F1", bg:"#EEF2FF" },
@@ -30645,6 +30648,34 @@ function PediaVolumeCard({ medic, poids, color }) {
       </div>
 
       {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4, marginTop:6}}>📌 {medic.remarques}</div>}
+    </div>
+  );
+}
+
+// ── Carte spéciale pédia : dosage direct en gouttes/kg (per os) — ex : Bétaméthasone (Célestène) ──
+function PediaGouttesCard({ medic, poids, color }) {
+  const C = useC();
+  const gttParKg = medic.gttParKg || 0;
+  const gttExact = gttParKg * poids;
+  const gtt = Math.round(gttExact);
+  const arrondi = gtt !== gttExact;
+
+  return (
+    <div style={{background:C.white, border:`1.5px solid ${C.border}`, borderLeft:`4px solid ${color}`, borderRadius:12, padding:"12px 14px"}}>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:6, marginBottom:2}}>
+        <span style={{fontSize:14, fontWeight:800, color:C.text, flex:1}}>{medic.nom}</span>
+        {medic.voie && <span style={{fontSize:10, fontWeight:800, color, background:color+"18", borderRadius:6, padding:"2px 7px", flexShrink:0}}>{medic.voie}</span>}
+      </div>
+      {medic.indication && <div style={{fontSize:11, color:C.sub, marginBottom:8}}>{medic.indication}</div>}
+
+      <div style={{background:color+"12", border:`1.5px solid ${color}44`, borderRadius:10, padding:"12px", marginBottom:8, textAlign:"center"}}>
+        <div style={{fontSize:10, color:C.sub, fontWeight:700, marginBottom:2}}>DOSE À ADMINISTRER</div>
+        <div style={{fontSize:30, fontWeight:900, color, lineHeight:1}}>{gtt} <span style={{fontSize:14}}>gouttes</span></div>
+        {arrondi && <div style={{fontSize:9, color:C.sub, fontStyle:"italic", marginTop:2}}>(arrondi)</div>}
+        <div style={{fontSize:10, color:C.sub, marginTop:4}}>{gttParKg} gouttes/kg × {poids} kg</div>
+      </div>
+
+      {medic.remarques && <div style={{fontSize:11, color:C.sub, lineHeight:1.4}}>📌 {medic.remarques}</div>}
     </div>
   );
 }
@@ -31056,6 +31087,10 @@ function PediaDoseCardInner({ medic, poids, ageAnnees }) {
   // Cas spécial : dosage direct en mL/kg (ex : bicarbonate)
   if (medic.isVolumeParKg) {
     return <PediaVolumeCard medic={medic} poids={poids} color={color}/>;
+  }
+  // Cas spécial : dosage direct en gouttes/kg per os (ex : bétaméthasone)
+  if (medic.isGouttesParKg) {
+    return <PediaGouttesCard medic={medic} poids={poids} color={color}/>;
   }
   // Cas spécial : Cyanokit (reconstitution, dose en mg + g, gros volumes)
   if (medic.isCyanokit) {
