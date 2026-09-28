@@ -28200,19 +28200,19 @@ function Abg_ModuleCard({ module, onClick }) {
 // ─── RECHERCHE PLEIN TEXTE CROSS-Abg_MODULES ─────────────────────────────────────
 function Abg_searchInTree(node, query, moduleId, moduleLabel, modulePath = []) {
   if (!node) return [];
-  const q = query ? query.toLowerCase() : null;
+  const q = query ? normSearch(query) : null;
   const results = [];
   const path = [...modulePath, node.label || ""].filter(Boolean);
 
   // Chercher dans tous les champs textuels du nœud
-  const searchable = [
+  const searchable = normSearch([
     node.label, node.subtitle, node.question,
     node.infoTitle, ...(node.infoItems || []),
     node.result?.condition, node.result?.indication, node.result?.followUp,
     ...(node.result?.preferred || []).flatMap(p => [p.drug, p.dose, p.label, p.notes]),
     ...(node.result?.alternatives || []).flatMap(a => [a.label, ...(a.items || [])]),
     ...(node.result?.notRecommended || []),
-  ].filter(Boolean).join(" ").toLowerCase();
+  ].filter(Boolean).join(" "));
 
   const matches = q ? searchable.includes(q) : true;
   if (matches && node.result) {
