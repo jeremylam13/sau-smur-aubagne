@@ -33128,10 +33128,10 @@ const CALC_ADULTE_MEDICAMENTS = [
     nom:"Pantoprazole", amp:"Flacon poudre 40 mg", voie:"IVDL puis IVSE", isDoseFixe:true,
     variantes:[
       { label:"Bolus", prepa:"Reconstituer 80 mg (2 flacons) et diluer dans 20 mL de NaCl 0,9% → 4 mg/mL.", dose:80, unite:"mg", volume:20 },
-      { label:"PSE (entretien)", prepa:"Reconstituer 80 mg (2 flacons) et diluer dans 40 mL de NaCl 0,9% → 2 mg/mL.", texteLibre:"4 mL/h, soit 8 mg/h (≈ 200 mg/24h)." },
+      { label:"PSE (entretien 24h)", prepa:"Reconstituer 200 mg (5 flacons) et diluer dans 100 mL de NaCl 0,9% → 2 mg/mL.", texteLibre:"4 mL/h, soit 8 mg/h (192 mg/24h). Seringue de 100 mL à renouveler après 24h." },
     ],
     indication:"Hémorragie digestive.",
-    remarques:"Bolus 80 mg IVDL, puis entretien PSE à 4 mL/h (8 mg/h, soit environ 200 mg/24h).",
+    remarques:"Bolus 80 mg IVDL, puis entretien PSE à 4 mL/h (8 mg/h, soit 192 mg/24h). Attention : à 4 mL/h, une préparation de seulement 2 flacons (80 mg/40 mL) est épuisée en 10h — préparer 5 flacons dans 100 mL pour couvrir 24h sans interruption.",
     color:"#65A30D",
   },
   {
