@@ -12495,6 +12495,411 @@ function ParklandCalculator({ onBack }) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// TashCalculator : Score TASH (Trauma Associated Severe Hemorrhage)
+// 8 items à points variables, total 0-28 — probabilité de transfusion massive
+// chez le polytraumatisé. Seuil clinique usuel : TASH ≥ 16 → envisager le
+// protocole de transfusion massive (PTM) / discuter Octaplas LG.
+// Sources : Yücel et al. 2006 (J Trauma) ; Maegele et al. 2011 (validation)
+// ────────────────────────────────────────────────────────────────────────────
+function TashCalculator({ onBack }) {
+  const C = useC();
+  const COLOR = "#B91C1C";
+
+  const ITEMS = [
+    {
+      key: "sexe",
+      letter: "1",
+      title: "Sexe",
+      options: [
+        { value: 0, label: "Féminin" },
+        { value: 1, label: "Masculin" },
+      ],
+    },
+    {
+      key: "pas",
+      letter: "2",
+      title: "Tension artérielle systolique (PAS)",
+      options: [
+        { value: 0, label: "≥ 120 mmHg" },
+        { value: 1, label: "< 120 mmHg" },
+        { value: 4, label: "< 100 mmHg" },
+      ],
+    },
+    {
+      key: "fc",
+      letter: "3",
+      title: "Fréquence cardiaque",
+      options: [
+        { value: 0, label: "≤ 120 bpm" },
+        { value: 2, label: "> 120 bpm" },
+      ],
+    },
+    {
+      key: "hb",
+      letter: "4",
+      title: "Hémoglobine",
+      options: [
+        { value: 0, label: "≥ 12 g/dL" },
+        { value: 2, label: "11 – 11,9 g/dL" },
+        { value: 3, label: "10 – 10,9 g/dL" },
+        { value: 4, label: "9 – 9,9 g/dL" },
+        { value: 6, label: "7 – 8,9 g/dL" },
+        { value: 8, label: "< 7 g/dL" },
+      ],
+    },
+    {
+      key: "be",
+      letter: "5",
+      title: "Déficit de base (excès de base)",
+      options: [
+        { value: 0, label: "≥ -2 mmol/L" },
+        { value: 1, label: "-6 à -2 mmol/L" },
+        { value: 3, label: "-10 à -6 mmol/L" },
+        { value: 4, label: "< -10 mmol/L" },
+      ],
+    },
+    {
+      key: "fast",
+      letter: "6",
+      title: "Échographie FAST",
+      options: [
+        { value: 0, label: "Négative" },
+        { value: 3, label: "Positive (épanchement abdominal)" },
+      ],
+    },
+    {
+      key: "bassin",
+      letter: "7",
+      title: "Fracture du bassin",
+      options: [
+        { value: 0, label: "Absente / stable" },
+        { value: 6, label: "Instable cliniquement" },
+      ],
+    },
+    {
+      key: "femur",
+      letter: "8",
+      title: "Fracture fémorale",
+      options: [
+        { value: 0, label: "Absente" },
+        { value: 3, label: "Ouverte ou luxée" },
+      ],
+    },
+  ];
+
+  const initialState = ITEMS.reduce((acc, it) => { acc[it.key] = null; return acc; }, {});
+  const [scores, setScores] = useState(initialState);
+
+  function setItem(key, value) {
+    setScores(s => ({ ...s, [key]: value }));
+  }
+
+  const total = Object.values(scores).reduce((acc, v) => acc + (v === null ? 0 : v), 0);
+  const evaluatedCount = Object.values(scores).filter(v => v !== null).length;
+  const totalItems = ITEMS.length;
+  const complete = evaluatedCount === totalItems;
+
+  // Table de correspondance score → probabilité de transfusion massive
+  // (Yücel et al. 2006 ; probabilité croissante avec le score)
+  function probaTransfusion(t) {
+    if (t <= 8) return "< 5%";
+    if (t === 9) return "≈ 6%";
+    if (t === 10) return "≈ 8%";
+    if (t === 11) return "≈ 11%";
+    if (t === 12) return "≈ 14%";
+    if (t === 13) return "≈ 18%";
+    if (t === 14) return "≈ 23%";
+    if (t === 15) return "≈ 29%";
+    if (t === 16) return "≈ 35%";
+    if (t === 17) return "≈ 43%";
+    if (t === 18) return "≈ 50%";
+    if (t === 19) return "≈ 57%";
+    if (t === 20) return "≈ 65%";
+    if (t === 21) return "≈ 71%";
+    if (t === 22) return "≈ 77%";
+    if (t === 23) return "≈ 82%";
+    if (t === 24) return "≈ 85%";
+    return "> 85%";
+  }
+
+  let sevColor, sevBg, sevLabel, proba, interpretation, action;
+  if (evaluatedCount === 0) {
+    sevColor = C.sub;
+    sevBg = "#F1F5F9";
+    sevLabel = "—";
+    proba = null;
+    interpretation = "Évalue les 8 items pour obtenir le score TASH.";
+    action = null;
+  } else {
+    proba = probaTransfusion(total);
+    if (total < 9) {
+      sevColor = C.green;
+      sevBg = C.greenLight;
+      sevLabel = "Risque FAIBLE";
+      interpretation = "Faible probabilité de transfusion massive.";
+      action = "Surveillance rapprochée, bilan étiologique de l'hémorragie. Pas d'indication à déclencher le protocole de transfusion massive à ce stade.";
+    } else if (total < 16) {
+      sevColor = C.amber;
+      sevBg = C.amberLight;
+      sevLabel = "Risque MODÉRÉ";
+      interpretation = "Probabilité intermédiaire de transfusion massive.";
+      action = "Anticiper : réserve de culots globulaires, discuter avec le laboratoire. Réévaluer le score à l'évolution clinique et biologique.";
+    } else {
+      sevColor = COLOR;
+      sevBg = "#FEE2E2";
+      sevLabel = "Risque ÉLEVÉ";
+      interpretation = "TASH ≥ 16 : probabilité élevée de transfusion massive.";
+      action = "Envisager fortement le déclenchement du protocole de transfusion massive (PTM) et la commande de plasma (Octaplas LG) selon le protocole local. Avis réanimateur / chirurgien immédiat.";
+    }
+  }
+
+  function reset() {
+    setScores(initialState);
+  }
+
+  function OptionBtn({ option, selected, onSelect, color }) {
+    const isSelected = option.value === selected;
+    return (
+      <button
+        onClick={() => onSelect(option.value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 12px",
+          marginBottom: 5,
+          border: `1.5px solid ${isSelected ? color : C.border}`,
+          background: isSelected ? color + "12" : C.white,
+          borderRadius: 10,
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "all .15s",
+          touchAction: "manipulation",
+        }}
+      >
+        <span style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 26, height: 26,
+          borderRadius: "50%",
+          background: isSelected ? color : C.border,
+          color: isSelected ? "#fff" : C.sub,
+          fontSize: 12,
+          fontWeight: 900,
+          flexShrink: 0,
+          padding: "0 4px",
+        }}>+{option.value}</span>
+        <span style={{
+          fontSize: 12,
+          lineHeight: 1.4,
+          fontWeight: isSelected ? 700 : 500,
+          color: isSelected ? color : C.text,
+          flex: 1,
+        }}>{option.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack}/>
+
+      {/* En-tête */}
+      <div style={{
+        background: `linear-gradient(135deg, ${COLOR} 0%, #7F1D1D 100%)`,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 14,
+        color: "#fff",
+      }}>
+        <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 6}}>
+          <span style={{fontSize: 24}}>🩸</span>
+          <div>
+            <div style={{fontSize: 17, fontWeight: 800}}>Score TASH</div>
+            <div style={{fontSize: 11, opacity: .85}}>Trauma Associated Severe Hemorrhage — probabilité de transfusion massive</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Indicateur progression */}
+      <div style={{
+        background: C.white,
+        border: `1px solid ${C.border}`,
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+      }}>
+        <span style={{fontSize: 11, fontWeight: 700, color: C.sub}}>PROGRESSION</span>
+        <div style={{flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden"}}>
+          <div style={{
+            width: `${(evaluatedCount / totalItems) * 100}%`,
+            height: "100%",
+            background: COLOR,
+            transition: "width .3s ease-out",
+          }}/>
+        </div>
+        <span style={{fontSize: 11, fontWeight: 800, color: COLOR}}>{evaluatedCount}/{totalItems}</span>
+      </div>
+
+      {/* Items TASH */}
+      {ITEMS.map(it => (
+        <div key={it.key} style={{marginBottom: 14}}>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 6,
+          }}>
+            <span style={{
+              background: COLOR + "18",
+              color: COLOR,
+              borderRadius: 8,
+              padding: "3px 10px",
+              fontSize: 14,
+              fontWeight: 900,
+            }}>{it.letter}</span>
+            <span style={{fontSize: 13, fontWeight: 800, color: C.navy, flex: 1}}>{it.title}</span>
+            <span style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: scores[it.key] !== null ? COLOR : C.sub,
+            }}>{scores[it.key] !== null ? `+${scores[it.key]}` : "—"}</span>
+          </div>
+          {it.options.map(o => (
+            <OptionBtn key={o.value} option={o} selected={scores[it.key]} onSelect={(v) => setItem(it.key, v)} color={COLOR}/>
+          ))}
+        </div>
+      ))}
+
+      {/* Carte résultat */}
+      <div style={{
+        background: C.white,
+        borderRadius: 16,
+        padding: 18,
+        marginTop: 8,
+        marginBottom: 12,
+        border: `1px solid ${C.border}`,
+        borderLeft: `5px solid ${sevColor}`,
+        boxShadow: "0 2px 12px rgba(26,58,92,.10)",
+      }}>
+        <div style={{display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12}}>
+          <div>
+            <div style={{fontSize: 11, fontWeight: 700, color: C.sub, letterSpacing: .5, marginBottom: 2}}>SCORE TASH</div>
+            <div style={{display: "flex", alignItems: "baseline", gap: 4}}>
+              <span style={{fontSize: 38, fontWeight: 900, color: sevColor, lineHeight: 1}}>{total}</span>
+              <span style={{fontSize: 16, fontWeight: 700, color: C.sub}}>/ 28</span>
+            </div>
+            {proba && (
+              <div style={{fontSize: 11, color: C.sub, marginTop: 4}}>
+                Probabilité de transfusion massive : <b style={{color: sevColor}}>{proba}</b>
+              </div>
+            )}
+          </div>
+          <div style={{
+            background: sevBg,
+            color: sevColor,
+            padding: "5px 12px",
+            borderRadius: 18,
+            fontSize: 11,
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+            textAlign: "right",
+          }}>{sevLabel}</div>
+        </div>
+        <div style={{
+          marginTop: 12,
+          padding: "10px 12px",
+          background: sevBg,
+          borderRadius: 10,
+          fontSize: 12,
+          color: C.text,
+          lineHeight: 1.5,
+        }}>{interpretation}</div>
+
+        {/* Conduite à tenir */}
+        {action && (
+          <div style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            background: C.white,
+            border: `1.5px solid ${sevColor}`,
+            borderRadius: 10,
+            fontSize: 12,
+            color: C.text,
+            lineHeight: 1.5,
+          }}>
+            <div style={{fontSize: 10, fontWeight: 800, color: sevColor, letterSpacing: .5, marginBottom: 4}}>
+              ➜ CONDUITE À TENIR
+            </div>
+            {action}
+          </div>
+        )}
+
+        {evaluatedCount > 0 && !complete && (
+          <div style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            background: C.amberLight,
+            border: `1px solid ${C.amber}40`,
+            borderRadius: 8,
+            fontSize: 11,
+            color: C.text,
+            lineHeight: 1.4,
+          }}>
+            ⚠️ Évaluation incomplète — {totalItems - evaluatedCount} item{totalItems - evaluatedCount > 1 ? "s" : ""} restant{totalItems - evaluatedCount > 1 ? "s" : ""}
+          </div>
+        )}
+      </div>
+
+      {/* Réinitialiser */}
+      <button
+        onClick={reset}
+        style={{
+          width: "100%",
+          background: C.white,
+          border: `1.5px solid ${C.border}`,
+          borderRadius: 12,
+          padding: "12px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          color: C.sub,
+          cursor: "pointer",
+          marginTop: 6,
+          marginBottom: 20,
+          touchAction: "manipulation",
+        }}>
+        ↺ Réinitialiser
+      </button>
+
+      {/* Note clinique */}
+      <div style={{
+        background: COLOR + "10",
+        border: `1px solid ${COLOR}33`,
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 11,
+        color: C.text,
+        lineHeight: 1.6,
+      }}>
+        <div style={{fontWeight: 800, color: COLOR, marginBottom: 4}}>💡 Repères cliniques</div>
+        • <b>Score &lt; 9</b> : transfusion massive peu probable (&lt; 5%)<br/>
+        • <b>Score 9-15</b> : probabilité intermédiaire — anticiper la réserve de culots<br/>
+        • <b>Score ≥ 16</b> : probabilité ≥ 50% — envisager fortement le <b>protocole de transfusion massive</b> et la commande de <b>plasma (Octaplas LG)</b><br/>
+        • Score maximal théorique : 28 points (jusqu'à 31 selon les sources incluant fracture du bassin et fracture fémorale simultanées)<br/>
+        • Le score TASH reste un <b>outil d'aide à la décision</b> : la décision de transfusion massive intègre toujours le jugement clinique global
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // CushmanCalculator : Score de Cushman (sevrage alcoolique)
 // 7 items (0-3 chacun), total /21
 // Guide la titration des benzodiazépines
@@ -19004,6 +19409,15 @@ const SCORES_LIST = [
     icon: "🔥",
     color: "#C2410C",
     tags: ["#brûlure", "#remplissage", "#parkland", "#réa"],
+  },
+  {
+    id: "tash",
+    category: "autres",
+    title: "Score TASH",
+    subtitle: "Probabilité de transfusion massive – polytraumatisé",
+    icon: "🩸",
+    color: "#B91C1C",
+    tags: ["#hémorragie", "#transfusion", "#TASH", "#polytraumatisé", "#choc-hémorragique", "#octoplas"],
   },
   {
     id: "cushman",
@@ -28507,6 +28921,7 @@ function ScoresScreen({ deepLinkId, onBack }) {
     if (selected.id === "cha2ds2va") return <Cha2ds2VaCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "hasbled") return <HasBledCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "parkland") return <ParklandCalculator onBack={() => setSelected(null)}/>;
+    if (selected.id === "tash") return <TashCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "cushman") return <CushmanCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "qsofa") return <QsofaCalculator onBack={() => setSelected(null)}/>;
     if (selected.id === "geneve-ep") return <GeneveEpCalculator onBack={() => setSelected(null)}/>;
