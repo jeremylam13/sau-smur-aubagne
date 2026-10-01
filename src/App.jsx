@@ -7595,7 +7595,13 @@ function useDraftAutosave(key, form, setForm, isEditing, activeSignal) {
     try {
       const raw = window.localStorage.getItem(key);
       if (raw) {
-        setForm(JSON.parse(raw));
+        // Fusionner avec le formulaire actuel (vierge) plutôt que de l'écraser :
+        // les champs image/média lourds ne sont volontairement pas stockés dans
+        // le brouillon (voir sauvegarde ci-dessus), donc le JSON restauré ne les
+        // contient pas. Un setForm(JSON.parse(raw)) brut produirait un objet
+        // sans ces clés, et le moindre form.medias.length plus loin dans le
+        // rendu ferait planter tout l'écran en blanc.
+        setForm(f => ({ ...f, ...JSON.parse(raw) }));
       } else {
         // Le bandeau était affiché mais la clé a disparu entre-temps (quota
         // dépassé en écriture, onglet en navigation privée, etc.) : rien à
