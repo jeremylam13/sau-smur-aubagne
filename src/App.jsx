@@ -7556,13 +7556,17 @@ function AdminScreen({ onNewItem, onBack }) {
 // (fermeture accidentelle, urgence, changement d'onglet...). Ne s'active qu'en
 // mode "création" : on ne mélange jamais un brouillon avec les données d'une
 // fiche existante en cours de modification.
-function useDraftAutosave(key, form, setForm, isEditing) {
+function useDraftAutosave(key, form, setForm, isEditing, activeSignal) {
   const [draftAvailable, setDraftAvailable] = useState(false);
 
+  // Revérifie la présence d'un brouillon à chaque fois qu'on (re)passe en mode
+  // création sur ce formulaire (clé changée, sortie du mode édition, ou retour
+  // sur l'onglet via activeSignal) — pas seulement au tout premier montage de
+  // l'écran admin, sinon un brouillon créé après coup (en restant sur le même
+  // écran, puis en changeant d'onglet et en revenant) n'est jamais détecté.
   useEffect(() => {
-    try { if (window.localStorage.getItem(key)) setDraftAvailable(true); } catch(e) {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    try { setDraftAvailable(!!window.localStorage.getItem(key)); } catch(e) {}
+  }, [key, isEditing, activeSignal]);
 
   useEffect(() => {
     if (isEditing) return;
@@ -7646,16 +7650,16 @@ function AdminScreenInner({ onNewItem, onBack }) {
 
   // Brouillons auto-sauvegardés — Dilutions et Gestes sont les formulaires les
   // plus longs à remplir, donc les plus coûteux à perdre en cas d'interruption.
-  const dilDraft = useDraftAutosave("admin_draft_dilution", dilForm, setDilForm, editingDil !== null);
-  const gDraft = useDraftAutosave("admin_draft_geste", gForm, setGForm, editingG !== null);
-  const eDraft = useDraftAutosave("admin_draft_ecg", eForm, setEForm, editingE !== null);
-  const iDraft = useDraftAutosave("admin_draft_imagerie", iForm, setIForm, editingI !== null);
-  const aDraft = useDraftAutosave("admin_draft_agenda", aForm, setAForm, editingA !== null);
-  const dDraft = useDraftAutosave("admin_draft_divers", dForm, setDForm, editingD !== null);
+  const dilDraft = useDraftAutosave("admin_draft_dilution", dilForm, setDilForm, editingDil !== null, tab);
+  const gDraft = useDraftAutosave("admin_draft_geste", gForm, setGForm, editingG !== null, tab);
+  const eDraft = useDraftAutosave("admin_draft_ecg", eForm, setEForm, editingE !== null, tab);
+  const iDraft = useDraftAutosave("admin_draft_imagerie", iForm, setIForm, editingI !== null, tab);
+  const aDraft = useDraftAutosave("admin_draft_agenda", aForm, setAForm, editingA !== null, tab);
+  const dDraft = useDraftAutosave("admin_draft_divers", dForm, setDForm, editingD !== null, tab);
   // (rForm/addRetex ne sont plus utilisés : l'onglet RETEX admin réutilise RetexSubmitForm,
   // qui gère désormais son propre brouillon — voir "retex_draft_submit".)
-  const rfDraft = useDraftAutosave("admin_draft_recoflash", rfForm, setRfForm, editingRf !== null);
-  const qzDraft = useDraftAutosave("admin_draft_quiz", qzForm, setQzForm, editingQz !== null);
+  const rfDraft = useDraftAutosave("admin_draft_recoflash", rfForm, setRfForm, editingRf !== null, tab);
+  const qzDraft = useDraftAutosave("admin_draft_quiz", qzForm, setQzForm, editingQz !== null, tab);
 
   // Contacts gardent leur propre state
   const [cForm, setCForm] = useState({ nom:"", categorie:"", role:"", telephones:[{label:"", numero:""}] });
