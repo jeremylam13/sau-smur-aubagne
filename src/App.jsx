@@ -7558,6 +7558,11 @@ function AdminScreen({ onNewItem, onBack }) {
 // fiche existante en cours de modification.
 function useDraftAutosave(key, form, setForm, isEditing, activeSignal) {
   const [draftAvailable, setDraftAvailable] = useState(false);
+  // Snapshot du formulaire tel qu'il est au tout premier rendu (= l'état
+  // "vierge" par défaut, qui contient souvent déjà des valeurs non vides :
+  // une icône, une couleur, une catégorie par défaut...). Sert de référence
+  // pour détecter une VRAIE saisie, pas juste "non vide".
+  const initialFormRef = React.useRef(form);
 
   // Revérifie la présence d'un brouillon à chaque fois qu'on (re)passe en mode
   // création sur ce formulaire (clé changée, sortie du mode édition, ou retour
@@ -7570,9 +7575,19 @@ function useDraftAutosave(key, form, setForm, isEditing, activeSignal) {
 
   useEffect(() => {
     if (isEditing) return;
-    const hasContent = Object.values(form).some(v =>
-      Array.isArray(v) ? v.length > 0 : (typeof v === "string" ? v.trim().length > 0 : !!v)
-    );
+    // Un champ a du contenu si sa valeur diffère de celle du formulaire
+    // vierge de référence — pas seulement si elle est "non vide". Sinon des
+    // valeurs par défaut déjà présentes au repos (icône, couleur, catégorie
+    // par défaut...) font croire à une saisie dès le montage, et 700 ms plus
+    // tard le brouillon réel (avec le texte tapé) se fait écraser par ce
+    // formulaire en réalité toujours vierge.
+    const initial = initialFormRef.current;
+    const hasContent = Object.keys(form).some(k => {
+      const v = form[k], iv = initial[k];
+      if (Array.isArray(v)) return v.length > 0;
+      if (typeof v === "string") return v.trim().length > 0 && v !== iv;
+      return v !== iv && !!v;
+    });
     if (!hasContent) return;
     const t = setTimeout(() => {
       // On exclut les images/médias en base64 (champs *Data et medias/
