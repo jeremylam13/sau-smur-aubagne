@@ -7575,7 +7575,18 @@ function useDraftAutosave(key, form, setForm, isEditing, activeSignal) {
     );
     if (!hasContent) return;
     const t = setTimeout(() => {
-      try { window.localStorage.setItem(key, JSON.stringify(form)); } catch(e) {}
+      // On exclut les images/médias en base64 (champs *Data et medias/
+      // mediasApres) du brouillon : ce sont eux qui font le plus souvent
+      // dépasser le quota de localStorage (~5-10 Mo), ce qui fait échouer
+      // silencieusement toute la sauvegarde — y compris le texte. Le texte
+      // saisi est ce qu'il y a de plus coûteux à retaper ; une photo ou un
+      // média se réimporte facilement.
+      const { imageData, photoData, schemaData, imageData2, medias, mediasApres, ...toSave } = form;
+      try {
+        window.localStorage.setItem(key, JSON.stringify(toSave));
+      } catch(e) {
+        console.warn(`[draft] Échec de sauvegarde du brouillon "${key}" (quota localStorage dépassé ?).`, e);
+      }
     }, 700);
     return () => clearTimeout(t);
   }, [form, isEditing, key]);
@@ -7583,8 +7594,21 @@ function useDraftAutosave(key, form, setForm, isEditing, activeSignal) {
   const restore = () => {
     try {
       const raw = window.localStorage.getItem(key);
-      if (raw) setForm(JSON.parse(raw));
-    } catch(e) {}
+      if (raw) {
+        setForm(JSON.parse(raw));
+      } else {
+        // Le bandeau était affiché mais la clé a disparu entre-temps (quota
+        // dépassé en écriture, onglet en navigation privée, etc.) : rien à
+        // restaurer, on le signale plutôt que d'échouer en silence.
+        console.warn(`[draft] Aucun brouillon trouvé pour la clé "${key}" au moment de la restauration.`);
+      }
+    } catch(e) {
+      // Brouillon corrompu (JSON invalide) : on ne peut pas le restaurer,
+      // on le supprime pour ne pas re-proposer indéfiniment un bandeau qui
+      // ne mène jamais à rien.
+      console.warn(`[draft] Brouillon illisible pour la clé "${key}", suppression.`, e);
+      try { window.localStorage.removeItem(key); } catch(e2) {}
+    }
     setDraftAvailable(false);
   };
   const discard = () => {
