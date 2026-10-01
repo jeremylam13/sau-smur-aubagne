@@ -6872,6 +6872,15 @@ function GesteDetail({geste, onBack}) {
         </Section>
       )}
 
+      {/* Informations complémentaires — texte libre, sans format imposé */}
+      {geste.infosComplementaires && geste.infosComplementaires.trim() && (
+        <Section icon="💬" label="Informations complémentaires" color="#2E7EAD">
+          <div style={{padding:"14px 16px", fontSize:13, color:C.text, lineHeight:1.75, whiteSpace:"pre-wrap"}}>
+            {geste.infosComplementaires}
+          </div>
+        </Section>
+      )}
+
       {/* Pièges */}
       {(geste.pieges||[]).length > 0 && (
         <Section icon="⚠️" label="Points critiques / Pièges" color="#D97706" defaultOpen={true}>
@@ -7678,7 +7687,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[] });
   const [dForm, setDForm] = useState({ title:"", categorie:"", content:"", imageUrl:"", imageData:null, credit:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
-  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] });
+  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", evolution:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"" });
@@ -7827,13 +7836,13 @@ function AdminScreenInner({ onNewItem, onBack }) {
     if(editingG !== null) {
       const item = {...gForm, id:editingG, ...parsed};
       await updateItem("gestes","admin_gestes",item,["image"]);
-      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
+      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",infosComplementaires:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
       gDraft.clear();
       showSaved("Geste modifié !");
     } else {
       const item = {...gForm, id:Date.now(), ...parsed};
       const newItem = await addItem("gestes","admin_gestes",item,["image"]);
-      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
+      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",infosComplementaires:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
       gDraft.clear();
       showSaved("Geste ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
@@ -8730,6 +8739,9 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>{"Etapes (1 etape par ligne)"}</label>
             <textarea style={{...inp, height:100, resize:"vertical"}} value={gForm.etapes} onChange={e=>setGForm({...gForm,etapes:e.target.value})} placeholder={"Installer le patient\nPreoxygener 3 min..."}/>
 
+            <label style={lbl}>{"Informations complémentaires (texte libre)"}</label>
+            <textarea style={{...inp, height:80, resize:"vertical"}} value={gForm.infosComplementaires||""} onChange={e=>setGForm({...gForm,infosComplementaires:e.target.value})} placeholder={"Toute précision utile qui ne rentre pas dans les autres rubriques..."}/>
+
             <label style={lbl}>{"Pieges / Points critiques (1 par ligne)"}</label>
             <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.pieges} onChange={e=>setGForm({...gForm,pieges:e.target.value})} placeholder={"Verifier position\nNe pas depasser 30 sec..."}/>
 
@@ -8759,7 +8771,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
