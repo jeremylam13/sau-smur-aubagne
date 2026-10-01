@@ -30802,14 +30802,14 @@ function DoseRow({ label, value, C, color, bold }) {
 const PEDIA_MEDS_IN = [
   {
     id:"suf_in_ped", nom:"Sufentanil (intranasal)",
-    unite:"µg", doseMin:0.3, doseMax:0.3,
-    doseAdditionnelle:0.15,
+    unite:"µg", doseMin:0.5, doseMax:0.5,
+    doseAdditionnelle:0.25,
     // ≤ 10 kg : ampoule 10 µg/2 mL = 5 µg/mL ; > 10 kg : 250 µg/5 mL = 50 µg/mL
     concPetit:5, concGrand:50,
     ampPetit:"10 µg / 2 mL (≤ 10 kg)", ampGrand:"250 µg / 5 mL (> 10 kg)",
     color:"#7C3AED",
     infoExtra:true,
-    remarques:"Utiliser pur. Dose additionnelle : demi-dose, soit 0,15 µg/kg après 10 min. Atomiseur MAD. +0,1 mL espace mort inclus.",
+    remarques:"Utiliser pur. Dose additionnelle : demi-dose, soit 0,25 µg/kg après 10 min. Atomiseur MAD. +0,1 mL espace mort inclus.",
   },
   {
     id:"midaz_in_sed_ped", nom:"Midazolam IN — Anxiolyse",
@@ -32733,11 +32733,11 @@ const CALC_ADULTE_MEDICAMENTS = [
   },
   {
     id:"ketamine_lowdose", cat:"analgesie", groupe:"Analgésie IV",
-    nom:"Kétamine (low dose)", amp:"250 mg / 5 mL", preparation:"Prélever la dose pure (50 mg/mL) et diluer dans 100 mL de NaCl 0,9%.", concentration:50, unite:"mg",
+    nom:"Kétamine (low dose)", amp:"250 mg / 5 mL", preparation:"Prélever la dose pure (50 mg/mL) et diluer dans un pochon de 100 mL de NaCl 0,9%.", concentration:50, unite:"mg",
     doseMin:0.3, doseMax:0.3,
-    voie:"Perf 15 min",
+    voie:"IVL sur 15 min",
     indication:"Analgésie à faible dose.",
-    remarques:"0,3 mg/kg, à passer sur 15 min. Volume affiché = quantité de kétamine pure à prélever avant dilution.",
+    remarques:"0,3 mg/kg. Diluer dans un pochon de 100 mL de NaCl 0,9%, à passer en IVL (perfusion IV lente) sur 15 min. Volume affiché = quantité de kétamine pure à prélever avant dilution.",
     color:"#EA580C",
   },
   {
