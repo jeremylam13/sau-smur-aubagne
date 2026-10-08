@@ -7694,7 +7694,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [ecgConfirmed, setEcgConfirmed] = useState(false);
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[] });
-  const [dForm, setDForm] = useState({ title:"", categorie:"", content:"", imageUrl:"", imageData:null, credit:"", lienUrl:"", medias:[] });
+  const [dForm, setDForm] = useState({ title:"", content:"", imageUrl:"", imageData:null, credit:"", lienUrl:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
   const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", evolution:"", medias:[] });
@@ -7808,15 +7808,17 @@ function AdminScreenInner({ onNewItem, onBack }) {
   async function addDivers() {
     if(!dForm.title.trim()) return;
     if(editingD !== null) {
-      const item = {...dForm, id:editingD};
+      const { categorie: _c1, ...dClean } = dForm; // pas de colonne categorie dans la table divers
+      const item = {...dClean, id:editingD};
       await updateItem("divers","admin_divers",item,["image"]);
-      setEditingD(null); setDForm({title:"",categorie:"",content:"",imageUrl:"",imageData:null,credit:"",lienUrl:"",medias:[]});
+      setEditingD(null); setDForm({title:"",content:"",imageUrl:"",imageData:null,credit:"",lienUrl:"",medias:[]});
       dDraft.clear();
       showSaved("Fiche modifiée !");
     } else {
-      const item = {...dForm, id:Date.now()};
+      const { categorie: _c2, ...dClean } = dForm; // pas de colonne categorie dans la table divers
+      const item = {...dClean, id:Date.now()};
       const newItem = await addItem("divers","admin_divers",item,["image"]);
-      setDForm({title:"",categorie:"",content:"",imageUrl:"",imageData:null,credit:"",lienUrl:"",medias:[]});
+      setDForm({title:"",content:"",imageUrl:"",imageData:null,credit:"",lienUrl:"",medias:[]});
       dDraft.clear();
       showSaved("Fiche ajoutée !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"⚡",color:"#1A3A5C",nav:"divers"});
@@ -8471,7 +8473,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>{"Lien source (optionnel)"}</label>
             <input style={inp} type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" placeholder="https://... (article, recommandation, site de la société savante)" value={dForm.lienUrl||""} onChange={e=>setDForm({...dForm,lienUrl:e.target.value})}/>
 
-            {editingD && <Btn onClick={()=>{ setEditingD(null); setDForm({ title:"", categorie:"", content:"", imageUrl:"", imageData:null, credit:"", lienUrl:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingD && <Btn onClick={()=>{ setEditingD(null); setDForm({ title:"", content:"", imageUrl:"", imageData:null, credit:"", lienUrl:"", medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addDivers} color={C.navy} style={{width:"100%"}}>{editingD ? "✅ Enregistrer les modifications" : "Ajouter la fiche"}</Btn>
           </Card>
           {customDivers.length>0 && (
