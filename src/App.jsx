@@ -1649,17 +1649,36 @@ function useNotifications() {
   const [notifs, setNotifs] = useState([]);
   const [lastSeen, setLastSeen] = useState(0); // timestamp de dernière consultation (local, personnel)
 
-  // Charge les notifications partagées depuis Supabase + le "dernière vue" local
+  // Recharge les notifications partagées depuis Supabase
+  async function loadNotifs() {
+    try {
+      const rows = await supaFetch("/notifications?order=ts.desc&limit=50", "GET");
+      if(Array.isArray(rows)) setNotifs(rows.map(n => ({...n, key:n.id})));
+    } catch(e){ /* silencieux : hors-ligne ou table absente */ }
+  }
+
+  // Au démarrage : "dernière vue" locale + notifications partagées
   useEffect(()=>{
     (async()=>{
-      // dernière consultation personnelle
       try { const r = await safeGet("notif_last_seen"); if(r) setLastSeen(Number(r.value)||0); } catch(e){}
-      // notifications partagées
-      try {
-        const rows = await supaFetch("/notifications?order=ts.desc&limit=50", "GET");
-        if(Array.isArray(rows)) setNotifs(rows.map(n => ({...n, key:n.id})));
-      } catch(e){ /* silencieux : hors-ligne ou table absente */ }
+      await loadNotifs();
     })();
+  },[]);
+
+  // Rafraîchissement automatique : toutes les 60 s, au retour sur l'app, au retour du réseau.
+  // Sans cela, une app laissée ouverte ou en arrière-plan ne voyait jamais les nouvelles notifications.
+  useEffect(()=>{
+    const refresh = () => { if (document.visibilityState === "visible") loadNotifs(); };
+    const timer = setInterval(refresh, 60000);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+    };
   },[]);
 
   // Pousse une notification partagée (visible par tous)
