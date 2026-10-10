@@ -4830,7 +4830,8 @@ function PlusLoinSection({ item, onNav }) {
   const liens = (Array.isArray(item.plusLoinFiches) ? item.plusLoinFiches : [])
     .map(c => all.find(f => f.module===c.module && String(f.id)===String(c.id)))
     .filter(Boolean);
-  if (!texte && liens.length === 0) return null;
+  const lienRaw = (item.plusLoinLien || "").trim();
+  if (!texte && liens.length === 0 && !lienRaw) return null;
   const titre = (item.plusLoinTitre || "").trim();
   const col = "#2E7EAD";
   return (
@@ -4856,6 +4857,21 @@ function PlusLoinSection({ item, onNav }) {
             ))}
           </div>
         )}
+        {lienRaw && (() => {
+          const href = /^https?:\/\//i.test(lienRaw) ? lienRaw : "https://" + lienRaw;
+          let host = lienRaw; try { host = new URL(href).hostname.replace(/^www\./,""); } catch(e) {}
+          return (
+            <a href={href} target="_blank" rel="noopener noreferrer"
+              style={{display:"flex", alignItems:"center", gap:10, marginTop:(texte||liens.length)?12:0, padding:"12px 14px", background:C.blueLight, border:`1px solid ${C.border}`, borderRadius:12, textDecoration:"none", color:C.navy}}>
+              <span style={{fontSize:20}}>🔗</span>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{fontSize:11, fontWeight:800, color:C.sub, letterSpacing:.4}}>SOURCE</div>
+                <div style={{fontSize:13, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{host}</div>
+              </div>
+              <span style={{fontSize:16, color:C.sub}}>↗</span>
+            </a>
+          );
+        })()}
       </CollapsibleSection>
     </div>
   );
@@ -4898,6 +4914,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     plusLoinTitre: initial.plusLoinTitre || "",
     plusLoin: initial.plusLoin || "",
     plusLoinFiches: Array.isArray(initial.plusLoinFiches) ? initial.plusLoinFiches : [],
+    plusLoinLien: initial.plusLoinLien || "",
   } : {
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
@@ -4906,7 +4923,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     anonyme:false, nature:"", zone:"", flux:"", declencheurs:"", chronologie:"",
     facteurs:{}, pointsForts:"", actions:[], statut:"ouvert", evitabilite:"",
     // Pour aller plus loin (rappel libre + fiches rattachées)
-    plusLoinTitre:"", plusLoin:"", plusLoinFiches:[],
+    plusLoinTitre:"", plusLoin:"", plusLoinFiches:[], plusLoinLien:"",
   });
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initial); // pré-coché en mode édition
@@ -5141,7 +5158,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
 
       {/* Pour aller plus loin — rappel libre + fiches rattachées (RETEX et Cas) */}
       <RetexSection icon="📚" title="Pour aller plus loin" color={C.blue}
-        defaultOpen={!!(form.plusLoin || form.plusLoinTitre || (form.plusLoinFiches||[]).length)}>
+        defaultOpen={!!(form.plusLoin || form.plusLoinTitre || form.plusLoinLien || (form.plusLoinFiches||[]).length)}>
         <label style={lbl}>Sujet du rappel</label>
         <input style={inp} placeholder="Ex : Choc toxinique" value={form.plusLoinTitre||""}
           onChange={e=>setForm({...form,plusLoinTitre:e.target.value})}/>
@@ -5151,6 +5168,9 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
           value={form.plusLoin||""} onChange={e=>setForm({...form,plusLoin:e.target.value})}/>
         <label style={lbl}>Fiches rattachées <span style={{fontWeight:400, color:C.sub}}>(optionnel)</span></label>
         <PlusLoinFichesPicker value={form.plusLoinFiches||[]} onChange={v=>setForm({...form,plusLoinFiches:v})}/>
+        <label style={lbl}>Lien source <span style={{fontWeight:400, color:C.sub}}>(optionnel — pour citer la référence)</span></label>
+        <input style={inp} type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" placeholder="https://…"
+          value={form.plusLoinLien||""} onChange={e=>setForm({...form,plusLoinLien:e.target.value})}/>
       </RetexSection>
 
       {/* Case à cocher obligatoire */}
@@ -5293,7 +5313,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
             {item.declencheurs && (
               <div style={{marginTop:6}}>
                 <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:4}}>⚡ ÉLÉMENT DÉCLENCHEUR</div>
-                <div style={{background:C.white, borderRadius:12, padding:"10px 14px", border:`1px solid ${C.border}`, fontSize:13, color:C.text, lineHeight:1.6}}>{item.declencheurs}</div>
+                <div style={{background:C.white, borderRadius:12, padding:"10px 14px", border:`1px solid ${C.border}`, fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{item.declencheurs}</div>
               </div>
             )}
           </div>
@@ -5303,7 +5323,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
         {item.chronologie && (
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>⏱️ CHRONOLOGIE DES FAITS</div>
-            <div style={{background:C.white, borderRadius:12, padding:14, border:`1px solid ${C.border}`, borderLeft:`3px solid ${col}`, fontSize:12.5, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap", fontFamily:"ui-monospace, monospace"}}>{item.chronologie}</div>
+            <div style={{background:C.white, borderRadius:12, padding:14, border:`1px solid ${C.border}`, borderLeft:`3px solid ${col}`, fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{item.chronologie}</div>
           </div>
         )}
 
@@ -5313,8 +5333,8 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
             <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>🔍 ANALYSE DES CAUSES (ALARM)</div>
             {ALARM_FACTEURS.filter(f=>item.facteurs[f.k]!==undefined).map(f=>(
               <div key={f.k} style={{background:C.white, border:`1px solid ${C.border}`, borderLeft:`3px solid ${col}`, borderRadius:10, padding:"10px 12px", marginBottom:8}}>
-                <div style={{fontSize:12.5, fontWeight:800, color:C.text, marginBottom:item.facteurs[f.k]?3:0}}>{f.ic} {f.nom}</div>
-                {item.facteurs[f.k] && <div style={{fontSize:12.5, color:C.text, lineHeight:1.5}}>{item.facteurs[f.k]}</div>}
+                <div style={{fontSize:13, fontWeight:800, color:C.text, marginBottom:item.facteurs[f.k]?3:0}}>{f.ic} {f.nom}</div>
+                {item.facteurs[f.k] && <div style={{fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{item.facteurs[f.k]}</div>}
               </div>
             ))}
           </div>
@@ -5324,7 +5344,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
         {item.pointsForts && (
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:6}}>✅ POINTS FORTS À VALORISER</div>
-            <div style={{background:C.greenLight, border:`1px solid ${C.green}33`, borderRadius:12, padding:14, fontSize:13, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.pointsForts}</div>
+            <div style={{background:C.greenLight, border:`1px solid ${C.green}33`, borderRadius:12, padding:14, fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{item.pointsForts}</div>
           </div>
         )}
 
@@ -5384,7 +5404,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
             <span style={{fontSize:16}}>📈</span>
             <span style={{fontSize:11, fontWeight:800, color:C.blue, letterSpacing:.5}}>ÉVOLUTION / SUIVI</span>
           </div>
-          <div style={{fontSize:13.5, color:C.text, lineHeight:1.6, whiteSpace:"pre-wrap"}}>{item.evolution}</div>
+          <div style={{fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{item.evolution}</div>
         </div>
       )}
 
