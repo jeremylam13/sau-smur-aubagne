@@ -4752,6 +4752,115 @@ const ALARM_FACTEURS = [
 const CAS_CATS = ["Cardio","Neuro","Pneumo","Traumato","Pédiatrie","Toxico","Infectieux","Autre"];
 const CAS_LIEUX = ["Urgences","SMUR","UHCD","Hospitalisation"];
 
+// ── "Pour aller plus loin" (RETEX / Cas) : rappel en texte libre + fiches rattachées ──
+const PLUS_LOIN_MODULES = {
+  gestes:    { label:"Geste",     icon:"✂️", color:"#C0392B" },
+  dilutions: { label:"Dilution",  icon:"💉", color:"#E05260" },
+  divers:    { label:"Divers",    icon:"⚡", color:"#0EA5E9" },
+};
+
+// Catalogue des fiches rattachables (Gestes, Dilutions, Divers)
+function useFichesRattachables() {
+  const { store } = useData();
+  return [
+    ...[...GESTES, ...(store.gestes||[])].map(g => ({ module:"gestes",    id:g.id, title:g.title||"", icon:g.icon||"✂️" })),
+    ...(store.dilutions||[]).map(d => ({ module:"dilutions", id:d.id, title:d.title||"", icon:"💉" })),
+    ...[...DIVERS, ...(store.divers||[])].map(d => ({ module:"divers",    id:d.id, title:d.title||"", icon:"⚡" })),
+  ];
+}
+
+// Sélecteur de fiches (formulaire) : recherche + puces des fiches choisies
+function PlusLoinFichesPicker({ value, onChange }) {
+  const C = useC();
+  const all = useFichesRattachables();
+  const [q, setQ] = useState("");
+  const chosen = Array.isArray(value) ? value : [];
+  const isChosen = f => chosen.some(c => c.module===f.module && String(c.id)===String(f.id));
+  const results = q.trim()
+    ? all.filter(f => !isChosen(f) && matchSearch(f.title, q)).slice(0, 6)
+    : [];
+  const lookup = c => all.find(f => f.module===c.module && String(f.id)===String(c.id));
+  return (
+    <div>
+      {chosen.length > 0 && (
+        <div style={{display:"flex", flexWrap:"wrap", gap:6, marginBottom:8}}>
+          {chosen.map((c,i) => {
+            const f = lookup(c); const m = PLUS_LOIN_MODULES[c.module] || {};
+            return (
+              <span key={i} style={{display:"inline-flex", alignItems:"center", gap:6, background:C.blueLight,
+                border:`1px solid ${C.border}`, borderRadius:16, padding:"5px 6px 5px 10px", fontSize:12, fontWeight:700, color:C.navy}}>
+                <span>{m.icon}</span>
+                <span>{f ? f.title : "Fiche supprimée"}</span>
+                <button type="button" onClick={()=>onChange(chosen.filter((_,j)=>j!==i))}
+                  style={{background:"none", border:"none", color:C.sub, fontSize:15, cursor:"pointer", padding:"0 4px", lineHeight:1}}>✕</button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+      <input value={q} onChange={e=>setQ(e.target.value)}
+        placeholder="Rechercher une fiche à rattacher (geste, dilution, divers)..."
+        style={{width:"100%", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 12px", fontSize:13,
+          color:C.text, background:C.white, boxSizing:"border-box", outline:"none", fontFamily:"inherit"}}/>
+      {results.length > 0 && (
+        <div style={{border:`1px solid ${C.border}`, borderRadius:10, marginTop:6, overflow:"hidden", background:C.white}}>
+          {results.map((f,i) => (
+            <div key={f.module+"_"+f.id} onClick={()=>{ onChange([...chosen, {module:f.module, id:f.id}]); setQ(""); }}
+              style={{display:"flex", alignItems:"center", gap:10, padding:"10px 12px", cursor:"pointer",
+                borderTop: i>0 ? `1px solid ${C.border}` : "none"}}>
+              <span style={{fontSize:16}}>{f.icon}</span>
+              <span style={{flex:1, fontSize:13, color:C.text, fontWeight:600}}>{f.title}</span>
+              <span style={{fontSize:10, color:C.sub, fontWeight:700}}>{PLUS_LOIN_MODULES[f.module].label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {q.trim() && results.length === 0 && (
+        <div style={{fontSize:11, color:C.sub, marginTop:6}}>Aucune fiche trouvée.</div>
+      )}
+    </div>
+  );
+}
+
+// Affichage dans la fiche : section repliable (fermée par défaut)
+function PlusLoinSection({ item, onNav }) {
+  const C = useC();
+  const all = useFichesRattachables();
+  const texte = (item.plusLoin || "").trim();
+  const liens = (Array.isArray(item.plusLoinFiches) ? item.plusLoinFiches : [])
+    .map(c => all.find(f => f.module===c.module && String(f.id)===String(c.id)))
+    .filter(Boolean);
+  if (!texte && liens.length === 0) return null;
+  const titre = (item.plusLoinTitre || "").trim();
+  const col = "#2E7EAD";
+  return (
+    <div style={{margin:"4px 0 16px"}}>
+      <CollapsibleSection icon="📚" label={titre ? "Pour aller plus loin : " + titre : "Pour aller plus loin"} color={col} C={C}>
+        {texte && (
+          <div style={{fontSize:13, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap"}}>{texte}</div>
+        )}
+        {liens.length > 0 && (
+          <div style={{display:"flex", flexDirection:"column", gap:8, marginTop: texte ? 12 : 0}}>
+            <div style={{fontSize:10, fontWeight:800, color:C.sub, letterSpacing:.5}}>FICHES LIÉES</div>
+            {liens.map((f,i) => (
+              <div key={i} onClick={()=>onNav && onNav(f.module, {id:f.id})}
+                style={{display:"flex", alignItems:"center", gap:10, background:C.blueLight, border:`1px solid ${C.border}`,
+                  borderRadius:10, padding:"10px 12px", cursor: onNav ? "pointer" : "default"}}>
+                <span style={{fontSize:18}}>{f.icon}</span>
+                <div style={{flex:1, minWidth:0}}>
+                  <div style={{fontSize:13, fontWeight:700, color:C.navy}}>{f.title}</div>
+                  <div style={{fontSize:10, color:C.sub}}>{PLUS_LOIN_MODULES[f.module].label}</div>
+                </div>
+                <span style={{color:C.sub, fontSize:14}}>›</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CollapsibleSection>
+    </div>
+  );
+}
+
 // Section repliable pour le formulaire RETEX
 function RetexSection({ icon, title, color, children, defaultOpen=false }) {
   const C = useC();
@@ -4786,6 +4895,9 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     pointsForts: initial.pointsForts || "",
     statut: initial.statut || "ouvert",
     evitabilite: initial.evitabilite || "",
+    plusLoinTitre: initial.plusLoinTitre || "",
+    plusLoin: initial.plusLoin || "",
+    plusLoinFiches: Array.isArray(initial.plusLoinFiches) ? initial.plusLoinFiches : [],
   } : {
     type:"retex", title:"", author:"", date:"", lieu:"",
     contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
@@ -4793,6 +4905,8 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     // Champs RETEX (méthode ALARM)
     anonyme:false, nature:"", zone:"", flux:"", declencheurs:"", chronologie:"",
     facteurs:{}, pointsForts:"", actions:[], statut:"ouvert", evitabilite:"",
+    // Pour aller plus loin (rappel libre + fiches rattachées)
+    plusLoinTitre:"", plusLoin:"", plusLoinFiches:[],
   });
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initial); // pré-coché en mode édition
@@ -5025,6 +5139,20 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
         />
       </div>)}
 
+      {/* Pour aller plus loin — rappel libre + fiches rattachées (RETEX et Cas) */}
+      <RetexSection icon="📚" title="Pour aller plus loin" color={C.blue}
+        defaultOpen={!!(form.plusLoin || form.plusLoinTitre || (form.plusLoinFiches||[]).length)}>
+        <label style={lbl}>Sujet du rappel</label>
+        <input style={inp} placeholder="Ex : Choc toxinique" value={form.plusLoinTitre||""}
+          onChange={e=>setForm({...form,plusLoinTitre:e.target.value})}/>
+        <label style={lbl}>Rappel / informations <span style={{fontWeight:400, color:C.sub}}>(texte libre)</span></label>
+        <textarea style={{...inp, minHeight:120, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}}
+          placeholder="Rappel physiopathologique, critères diagnostiques, conduite à tenir... tout ce qui aide à comprendre le cas."
+          value={form.plusLoin||""} onChange={e=>setForm({...form,plusLoin:e.target.value})}/>
+        <label style={lbl}>Fiches rattachées <span style={{fontWeight:400, color:C.sub}}>(optionnel)</span></label>
+        <PlusLoinFichesPicker value={form.plusLoinFiches||[]} onChange={v=>setForm({...form,plusLoinFiches:v})}/>
+      </RetexSection>
+
       {/* Case à cocher obligatoire */}
       <div onClick={()=>setConfirmed(v=>!v)}
         style={{display:"flex", alignItems:"flex-start", gap:10, padding:"12px 14px",
@@ -5060,7 +5188,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
 }
 
 // ── Vue détail d'un RETEX ─────────────────────────────────────────────────────
-function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onStatut, onDelete, onEdit }) {
+function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onStatut, onDelete, onEdit, onNav }) {
   const C = useC();
   const { isAdmin } = useAuth();
   const { toggleFavori, isFavori } = useFavoris();
@@ -5268,6 +5396,9 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
         </div>
       )}
 
+      {/* Pour aller plus loin */}
+      <PlusLoinSection item={item} onNav={onNav}/>
+
       {/* Réactions */}
       <div style={{marginBottom:16}}>
         <div style={{fontSize:11, fontWeight:800, color:C.sub, marginBottom:8}}>RÉACTIONS DU SERVICE</div>
@@ -5351,7 +5482,7 @@ function RetexDetail({ item, onBack, onReaction, onComment, onDeleteComment, onS
 }
 
 // ── RetexScreen ───────────────────────────────────────────────────────────────
-function RetexScreen({ deepLinkId, onBack, pushNotif }) {
+function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
   const C = useC();
   const { profile } = useAuth();
   const { store, addRetexItem, removeRetexItem, updateRetex } = useData();
@@ -5524,6 +5655,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif }) {
       onStatut={changeStatut}
       onDelete={(id)=>{ deleteItem(id); setSelected(null); }}
       onEdit={(it)=>{ setSelected(null); setEditing(it); }}
+      onNav={onNav}
     />
   );
 
@@ -38175,7 +38307,7 @@ function AppInner() {
         {screen==="favoris"    && <FavorisScreen key={"favoris-"+navVersion} onNav={navigate}/>}
         {screen==="comptes"    && <AccountsAdminScreen key={"comptes-"+navVersion} onBack={goBack}/>}
         {screen==="checklists" && <ChecklistScreen key={"checklists-"+navVersion} onBack={goBack}/>}
-        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack} pushNotif={pushNotif}/>}
+        {screen==="retex"      && <RetexScreen key={"retex-"+navVersion} deepLinkId={deepLink} onBack={goBack} pushNotif={pushNotif} onNav={navigate}/>}
         {screen==="ecg"        && <ECGScreen key={"ecg-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="imagerie"   && <IconoScreen key={"imagerie-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="agenda"     && <AgendaScreen key={"agenda-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
