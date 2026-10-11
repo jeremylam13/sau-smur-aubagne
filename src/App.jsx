@@ -7659,33 +7659,37 @@ function DilutionScreen({ deepLinkId, onBack }) {
 
       {/* Liste */}
       {(() => {
-        const DilCard = ({ d }) => (
-          <button key={d.id} onClick={()=>setSelected(d)}
-            style={{background:C.white, border:`1px solid ${C.border}`,
-              borderRadius:16, padding:"16px", cursor:"pointer", textAlign:"left",
-              borderLeft:`4px solid ${d.color||C.red}`, width:"100%"}}>
-            <div style={{display:"flex", alignItems:"center", gap:12}}>
-              <div style={{
-                background:(d.color||C.red)+"22", borderRadius:12, width:48, height:48,
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, flexShrink:0
-              }}>{"💉"}</div>
+        // Première ligne utile d'un texte multi-lignes (retire les puces)
+        const firstLine = (txt) => String(txt||"").split("\n").map(l=>l.replace(/^\s*[-•*]\s*/,"").trim()).find(l=>l) || "";
+        const DilCard = ({ d }) => {
+          const cat = DILUTION_CATS.find(c => c.key === d.categorie);
+          const catColor = cat ? cat.color : (d.color || C.sub);
+          const wm = String(d.subtitle||"").match(/([<>≤≥])\s*(\d+)\s*kg/i);
+          const chip = wm ? `${wm[1]} ${wm[2]} kg` : (d.subtitle ? String(d.subtitle).trim() : "");
+          const pres = firstLine(d.presentation) || firstLine(d.conditionnement);
+          const l1 = [d.nomCommercial && d.nomCommercial.trim(), pres].filter(Boolean).join(" · ");
+          const l2 = firstLine(d.indication);
+          const ell = {overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"};
+          return (
+            <button key={d.id} onClick={()=>setSelected(d)}
+              style={{background:C.white, border:`1px solid ${C.border}`, borderRadius:14, padding:"10px 12px",
+                cursor:"pointer", textAlign:"left", width:"100%", display:"flex", alignItems:"center", gap:11,
+                WebkitTapHighlightColor:"transparent"}}>
+              <div style={{background:catColor+"22", borderRadius:"50%", width:38, height:38, flexShrink:0,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:19}}>{cat ? cat.icon : "💉"}</div>
               <div style={{flex:1, minWidth:0}}>
-                <div style={{fontSize:14, fontWeight:800, color:C.text, marginBottom:4}}>{d.title}</div>
-                {d.nomCommercial && <div style={{fontSize:11.5, color:C.sub, fontStyle:"italic", marginBottom:2}}>{d.nomCommercial}</div>}
-                {d.subtitle && <div style={{fontSize:11, color:C.sub, marginBottom:5}}>{d.subtitle}</div>}
-                <div style={{display:"flex", gap:4, flexWrap:"wrap"}}>
-                  {d.schema && <span style={{fontSize:10, fontWeight:700,
-                    background:C.blueLight, color:C.blue,
-                    padding:"2px 7px", borderRadius:6}}>{"📊 Schema"}</span>}
-                  {d.schemaUrl && !d.schema && <span style={{fontSize:10, fontWeight:700,
-                    background:C.blueLight, color:C.blue,
-                    padding:"2px 7px", borderRadius:6}}>{"📊 Schema"}</span>}
+                <div style={{display:"flex", alignItems:"center", gap:6, minWidth:0}}>
+                  <span style={{fontSize:14, fontWeight:800, color:C.text, ...ell}}>{(d.title||"").trim()}</span>
+                  {chip && <span style={{fontSize:10.5, fontWeight:800, background:catColor+"22", color:catColor,
+                    padding:"1px 7px", borderRadius:6, flexShrink:0, whiteSpace:"nowrap"}}>{chip}</span>}
                 </div>
+                {l1 && <div style={{fontSize:11.5, color:C.sub, marginTop:2, ...ell}}>{l1}</div>}
+                {l2 && <div style={{fontSize:11, color:C.sub, opacity:.85, marginTop:1, ...ell}}>{l2}</div>}
               </div>
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
-            </div>
-          </button>
-        );
+            </button>
+          );
+        };
 
         if (alphaGroups) {
           return (
@@ -7693,7 +7697,7 @@ function DilutionScreen({ deepLinkId, onBack }) {
               {alphaGroups.map(g => (
                 <div key={g.letter}>
                   <div style={{fontSize:12, fontWeight:900, color:C.sub, marginBottom:8, paddingLeft:2}}>{g.letter}</div>
-                  <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                  <div style={{display:"flex", flexDirection:"column", gap:7}}>
                     {g.items.map(d => <DilCard key={d.id} d={d}/>)}
                   </div>
                 </div>
@@ -7702,7 +7706,7 @@ function DilutionScreen({ deepLinkId, onBack }) {
           );
         }
         return (
-          <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          <div style={{display:"flex", flexDirection:"column", gap:7}}>
             {filtered.map(d => <DilCard key={d.id} d={d}/>)}
           </div>
         );
