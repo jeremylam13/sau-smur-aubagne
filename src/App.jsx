@@ -7668,7 +7668,6 @@ function DilutionScreen({ deepLinkId, onBack }) {
           const chip = wm ? `${wm[1]} ${wm[2]} kg` : (d.subtitle ? String(d.subtitle).trim() : "");
           const pres = firstLine(d.presentation) || firstLine(d.conditionnement);
           const l1 = [d.nomCommercial && d.nomCommercial.trim(), pres].filter(Boolean).join(" · ");
-          const l2 = firstLine(d.indication);
           const ell = {overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"};
           return (
             <button key={d.id} onClick={()=>setSelected(d)}
@@ -7684,7 +7683,6 @@ function DilutionScreen({ deepLinkId, onBack }) {
                     padding:"1px 7px", borderRadius:6, flexShrink:0, whiteSpace:"nowrap"}}>{chip}</span>}
                 </div>
                 {l1 && <div style={{fontSize:11.5, color:C.sub, marginTop:2, ...ell}}>{l1}</div>}
-                {l2 && <div style={{fontSize:11, color:C.sub, opacity:.85, marginTop:1, ...ell}}>{l2}</div>}
               </div>
               <span style={{color:C.sub, fontSize:18, flexShrink:0}}>›</span>
             </button>
