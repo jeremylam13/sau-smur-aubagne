@@ -6951,7 +6951,7 @@ function GesteDetail({geste, onBack}) {
   const COLOR = geste.color || C.red;
   const ciList = Array.isArray(geste.contreIndications)
     ? geste.contreIndications.filter(Boolean)
-    : String(geste.contreIndications||"").split("\n").map(l=>l.trim()).filter(Boolean);
+    : String(geste.contreIndications||"").split("\n").map(l=>l.replace(/^\s*[-•*]\s*/,"").trim()).filter(Boolean);
 
   // Helper : section repliable avec icône-label + contenu en carte (style Dilutions)
   const Section = ({ icon, label, color, children, defaultOpen }) => (
@@ -8048,7 +8048,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
       materiel: typeof gForm.materiel==="string"?gForm.materiel.split("\n").filter(Boolean):gForm.materiel,
       etapes:   typeof gForm.etapes==="string"?gForm.etapes.split("\n").filter(Boolean):gForm.etapes,
       pieges:   typeof gForm.pieges==="string"?gForm.pieges.split("\n").filter(Boolean):gForm.pieges,
-      contreIndications: typeof gForm.contreIndications==="string"?gForm.contreIndications.split("\n").map(l=>l.trim()).filter(Boolean):(gForm.contreIndications||[]),
+      contreIndications: typeof gForm.contreIndications==="string" ? gForm.contreIndications.trim() : (Array.isArray(gForm.contreIndications) ? gForm.contreIndications.join("\n") : ""),
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
       videos:(gForm.videos||[]).filter(v=>v && v.url && v.url.trim()),
     };
@@ -8955,8 +8955,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>Indications</label>
             <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.indications} onChange={e=>setGForm({...gForm,indications:e.target.value})} placeholder="Indications cliniques..."/>
 
-            <label style={lbl}>{"🚫 Contre-indications (1 par ligne)"}</label>
-            <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.contreIndications||""} onChange={e=>setGForm({...gForm,contreIndications:e.target.value})} placeholder={"Trouble de la coagulation non corrigé\nInfection locale au point de ponction..."}/>
+            <label style={lbl}>{"🚫 Contre-indications (texte libre — une phrase par ligne)"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.contreIndications||""} onChange={e=>setGForm({...gForm,contreIndications:e.target.value})} placeholder={"Trouble de la coagulation non corrigé.\nInfection locale au point de ponction.\nAllergie connue au produit."}/>
 
             <label style={lbl}>{"Materiel (1 item par ligne)"}</label>
             <textarea style={{...inp, height:80, resize:"vertical"}} value={gForm.materiel} onChange={e=>setGForm({...gForm,materiel:e.target.value})} placeholder={"Seringue 10 mL\nLaryngoscope..."}/>
