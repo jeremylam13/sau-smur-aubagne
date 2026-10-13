@@ -4876,6 +4876,9 @@ function PlusLoinSection({ item, onNav }) {
             ))}
           </div>
         )}
+        {lienRaw && isEmbeddableVideoUrl(lienRaw) && (
+          <div style={{marginTop:(texte||liens.length)?12:0}}><VideoThumbCard url={lienRaw} title="" C={C}/></div>
+        )}
         {lienRaw && (() => {
           const href = /^https?:\/\//i.test(lienRaw) ? lienRaw : "https://" + lienRaw;
           let host = lienRaw; try { host = new URL(href).hostname.replace(/^www\./,""); } catch(e) {}
@@ -4912,6 +4915,19 @@ function RetexSection({ icon, title, color, children, defaultOpen=false }) {
   );
 }
 
+function makeBlankRetexForm() {
+  return {
+    type:"retex", title:"", author:"", date:"", lieu:"",
+    contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
+    recit:"", gravite:"", categorie:"Réanimation", evolution:"", medias:[],
+    // Champs RETEX (méthode ALARM)
+    anonyme:false, nature:"", zone:"", flux:"", declencheurs:"", chronologie:"",
+    facteurs:{}, pointsForts:"", actions:[], statut:"ouvert", evitabilite:"",
+    // Pour aller plus loin (rappel libre + fiches rattachées)
+    plusLoinTitre:"", plusLoin:"", plusLoinFiches:[], plusLoinLien:"",
+  };
+}
+
 function RetexSubmitForm({ onSubmit, onCancel, initial }) {
   const C = useC();
   const isEdit = !!initial;
@@ -4934,16 +4950,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     plusLoin: initial.plusLoin || "",
     plusLoinFiches: Array.isArray(initial.plusLoinFiches) ? initial.plusLoinFiches : [],
     plusLoinLien: initial.plusLoinLien || "",
-  } : {
-    type:"retex", title:"", author:"", date:"", lieu:"",
-    contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"",
-    recit:"", gravite:"", categorie:"Réanimation", evolution:"", medias:[],
-    // Champs RETEX (méthode ALARM)
-    anonyme:false, nature:"", zone:"", flux:"", declencheurs:"", chronologie:"",
-    facteurs:{}, pointsForts:"", actions:[], statut:"ouvert", evitabilite:"",
-    // Pour aller plus loin (rappel libre + fiches rattachées)
-    plusLoinTitre:"", plusLoin:"", plusLoinFiches:[], plusLoinLien:"",
-  });
+  } : makeBlankRetexForm());
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(!!initial); // pré-coché en mode édition
 
@@ -4966,20 +4973,54 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
     setForm(f=>({...f, type:t}));
   }
 
+  const [notice, setNotice] = useState(null); // { ok:boolean, msg:string }
+  const topRef = useRef(null);
+  const bottomRef = useRef(null);
+
+  // Ce qui empêche de publier (affiché à l'utilisateur au lieu d'un bouton grisé muet)
+  const missing = [];
+  if(!(form.title||"").trim()) missing.push("le titre");
+  if(tab==="retex" && !form.nature) missing.push("le type d'événement");
+  if(tab==="recit" && !(form.takehome||"").trim()) missing.push("le message à retenir");
+  if(!confirmed) missing.push("la case de certification");
+  const uploading = (form.medias||[]).some(m => m && m._uploading);
+
   async function handleSubmit() {
-    if(!form.title.trim() || !confirmed) return;
-    // RETEX : type d'événement obligatoire ; Cas : message à retenir obligatoire
-    if(tab==="retex" && !form.nature) return;
-    if(tab==="recit" && !form.takehome.trim()) return;
+    if(saving) return;
+    if(missing.length) {
+      setNotice({ok:false, msg:"Pour publier, il manque : " + missing.join(", ") + "."});
+      setTimeout(()=>{ try{ bottomRef.current && bottomRef.current.scrollIntoView({behavior:"smooth", block:"center"}); }catch(e){} }, 50);
+      return;
+    }
+    if(uploading) {
+      setNotice({ok:false, msg:"Un média est encore en cours d'envoi. Attendez la fin du chargement, puis réessayez."});
+      return;
+    }
     setSaving(true);
-    await onSubmit(form);
-    setSaving(false);
-    setConfirmed(false);
-    draft.clear();
+    setNotice(null);
+    try {
+      await onSubmit(form);
+      if(!isEdit) { setForm(makeBlankRetexForm()); setTab("retex"); }
+      setConfirmed(false);
+      draft.clear();
+      setNotice({ok:true, msg: isEdit ? "Modifications enregistrées." : "Publication enregistrée. Le formulaire est prêt pour une nouvelle fiche."});
+      setTimeout(()=>{ try{ topRef.current && topRef.current.scrollIntoView({behavior:"smooth", block:"start"}); }catch(e){} }, 50);
+    } catch(e) {
+      setNotice({ok:false, msg:"La sauvegarde a échoué (" + ((e && e.message) ? String(e.message).slice(0,160) : "erreur inconnue") + "). Votre texte est conservé : réessayez."});
+      setTimeout(()=>{ try{ bottomRef.current && bottomRef.current.scrollIntoView({behavior:"smooth", block:"center"}); }catch(e2){} }, 50);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div style={{animation:"fadeIn .2s ease"}}>
+      <div ref={topRef}/>
+      {notice && notice.ok && (
+        <div role="status" style={{background:"#F0FDF4", border:"1.5px solid #22C55E", color:"#166534", borderRadius:12, padding:"12px 14px", marginBottom:14, fontSize:13, fontWeight:700, lineHeight:1.5}}>
+          ✅ {notice.msg}
+        </div>
+      )}
       {/* Header */}
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16}}>
         <div style={{fontSize:17, fontWeight:900, color:C.navy}}>{isEdit ? "✏️ Modifier la publication" : "📝 Nouvelle publication"}</div>
@@ -5208,20 +5249,25 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
           Je certifie que ce cas est anonymisé, que sa publication est conforme au règlement intérieur du service et que j'en assume la responsabilité éditoriale.
         </span>
       </div>
-      {(() => {
-        const valide = form.title.trim() && confirmed
-          && (tab==="retex" ? !!form.nature : !!form.takehome.trim());
-        return (
-      <button onClick={handleSubmit} disabled={saving||!valide} style={{
-        width:"100%", background:valide?(tab==="retex"?C.green:"#9B59B6"):"#CBD5E1",
+      <div ref={bottomRef}/>
+      {notice && !notice.ok && (
+        <div role="alert" style={{background:"#FEF2F2", border:"1.5px solid #EF4444", color:"#991B1B", borderRadius:12, padding:"12px 14px", marginBottom:10, fontSize:13, fontWeight:700, lineHeight:1.5}}>
+          ⚠️ {notice.msg}
+        </div>
+      )}
+      {missing.length>0 && !(notice && !notice.ok) && (
+        <div style={{fontSize:11.5, color:"#92400E", marginBottom:8, lineHeight:1.5}}>
+          Pour publier, il manque : {missing.join(", ")}.
+        </div>
+      )}
+      <button onClick={handleSubmit} disabled={saving} style={{
+        width:"100%", background:(missing.length===0 && !uploading)?(tab==="retex"?C.green:"#9B59B6"):"#94A3B8",
         border:"none", borderRadius:10, padding:"14px", fontSize:14,
-        fontWeight:800, color:"#fff", cursor:valide?"pointer":"not-allowed",
+        fontWeight:800, color:"#fff", cursor:saving?"wait":"pointer",
         marginTop:4,
       }}>
         {saving?"Enregistrement...":(isEdit ? "✅ Enregistrer les modifications" : "✅ Publier")}
       </button>
-        );
-      })()}
     </div>
   );
 }
@@ -5532,28 +5578,9 @@ function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
     return tb - ta;
   });
   const [selected, setSelected] = useState(null);
-  const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("tous");
   const [search, setSearch] = useState("");
-
-  async function submit(form) {
-    const item = {...form, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
-    await addRetexItem(item);
-    // Notification partagée
-    if(pushNotif){
-      const estCas = form.type==="recit";
-      pushNotif({
-        type:"retex",
-        icon: estCas ? "📖" : "🔬",
-        title: estCas ? "Nouveau cas clinique" : "Nouveau RETEX",
-        body: item.title,
-        nav:"retex",
-        ref_id:item.id,
-      });
-    }
-    return item;
-  }
 
   async function submitEdit(form) {
     const item = {...editing, ...form};
@@ -5677,13 +5704,6 @@ function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
     />
   );
 
-  if(showForm) return (
-    <RetexSubmitForm
-      onSubmit={async (form)=>{ await submit(form); setShowForm(false); }}
-      onCancel={()=>setShowForm(false)}
-    />
-  );
-
   if(selectedItem) return (
     <RetexDetail
       item={selectedItem}
@@ -5711,7 +5731,6 @@ function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
               <div style={{fontSize:11, color:C.sub, marginTop:2}}>{items.length} publication{items.length>1?"s":""}</div>
             </div>
           </div>
-          <button onClick={()=>setShowForm(true)} style={{background:C.green, border:"none", borderRadius:10, padding:"10px 16px", fontSize:12, fontWeight:800, color:"#fff", cursor:"pointer"}}>+ Ajouter</button>
         </div>
 
         {/* Recherche */}
@@ -5744,17 +5763,12 @@ function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
         <div style={{textAlign:"center", padding:"40px 24px", color:C.sub}}>
           <div style={{fontSize:52, marginBottom:12}}>💬</div>
           <div style={{fontSize:15, fontWeight:800, color:C.navy, marginBottom:6}}>
-            {items.length===0?"Partagez votre premier cas":"Aucun résultat"}
+            {items.length===0?"Aucune publication pour l'instant":"Aucun résultat"}
           </div>
           {items.length===0 && (
-            <>
-              <div style={{fontSize:12.5, lineHeight:1.6, marginBottom:16, maxWidth:280, margin:"0 auto 16px"}}>
-                Un cas marquant, une difficulté rencontrée, une belle prise en charge… Chaque retour fait progresser l'équipe.
-              </div>
-              <button onClick={()=>setShowForm(true)} style={{background:C.green, border:"none", borderRadius:12, padding:"13px 28px", fontSize:14, fontWeight:800, color:"#fff", cursor:"pointer", boxShadow:"0 4px 16px rgba(46,158,107,.28)"}}>
-                📝 Créer le premier RETEX
-              </button>
-            </>
+            <div style={{fontSize:12.5, lineHeight:1.6, maxWidth:280, margin:"0 auto"}}>
+              Les cas cliniques et RETEX se publient depuis l'Éditeur de fiches.
+            </div>
           )}
         </div>
       )}
@@ -5819,13 +5833,6 @@ function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
         })}
       </div>
 
-      {items.length>0 && (
-        <div style={{textAlign:"center", padding:"24px 0 8px"}}>
-          <button onClick={()=>setShowForm(true)} style={{background:C.green, border:"none", borderRadius:12, padding:"12px 28px", fontSize:13, fontWeight:800, color:"#fff", cursor:"pointer", boxShadow:"0 4px 16px rgba(46,158,107,.25)"}}>
-            📝 Ajouter une publication
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -6837,10 +6844,26 @@ function GestesScreen({ deepLinkId, onBack }) {
   );
 }
 
-function VideoThumbCard({url, title, extractYoutubeId, extractVimeoId, C}) {
-  const ytId = extractYoutubeId(url);
-  const vimeoId = !ytId ? extractVimeoId(url) : null;
+// Identifiants vidéo (YouTube / Vimeo) — utilisés par tous les modules
+function ytIdOf(url) {
+  if(!url) return null;
+  const m = String(url).match(/(?:embed\/|v=|youtu\.be\/|shorts\/|live\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+function vimeoIdOf(url) {
+  if(!url) return null;
+  const m = String(url).match(/vimeo\.com\/(?:.*\/)?(\d+)/);
+  return m ? m[1] : null;
+}
+function isEmbeddableVideoUrl(url) { return !!(ytIdOf(url) || vimeoIdOf(url)); }
+
+// Vignette cliquable qui se transforme en lecteur intégré (sans quitter l'application).
+// Le lecteur n'est chargé qu'au toucher : pas de lecteurs lourds en arrière-plan.
+function VideoThumbCard({url, title, C}) {
+  const ytId = ytIdOf(url);
+  const vimeoId = !ytId ? vimeoIdOf(url) : null;
   const [vimeoThumb, setVimeoThumb] = useState(null);
+  const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!vimeoId) return;
     let cancelled = false;
@@ -6872,32 +6895,48 @@ function VideoThumbCard({url, title, extractYoutubeId, extractVimeoId, C}) {
   }
 
   const thumbSrc = ytId ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg` : vimeoThumb;
-  const badgeColor = ytId ? "#FF0000" : "#1AB7EA";
   const platformName = ytId ? "YouTube" : "Vimeo";
   const href = ytId ? `https://www.youtube.com/watch?v=${ytId}` : `https://vimeo.com/${vimeoId}`;
+  const embedSrc = ytId
+    ? `https://www.youtube-nocookie.com/embed/${ytId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`
+    : `https://player.vimeo.com/video/${vimeoId}?autoplay=1&playsinline=1`;
 
   return (
-    <a href={href} target="_blank" rel="noreferrer"
-      style={{display:"block", marginBottom:12, textDecoration:"none"}}>
+    <div style={{marginBottom:12}}>
       <div style={{position:"relative", width:"100%", aspectRatio:"16/9", borderRadius:14,
         overflow:"hidden", background:"#0F172A", boxShadow:"0 2px 8px rgba(26,58,92,.08)"}}>
-        {thumbSrc && (
-          <img src={thumbSrc} alt={title || "Vidéo"} style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.85}}/>
+        {playing ? (
+          <iframe src={embedSrc} title={title || "Vidéo"}
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            allowFullScreen referrerPolicy="strict-origin-when-cross-origin"
+            style={{position:"absolute", inset:0, width:"100%", height:"100%", border:"none"}}/>
+        ) : (
+          <button onClick={()=>setPlaying(true)} aria-label={"Lire la vidéo" + (title ? " : " + title : "")}
+            style={{position:"absolute", inset:0, width:"100%", height:"100%", padding:0, border:"none",
+              background:"transparent", cursor:"pointer", WebkitTapHighlightColor:"transparent"}}>
+            {thumbSrc && (
+              <img src={thumbSrc} alt="" style={{width:"100%", height:"100%", objectFit:"cover", opacity:0.85, display:"block"}}/>
+            )}
+            <div style={{position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)",
+              width:56, height:56, borderRadius:"50%", background:"rgba(0,0,0,0.55)",
+              display:"flex", alignItems:"center", justifyContent:"center", border:"2px solid rgba(255,255,255,0.85)"}}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="white" style={{marginLeft:3}}><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div style={{position:"absolute", bottom:8, right:8, background:"rgba(0,0,0,0.7)", color:"#fff",
+              fontSize:10, fontWeight:700, padding:"3px 7px", borderRadius:5}}>
+              ▶ {platformName}
+            </div>
+          </button>
         )}
-        <div style={{position:"absolute", top:"50%", left:"50%", transform:"translate(-50%,-50%)",
-          width:56, height:56, borderRadius:"50%", background:"rgba(0,0,0,0.55)",
-          display:"flex", alignItems:"center", justifyContent:"center", border:"2px solid rgba(255,255,255,0.85)"}}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="white" style={{marginLeft:3}}><path d="M8 5v14l11-7z"/></svg>
-        </div>
-        <div style={{position:"absolute", bottom:8, right:8, background:"rgba(0,0,0,0.7)", color:"#fff",
-          fontSize:10, fontWeight:700, padding:"3px 7px", borderRadius:5, display:"flex", alignItems:"center", gap:4}}>
-          ▶ {platformName}
-        </div>
       </div>
-      {title && (
-        <div style={{fontSize:13, fontWeight:700, color:C.text, marginTop:6, paddingLeft:2}}>{title}</div>
-      )}
-    </a>
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:6, paddingLeft:2}}>
+        <div style={{fontSize:13, fontWeight:700, color:C.text, minWidth:0}}>{title || ""}</div>
+        <a href={href} target="_blank" rel="noreferrer"
+          style={{fontSize:11, color:C.sub, textDecoration:"none", flexShrink:0, whiteSpace:"nowrap"}}>
+          Ouvrir sur {platformName} ↗
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -6905,21 +6944,14 @@ function GesteDetail({geste, onBack}) {
   const C = useC();
   const { toggleFavori, isFavori } = useFavoris();
 
-  const extractYoutubeId = url => {
-    if(!url) return null;
-    const m = url.match(/(?:embed\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-    return m ? m[1] : null;
-  };
-  const extractVimeoId = url => {
-    if(!url) return null;
-    const m = url.match(/vimeo\.com\/(?:.*\/)?(\d+)/);
-    return m ? m[1] : null;
-  };
   // Compatibilité : anciens gestes n'ayant qu'un videoUrl unique → traité comme 1 vidéo sans titre
   const videoList = (geste.videos && geste.videos.length)
     ? geste.videos
     : (geste.videoUrl ? [{title:"", url:geste.videoUrl}] : []);
   const COLOR = geste.color || C.red;
+  const ciList = Array.isArray(geste.contreIndications)
+    ? geste.contreIndications.filter(Boolean)
+    : String(geste.contreIndications||"").split("\n").map(l=>l.trim()).filter(Boolean);
 
   // Helper : section repliable avec icône-label + contenu en carte (style Dilutions)
   const Section = ({ icon, label, color, children, defaultOpen }) => (
@@ -6989,10 +7021,10 @@ function GesteDetail({geste, onBack}) {
       )}
 
       {/* Contre-indications */}
-      {(geste.contreIndications||[]).length > 0 && (
+      {ciList.length > 0 && (
         <Section icon="🚫" label="Contre-indications" color={C.red}>
           <div style={{padding:"12px 14px", display:"flex", flexDirection:"column", gap:8}}>
-            {geste.contreIndications.map((ci,i)=>(
+            {ciList.map((ci,i)=>(
               <div key={i} style={{display:"flex", alignItems:"flex-start", gap:10,
                 background:C.redLight, borderRadius:10, padding:"10px 12px",
                 border:`1px solid ${C.red}30`}}>
@@ -7080,8 +7112,7 @@ function GesteDetail({geste, onBack}) {
         <Section icon="🎬" label="Vidéo(s)" color="#1AB7EA">
           <div style={{padding:14}}>
             {videoList.map((v,i)=>(
-              <VideoThumbCard key={i} url={v.url} title={v.title}
-                extractYoutubeId={extractYoutubeId} extractVimeoId={extractVimeoId} C={C}/>
+              <VideoThumbCard key={i} url={v.url} title={v.title} C={C}/>
             ))}
           </div>
         </Section>
@@ -7165,6 +7196,9 @@ function DiversScreen({ deepLinkId, onBack }) {
         <Card>
           <pre style={{fontSize:13, color:C.text, margin:0, whiteSpace:"pre-wrap", fontFamily:"inherit", lineHeight:1.7}}>{selected.content}</pre>
         </Card>
+        {selected.lienUrl && isEmbeddableVideoUrl(selected.lienUrl.trim()) && (
+          <div style={{marginTop:12}}><VideoThumbCard url={selected.lienUrl.trim()} title="" C={C}/></div>
+        )}
         {selected.lienUrl && selected.lienUrl.trim() && (() => {
           const raw = selected.lienUrl.trim();
           const href = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
@@ -7869,7 +7903,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [aForm, setAForm] = useState({ title:"", type:"formation", date:"", heure:"", lieu:"", description:"", imageUrl:"", imageData:null, medias:[] });
   const [dForm, setDForm] = useState({ title:"", content:"", imageUrl:"", imageData:null, credit:"", lienUrl:"", medias:[] });
   const [dilForm, setDilForm] = useState({ title:"", categorie:"", nomCommercial:"", subtitle:"", color:"#E05260", presentation:"", conditionnement:"", mecanismeAction:"", indication:"", contreIndications:"", pharmacocinetique:"", posologie:"", dilutionStandard:"", administration:"", effetsIndesirables:"", surveillance:"", antidote:"", interactions:"", schemaUrl:"", schemaData:null, photoUrl:"", photoData:null, medias:[] });
-  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] });
+  const [gForm, setGForm] = useState({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", contreIndications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] });
   const [rForm, setRForm] = useState({ type:"retex", title:"", author:"", date:"", lieu:"", contexte:"", situation:"", bien:"", difficultes:"", amelio:"", takehome:"", recit:"", evolution:"", medias:[] });
   const [retexAdminConfirmed, setRetexAdminConfirmed] = useState(false);
   const [rfForm, setRfForm] = useState({ titre:"", societe:"", datePublication:"", specialite:"", urlPdf:"", resume:"" });
@@ -8014,19 +8048,20 @@ function AdminScreenInner({ onNewItem, onBack }) {
       materiel: typeof gForm.materiel==="string"?gForm.materiel.split("\n").filter(Boolean):gForm.materiel,
       etapes:   typeof gForm.etapes==="string"?gForm.etapes.split("\n").filter(Boolean):gForm.etapes,
       pieges:   typeof gForm.pieges==="string"?gForm.pieges.split("\n").filter(Boolean):gForm.pieges,
+      contreIndications: typeof gForm.contreIndications==="string"?gForm.contreIndications.split("\n").map(l=>l.trim()).filter(Boolean):(gForm.contreIndications||[]),
       complications:typeof gForm.complications==="string"?gForm.complications.split("\n").filter(Boolean):gForm.complications,
       videos:(gForm.videos||[]).filter(v=>v && v.url && v.url.trim()),
     };
     if(editingG !== null) {
       const item = {...gForm, id:editingG, ...parsed};
       await updateItem("gestes","admin_gestes",item,["image"]);
-      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",infosComplementaires:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
+      setEditingG(null); setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",contreIndications:"",materiel:"",etapes:"",infosComplementaires:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
       gDraft.clear();
       showSaved("Geste modifié !");
     } else {
       const item = {...gForm, id:Date.now(), ...parsed};
       const newItem = await addItem("gestes","admin_gestes",item,["image"]);
-      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",materiel:"",etapes:"",infosComplementaires:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
+      setGForm({title:"",icon:"✂️",color:"#C0392B",category:"autre",indications:"",contreIndications:"",materiel:"",etapes:"",infosComplementaires:"",pieges:"",complications:"",videos:[],credit:"",imageUrl:"",imageData:null,medias:[]});
       gDraft.clear();
       showSaved("Geste ajouté !");
       if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:item.icon||"✂️",color:item.color||"#C0392B",nav:"gestes"});
@@ -8495,7 +8530,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
           {/* ── Publication directe admin (utilise le même formulaire que le module) ── */}
           <Card style={{marginBottom:16}}>
             <div style={{fontSize:13, fontWeight:800, color:C.navy, marginBottom:4}}>+ Publication directe (admin)</div>
-            <div style={{fontSize:11, color:C.sub, marginBottom:14}}>Même formulaire que le module RETEX/Cas</div>
+            <div style={{fontSize:11, color:C.sub, marginBottom:14}}>Publiez ici un RETEX ou un cas clinique (visible aussitôt par toute l'équipe)</div>
             <RetexSubmitForm
               onSubmit={async (form)=>{
                 const item = {...form, id:Date.now(), ts:Date.now(), reactions:{}, comments:[], date:form.date||new Date().toLocaleDateString("fr-FR")};
@@ -8920,6 +8955,9 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <label style={lbl}>Indications</label>
             <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.indications} onChange={e=>setGForm({...gForm,indications:e.target.value})} placeholder="Indications cliniques..."/>
 
+            <label style={lbl}>{"🚫 Contre-indications (1 par ligne)"}</label>
+            <textarea style={{...inp, height:70, resize:"vertical"}} value={gForm.contreIndications||""} onChange={e=>setGForm({...gForm,contreIndications:e.target.value})} placeholder={"Trouble de la coagulation non corrigé\nInfection locale au point de ponction..."}/>
+
             <label style={lbl}>{"Materiel (1 item par ligne)"}</label>
             <textarea style={{...inp, height:80, resize:"vertical"}} value={gForm.materiel} onChange={e=>setGForm({...gForm,materiel:e.target.value})} placeholder={"Seringue 10 mL\nLaryngoscope..."}/>
 
@@ -8958,7 +8996,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
               accept="image/*,video/*"
             />
 
-            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingG && <Btn onClick={()=>{ setEditingG(null); setGForm({ title:"", icon:"✂️", color:"#C0392B", category:"autre", indications:"", contreIndications:"", materiel:"", etapes:"", infosComplementaires:"", pieges:"", complications:"", videos:[], credit:"", imageUrl:"", imageData:null, medias:[] }); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             <Btn onClick={addGeste} color={C.red} style={{width:"100%"}}>{editingG ? "✅ Enregistrer les modifications" : "✂️ Ajouter le geste"}</Btn>
           </Card>
 
@@ -8973,7 +9011,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:13, fontWeight:700, color:C.text}}>{g.icon} {g.title}</div>
                   </div>
                   <div style={{display:"flex", gap:6}}>
-                    <button onClick={()=>{ setEditingG(g.id); setGForm({...g, materiel:Array.isArray(g.materiel)?g.materiel.join("\n"):g.materiel||"", etapes:Array.isArray(g.etapes)?g.etapes.join("\n"):g.etapes||"", pieges:Array.isArray(g.pieges)?g.pieges.join("\n"):g.pieges||"", complications:Array.isArray(g.complications)?g.complications.join("\n"):g.complications||"", videos:(g.videos&&g.videos.length)?g.videos:(g.videoUrl?[{title:"",url:g.videoUrl}]:[])}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
+                    <button onClick={()=>{ setEditingG(g.id); setGForm({...g, materiel:Array.isArray(g.materiel)?g.materiel.join("\n"):g.materiel||"", etapes:Array.isArray(g.etapes)?g.etapes.join("\n"):g.etapes||"", pieges:Array.isArray(g.pieges)?g.pieges.join("\n"):g.pieges||"", contreIndications:Array.isArray(g.contreIndications)?g.contreIndications.join("\n"):g.contreIndications||"", complications:Array.isArray(g.complications)?g.complications.join("\n"):g.complications||"", videos:(g.videos&&g.videos.length)?g.videos:(g.videoUrl?[{title:"",url:g.videoUrl}]:[])}); window.scrollTo(0,0); }} style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
                     <button onClick={()=>deleteItem("gestes","admin_gestes",g.id)}
                       style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>
                       Suppr.
