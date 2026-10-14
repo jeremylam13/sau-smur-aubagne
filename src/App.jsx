@@ -2709,6 +2709,7 @@ function HomeScreen({onNav}) {
           )}
 
           {/* ── Widget Saviez-vous (RETEX) ── */}
+          <ProchainementWidget onNav={onNav}/>
           <DerniersAjoutsWidget onNav={onNav}/>
 
           {/* ── Disclaimer légal ── */}
@@ -2829,6 +2830,98 @@ function FavorisScreen({ onNav }) {
   );
 }
 
+// ── Prochainement : événements de l'Agenda à venir (affiché à l'accueil) ─────
+const PROCHAINEMENT_TYPES = {
+  formation: { l:"Formation", ic:"🎓", col:"#1A73E8", lead:7  },
+  reunion:   { l:"Réunion",   ic:"👥", col:"#2E9E6B", lead:7  },
+  congres:   { l:"Congrès",   ic:"🏛️", col:"#1A3A5C", lead:30 },
+  soiree:    { l:"Soirée",    ic:"🥂", col:"#D97706", lead:7  },
+  autre:     { l:"Événement", ic:"📅", col:"#8B5CF6", lead:7  },
+};
+
+function parseAgendaDate(str) {
+  if (!str) return null;
+  const iso = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(parseInt(iso[1]), parseInt(iso[2])-1, parseInt(iso[3]));
+  const m2 = String(str).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m2) return new Date(parseInt(m2[3]), parseInt(m2[2])-1, parseInt(m2[1]));
+  const mo = {janvier:0,fevrier:1,"février":1,mars:2,avril:3,mai:4,juin:5,juillet:6,"août":7,aout:7,septembre:8,octobre:9,novembre:10,"décembre":11,decembre:11};
+  const m = String(str).match(/(\d{1,2})\s+(\S+)\s+(\d{4})/i);
+  if (m) { const mn = mo[m[2].toLowerCase()]; if (mn !== undefined) return new Date(parseInt(m[3]), mn, parseInt(m[1])); }
+  return null;
+}
+
+function ProchainementWidget({ onNav }) {
+  const C = useC();
+  const { store } = useData();
+
+  const upcoming = React.useMemo(() => {
+    const today = new Date(); today.setHours(0,0,0,0);
+    return [...AGENDA, ...(store.agenda || [])]
+      .map(e => {
+        const d = parseAgendaDate(e.date);
+        if (!d || !e.title) return null;
+        const t = PROCHAINEMENT_TYPES[e.type] || PROCHAINEMENT_TYPES.autre;
+        const diff = Math.round((d - today) / 86400000);
+        if (diff < 0 || diff > t.lead) return null;
+        return { ...e, _d: d, _diff: diff, _t: t };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a._d - b._d);
+  }, [store]);
+
+  if (!upcoming.length) return null;
+  const shown = upcoming.slice(0, 2);
+  const extra = upcoming.length - shown.length;
+
+  return (
+    <div style={{marginBottom:20}}>
+      <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:10}}>
+        <span style={{fontSize:15}}>📌</span>
+        <span style={{fontSize:12, fontWeight:800, color:C.text}}>Prochainement</span>
+      </div>
+      <div style={{display:"flex", flexDirection:"column", gap:8}}>
+        {shown.map((e, i) => {
+          const t = e._t;
+          const when = e._diff === 0 ? "Aujourd'hui" : e._diff === 1 ? "Demain" : `Dans ${e._diff} jours`;
+          const heure = e.heure && !/d[ée]finir/i.test(e.heure) ? e.heure : "";
+          const dateTxt = e._d.toLocaleDateString("fr-FR", {weekday:"long", day:"numeric", month:"long"});
+          return (
+            <button key={(e.id||i)+"-"+i} onClick={()=>onNav("agenda", {id: e.id})}
+              style={{display:"flex", alignItems:"center", gap:12, textAlign:"left", cursor:"pointer",
+                background:C.white, border:`1.5px solid ${t.col}55`, borderLeft:`4px solid ${t.col}`,
+                borderRadius:14, padding:"12px 14px", width:"100%", WebkitTapHighlightColor:"transparent",
+                boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
+              <div style={{width:38, height:38, borderRadius:11, background:t.col+"1F", flexShrink:0,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:20}}>{t.ic}</div>
+              <div style={{flex:1, minWidth:0}}>
+                <div style={{display:"flex", alignItems:"center", gap:6, marginBottom:3, flexWrap:"wrap"}}>
+                  <span style={{fontSize:10, fontWeight:800, color:t.col, background:t.col+"1F", borderRadius:6, padding:"1px 7px"}}>{t.l}</span>
+                  <span style={{fontSize:10, fontWeight:800, color:"#fff", background:e._diff<=1?"#DC2626":t.col, borderRadius:6, padding:"1px 7px"}}>{when}</span>
+                </div>
+                <div style={{fontSize:13, fontWeight:800, color:C.text, lineHeight:1.3,
+                  display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden"}}>{e.title}</div>
+                <div style={{fontSize:11, color:C.sub, marginTop:3, textTransform:"capitalize"}}>
+                  {dateTxt}{heure ? " · " + heure : ""}{e.lieu ? " · " + e.lieu : ""}
+                </div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.sub} strokeWidth="2.5" strokeLinecap="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+          );
+        })}
+        {extra > 0 && (
+          <button onClick={()=>onNav("agenda")} style={{background:"none", border:"none", cursor:"pointer",
+            fontSize:12, fontWeight:700, color:C.sub, padding:"2px 0", textAlign:"left"}}>
+            + {extra} autre{extra>1?"s":""} événement{extra>1?"s":""} →
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DerniersAjoutsWidget({ onNav }) {
   const C = useC();
   const { store } = useData();
@@ -2840,7 +2933,6 @@ function DerniersAjoutsWidget({ onNav }) {
     dilutions: { label:"Dilution",  icon:"💉",  color:"#E05260", bg:"#FEE2E2", nav:"dilutions" },
     gestes:    { label:"Geste",     icon:"✂️",  color:"#C0392B", bg:"#FEE2E2", nav:"gestes" },
     retex:     { label:"RETEX",     icon:"🔬",  color:"#2E9E6B", bg:"#D1FAE5", nav:"retex" },
-    agenda:    { label:"Agenda",    icon:"📅",  color:"#1A73E8", bg:"#DBEAFE", nav:"agenda" },
     divers:    { label:"Divers",    icon:"⚡",  color:"#1A3A5C", bg:"#EFF6FF", nav:"divers" },
     contacts:  { label:"Contact",   icon:"📒",  color:"#1A3A5C", bg:"#F0FDF4", nav:"annuaire" },
     recoflash: { label:"Reco Flash",icon:"📋",  color:"#0891B2", bg:"#CFFAFE", nav:"recoflash" },
@@ -5958,6 +6050,7 @@ function EcgTraining({ serie, onQuit }) {
               ))}
             </Card>
           )}
+          {e.lienUrl && e.lienUrl.trim() && <SourceLinkCard url={e.lienUrl} C={C}/>}
           <button onClick={()=>{
             if (idx + 1 >= total) { setFinished(true); }
             else { setIdx(idx+1); setRevealed(false); }
@@ -6088,6 +6181,7 @@ function ECGScreen({ deepLinkId, onBack }) {
                 </div>
               </Card>
             )}
+            {e.lienUrl && e.lienUrl.trim() && <SourceLinkCard url={e.lienUrl} C={C}/>}
             {e.medias?.length > 0 && (
               <div style={{marginTop:12}}>
                 <div style={{fontSize:11, fontWeight:800, color:C.navy, marginBottom:8}}>IMAGES COMPLEMENTAIRES</div>
@@ -6840,6 +6934,29 @@ function GestesScreen({ deepLinkId, onBack }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Carte "Source" cliquable (+ lecteur intégré si le lien est une vidéo YouTube / Vimeo)
+function SourceLinkCard({ url, C, label }) {
+  const raw = (url || "").trim();
+  if (!raw) return null;
+  const href = /^https?:\/\//i.test(raw) ? raw : "https://" + raw;
+  let host = raw; try { host = new URL(href).hostname.replace(/^www\./,""); } catch(e) {}
+  const isVideo = !!(ytIdOf(href) || vimeoIdOf(href));
+  return (
+    <div style={{marginTop:10, marginBottom:10}}>
+      {isVideo && <VideoThumbCard url={href} title="" C={C}/>}
+      <a href={href} target="_blank" rel="noopener noreferrer"
+        style={{display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:C.blueLight, border:`1px solid ${C.border}`, borderRadius:12, textDecoration:"none", color:C.navy}}>
+        <span style={{fontSize:20}}>🔗</span>
+        <div style={{flex:1, minWidth:0}}>
+          <div style={{fontSize:11, fontWeight:800, color:C.sub, letterSpacing:.4}}>{label || "POUR ALLER PLUS LOIN"}</div>
+          <div style={{fontSize:13, fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{host}</div>
+        </div>
+        <span style={{fontSize:16, color:C.sub}}>↗</span>
+      </a>
     </div>
   );
 }
@@ -7903,7 +8020,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   const [tab, setTab] = useState("home");
   const [saved, setSaved] = useState(null);
   const [submittingKey, setSubmittingKey] = useState(null); // anti double-clic sur les boutons "Ajouter"
-  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
+  const [eForm, setEForm] = useState({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", lienUrl:"", imageUrl:"", imageData:null, medias:[], hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null });
   const [iForm, setIForm] = useState({ title:"", type:"Scanner", context:"", question:"", diag:"", imageUrl:"", imageData:null, medias:[], mediasApres:[] });
   const [ecgConfirmed, setEcgConfirmed] = useState(false);
   const [imagerieConfirmed, setImagerieConfirmed] = useState(false);
@@ -7959,7 +8076,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
   async function addEcg() {
     if(!eForm.title.trim()) return;
     const points = typeof eForm.points==="string"?eForm.points.split("\n").filter(Boolean):eForm.points;
-    const ecgReset = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"",imageUrl:"",imageData:null,medias:[],hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null};
+    const ecgReset = {title:"",context:"",question:"",interpretation:"",diagnosis:"",points:"", lienUrl:"",imageUrl:"",imageData:null,medias:[],hasSecondEcg:false,secondTitle:"",imageUrl2:"",imageData2:null};
     if(editingE !== null) {
       const item = {...eForm, id:editingE, points, color:"#E05260"};
       await updateItem("ecgs","admin_ecgs",item,["image","image2"]);
@@ -8015,7 +8132,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
       setAForm({title:"",type:"formation",date:"",heure:"",lieu:"",description:"",imageUrl:"",imageData:null,medias:[]});
       aDraft.clear();
       showSaved("Événement ajouté !");
-      if(onNewItem) onNewItem({id:(newItem&&newItem.id)||item.id,title:item.title,icon:"📅",color:"#E8A82E",nav:"agenda"});
+      if(onNewItem) {
+        const tl = {formation:"Formation",reunion:"Réunion",congres:"Congrès",soiree:"Soirée",autre:"Événement"}[item.type] || "Événement";
+        onNewItem({
+          type:"agenda", icon:"📅", nav:"agenda",
+          title:"Nouvel événement · " + tl,
+          body:[item.title, item.date, (item.heure && !/d[ée]finir/i.test(item.heure)) ? item.heure : ""].filter(Boolean).join(" — "),
+          ref_id:(newItem&&newItem.id)||item.id,
+        });
+      }
     }
   }
 
@@ -8394,13 +8519,15 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <input style={inp} placeholder="SCA inferieur avec mirror" value={eForm.diagnosis} onChange={e=>setEForm({...eForm,diagnosis:e.target.value})}/>
             <label style={lbl}>Points pedagogiques (1 par ligne)</label>
             <textarea style={{...inp, height:80, resize:"vertical"}} placeholder={"Point 1\nPoint 2\nPoint 3"} value={eForm.points} onChange={e=>setEForm({...eForm,points:e.target.value})}/>
+            <label style={lbl}>{"🔗 Lien pour aller plus loin (optionnel — article, cours, vidéo YouTube…)"}</label>
+            <input style={inp} type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" placeholder="https://…" value={eForm.lienUrl||""} onChange={e=>setEForm({...eForm,lienUrl:e.target.value})}/>
             <MediaUploader
               label="Photos / Vidéos supplémentaires (optionnel)"
               medias={eForm.medias}
               onChange={upd => setEForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
               accept="image/*,video/*"
             />
-            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", imageUrl:"", imageData:null, medias:[], hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); setEcgConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
+            {editingE && <Btn onClick={()=>{ setEditingE(null); setEForm({ title:"", context:"", question:"", interpretation:"", diagnosis:"", points:"", lienUrl:"", imageUrl:"", imageData:null, medias:[], hasSecondEcg:false, secondTitle:"", imageUrl2:"", imageData2:null }); setEcgConfirmed(false); }} color={C.sub} style={{width:"100%", marginBottom:6}}>Annuler la modification</Btn>}
             {/* Case à cocher obligatoire */}
             <div onClick={()=>setEcgConfirmed(v=>!v)}
               style={{display:"flex", alignItems:"flex-start", gap:10, padding:"10px 12px",
