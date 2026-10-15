@@ -5991,7 +5991,7 @@ function EcgTraining({ serie, onQuit }) {
             <span style={{fontSize:14}}>🩺</span>
             <span style={{fontSize:11, fontWeight:800, color:"#1D4ED8", letterSpacing:.5}}>CONTEXTE CLINIQUE</span>
           </div>
-          <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500}}>{e.context}</div>
+          <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500, whiteSpace:"pre-wrap"}}>{e.context}</div>
         </div>
       )}
 
@@ -6030,7 +6030,7 @@ function EcgTraining({ serie, onQuit }) {
           {e.interpretation && (
             <Card style={{border:`2px solid ${e.color||"#E05260"}`, marginBottom:10}}>
               <div style={{fontSize:11, fontWeight:800, color:e.color||"#E05260", marginBottom:4}}>INTERPRÉTATION</div>
-              <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{e.interpretation}</div>
+              <div style={{fontSize:13, color:C.text, lineHeight:1.5, whiteSpace:"pre-wrap"}}>{e.interpretation}</div>
             </Card>
           )}
           {e.diagnosis && (
@@ -6130,7 +6130,7 @@ function ECGScreen({ deepLinkId, onBack }) {
               <span style={{fontSize:14}}>🩺</span>
               <span style={{fontSize:11, fontWeight:800, color:"#1D4ED8", letterSpacing:.5}}>CONTEXTE CLINIQUE</span>
             </div>
-            <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500}}>{e.context}</div>
+            <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500, whiteSpace:"pre-wrap"}}>{e.context}</div>
           </div>
         )}
 
@@ -6163,7 +6163,7 @@ function ECGScreen({ deepLinkId, onBack }) {
           <div>
             <Card style={{border:`2px solid ${e.color}`, marginBottom:10}}>
               <div style={{fontSize:11, fontWeight:800, color:e.color, marginBottom:4}}>INTERPRETATION</div>
-              <div style={{fontSize:13, color:C.text, lineHeight:1.5}}>{e.interpretation}</div>
+              <div style={{fontSize:13, color:C.text, lineHeight:1.5, whiteSpace:"pre-wrap"}}>{e.interpretation}</div>
             </Card>
             <Card style={{border:`2px solid ${C.green}`, marginBottom:10}}>
               <div style={{fontSize:11, fontWeight:800, color:C.green, marginBottom:4}}>DIAGNOSTIC</div>
@@ -6296,7 +6296,7 @@ function IconoScreen({ deepLinkId, onBack }) {
               <span style={{fontSize:14}}>🩺</span>
               <span style={{fontSize:11, fontWeight:800, color:"#1D4ED8", letterSpacing:.5}}>CONTEXTE CLINIQUE</span>
             </div>
-            <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500}}>{c.context}</div>
+            <div style={{fontSize:14, color:C.text, lineHeight:1.55, fontWeight:500, whiteSpace:"pre-wrap"}}>{c.context}</div>
           </div>
         )}
         <div style={{background:"#0A1628", borderRadius:14, padding:c.imageData?4:30, textAlign:"center", marginBottom:16}}>
@@ -8445,8 +8445,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
             {!editingE && <DraftBanner draft={eDraft} itemLabel="un ECG"/>}
             <label style={lbl}>Titre * (ex: Douleur thoracique H 58 ans)</label>
             <input style={inp} placeholder="Titre du cas" value={eForm.title} onChange={e=>setEForm({...eForm,title:e.target.value})}/>
-            <label style={lbl}>Contexte clinique</label>
-            <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="SAU - patient X ans, motif..." value={eForm.context} onChange={e=>setEForm({...eForm,context:e.target.value})}/>
+            <label style={lbl}>Contexte clinique (texte libre)</label>
+            <textarea rows={4} style={{...inp, minHeight:110, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Texte libre : SAU - patient X ans, motif... (Entrée = nouvelle ligne)" value={eForm.context} onChange={e=>setEForm({...eForm,context:e.target.value})}/>
             <label style={lbl}>Image ECG</label>
             <label style={{display:"flex", alignItems:"center", gap:10, background:eForm.imageUrl?"#E8F7F1":"#F0F4F8", border:`2px dashed ${eForm.imageUrl?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:10}}>
               <span style={{fontSize:22}}>{"📎"}</span>
@@ -8513,8 +8513,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
             )}
             <label style={lbl}>Question pedagogique</label>
             <input style={inp} placeholder="Quel est votre diagnostic ?" value={eForm.question} onChange={e=>setEForm({...eForm,question:e.target.value})}/>
-            <label style={lbl}>Interpretation</label>
-            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder="Sous-decalage ST en..." value={eForm.interpretation} onChange={e=>setEForm({...eForm,interpretation:e.target.value})}/>
+            <label style={lbl}>Interprétation (texte libre)</label>
+            <textarea rows={5} style={{...inp, minHeight:130, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Texte libre : Sous-décalage ST en... (Entrée = nouvelle ligne)" value={eForm.interpretation} onChange={e=>setEForm({...eForm,interpretation:e.target.value})}/>
             <label style={lbl}>Diagnostic final</label>
             <input style={inp} placeholder="SCA inferieur avec mirror" value={eForm.diagnosis} onChange={e=>setEForm({...eForm,diagnosis:e.target.value})}/>
             <label style={lbl}>Points pedagogiques (1 par ligne)</label>
@@ -8599,7 +8599,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
             {iForm.imageData && !iForm.isVideo && (
               <img src={iForm.imageData} alt="preview" style={{width:"100%", borderRadius:8, marginBottom:10, maxHeight:200, objectFit:"cover"}} />
             )}
-            <label style={lbl}>Contexte clinique</label>
+            <label style={lbl}>Contexte clinique (texte libre)</label>
             <textarea style={{...inp, height:60, resize:"vertical"}} placeholder="Patient X ans, presentation..." value={iForm.context} onChange={e=>setIForm({...iForm,context:e.target.value})}/>
             <label style={lbl}>Question</label>
             <input style={inp} placeholder="Quel est votre diagnostic ?" value={iForm.question} onChange={e=>setIForm({...iForm,question:e.target.value})}/>
