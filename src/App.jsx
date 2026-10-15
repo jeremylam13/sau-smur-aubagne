@@ -6539,7 +6539,7 @@ function AgendaScreen({ deepLinkId, onBack }) {
             <div style={{fontSize:12, color:C.sub}}>{"📆"} {(()=>{ const iso=selected.date&&selected.date.match(/^(\d{4})-(\d{2})-(\d{2})$/); return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : selected.date; })()}</div>
             {selected.heure && <div style={{fontSize:12, color:C.sub}}>{"🕐"} {selected.heure}</div>}
             {selected.lieu && <div style={{fontSize:12, color:C.sub}}>{"📍"} {selected.lieu}</div>}
-            {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5}}>{selected.description}</div>}
+            {selected.description && <div style={{fontSize:13, color:C.text, marginTop:4, lineHeight:1.5, whiteSpace:"pre-wrap"}}>{selected.description}</div>}
           </div>
         </Card>
         {(selected.imageData||selected.imageUrl) && (
@@ -8728,8 +8728,8 @@ function AdminScreenInner({ onNewItem, onBack }) {
             <input style={inp} placeholder="14h00 - 16h00" value={aForm.heure} onChange={e=>setAForm({...aForm,heure:e.target.value})}/>
             <label style={lbl}>Lieu</label>
             <input style={inp} placeholder="Salle reunion SAU" value={aForm.lieu} onChange={e=>setAForm({...aForm,lieu:e.target.value})}/>
-            <label style={lbl}>Description / Notes</label>
-            <textarea style={{...inp, height:70, resize:"vertical"}} placeholder="Informations complementaires..." value={aForm.description} onChange={e=>setAForm({...aForm,description:e.target.value})}/>
+            <label style={lbl}>Description / Notes (texte libre)</label>
+            <textarea rows={5} style={{...inp, minHeight:130, resize:"vertical", lineHeight:1.6, whiteSpace:"pre-wrap"}} placeholder="Texte libre : programme, infos pratiques... (Entrée = nouvelle ligne)" value={aForm.description} onChange={e=>setAForm({...aForm,description:e.target.value})}/>
             <label style={lbl}>Document ou affiche (optionnel)</label>
             <label style={{display:"flex", alignItems:"center", gap:10, background:aForm.imageUrl?"#E8F7F1":"#F0F4F8", border:`2px dashed ${aForm.imageUrl?C.green:C.border}`, borderRadius:10, padding:"12px 14px", cursor:"pointer", marginBottom:10}}>
               <span style={{fontSize:22}}>{"📎"}</span>
