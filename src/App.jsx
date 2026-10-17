@@ -32190,10 +32190,10 @@ function AcrPediaScreen({ onBack }) {
   );
 }
 
-function PediaDoses({ onBack, deepLinkId }) {
+function PediaDoses({ onBack, deepLinkId, initialPoids }) {
   const C = useC();
   const [mode, setMode] = useState("poids");
-  const [poids, setPoids] = useState("");
+  const [poids, setPoids] = useState(initialPoids ? String(initialPoids) : "");
   const [age, setAge] = useState("");
   const [ageUnit, setAgeUnit] = useState("annees"); // "annees" | "mois"
   const [search, setSearch] = useState(deepLinkId || "");
@@ -35045,6 +35045,7 @@ function CalcChoixModal({ onClose, onChoose }) {
 function CalcAdulteScreen({ onBack, deepLinkId }) {
   const C = useC();
   const [poids, setPoids] = useState("");
+  const [pedPoids, setPedPoids] = useState(null); // poids < 50 kg → bascule vers le calculateur pédiatrique
   const [openCats, setOpenCats] = useState({});
   const [search, setSearch] = useState(deepLinkId || "");
   useEffect(()=>{ const el=document.querySelector('[data-content-scroll]'); if(el) el.scrollTop=0; },[]); // scroll haut
@@ -35060,6 +35061,11 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
     ? CALC_ADULTE_MEDICAMENTS.filter(m => matchSearch(m.nom+(m.indication||"")+(m.groupe||""), search))
         .sort((a,b) => (a.nom||"").localeCompare(b.nom||"", 'fr', {sensitivity:'base'}))
     : null;
+
+  // Poids < 50 kg : on ouvre directement le calculateur pédiatrique avec le poids saisi
+  if (pedPoids !== null) {
+    return <PediaDoses key={"ped-"+pedPoids} onBack={()=>{ setPedPoids(null); setPoids(""); }} initialPoids={pedPoids}/>;
+  }
 
   return (
     <div style={{maxWidth:"100%", overflowX:"hidden"}}>
@@ -35090,7 +35096,8 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
             type="number" inputMode="numeric"
             value={poids}
             onChange={e=>setPoids(e.target.value)}
-            onBlur={e=>{ const v=parseFloat(e.target.value); if(v && v < 50) setPoids("50"); }}
+            onBlur={e=>{ const v=parseFloat(e.target.value); if(v && v > 0 && v < 50) setPedPoids(String(v)); }}
+            onKeyDown={e=>{ if(e.key==="Enter"){ const v=parseFloat(e.target.value); if(v && v > 0 && v < 50) setPedPoids(String(v)); } }}
             placeholder="75" min="50"
             style={{flex:1, minWidth:0, padding:"14px 10px", borderRadius:12,
               border:`2px solid ${poidsNum ? "#60A5FA" : "rgba(255,255,255,.3)"}`,
@@ -35112,7 +35119,13 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
         {poidsNum && poidsNum < 50 && (
           <div style={{textAlign:"center", marginTop:8, fontSize:11,
             fontWeight:700, color:"#FCD34D", background:"rgba(0,0,0,.2)", borderRadius:8, padding:"6px 10px"}}>
-            ⚠️ Minimum 50 kg — utiliser les cartes pédiatriques en dessous
+            ⚠️ Poids &lt; 50 kg — les doses adultes ne s'appliquent pas
+            <button onClick={()=>setPedPoids(String(poidsNum))} style={{
+              display:"block", width:"100%", marginTop:8, padding:"10px 12px", borderRadius:10,
+              border:"none", background:"#EC4899", color:"#fff", fontSize:13, fontWeight:800,
+              cursor:"pointer", WebkitTapHighlightColor:"transparent"}}>
+              👶 Ouvrir le calculateur pédiatrique ({poidsNum} kg)
+            </button>
           </div>
         )}
       </div>
@@ -35134,7 +35147,7 @@ function CalcAdulteScreen({ onBack, deepLinkId }) {
         ) : (
           <div>
             {searchResults.map(m => (
-              <CalcAdulteCard key={m.id} medic={m} poids={poidsNum}/>
+              <CalcAdulteCard key={m.id} medic={m} poids={poidsNum >= 50 ? poidsNum : null}/>
             ))}
           </div>
         )
