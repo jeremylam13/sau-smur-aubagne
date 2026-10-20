@@ -2006,6 +2006,7 @@ function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Phot
   }
 
   function remove(idx) {
+    if(!window.confirm("Retirer ce fichier ?")) return;
     onChange(prev => prev.filter((_,i) => i !== idx));
   }
 
@@ -5759,6 +5760,7 @@ function RetexScreen({ deepLinkId, onBack, pushNotif, onNav }) {
   }
 
   async function deleteItem(id) {
+    if(!window.confirm("Supprimer définitivement ce RETEX / cas ?\nCette action est irréversible.")) return;
     await removeRetexItem(id);
     setSelected(null);
   }
@@ -8282,6 +8284,9 @@ function AdminScreenInner({ onNewItem, onBack }) {
   }
 
   async function deleteItem(storeKey, storageKey, id, setter) {
+    // Confirmation systématique avant toute suppression depuis l'éditeur
+    const LABELS = {ecgs:"cet ECG", imagerie:"ce cas d'imagerie", agenda:"cet événement", divers:"cette fiche", dilutions:"cette dilution", gestes:"ce geste", recoflash:"cette reco"};
+    if(!window.confirm("Supprimer définitivement " + (LABELS[storeKey] || "cet élément") + " ?\nCette action est irréversible.")) return;
     if(setter) {
       setter(prev => { const n=prev.filter(x=>x.id!==id); safeSet(storageKey,JSON.stringify(n)); return n; });
     } else {
@@ -8684,7 +8689,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                     <div style={{fontSize:13, fontWeight:700, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.title}</div>
                     <div style={{fontSize:11, color:C.sub}}>{r.type==="recit"?"📖 Cas":"🔬 RETEX"} · {r.date}</div>
                   </div>
-                  <button onClick={async()=>{ await removeRetexItem(r.id); }}
+                  <button onClick={async()=>{ if(!window.confirm("Supprimer définitivement ce RETEX / cas ?\nCette action est irréversible.")) return; await removeRetexItem(r.id); }}
                     style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", flexShrink:0, marginLeft:8}}>Suppr.</button>
                 </div>
               ))}
@@ -9114,7 +9119,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                   onChange={e=>{ const arr=[...gForm.videos]; arr[i]={...arr[i], title:e.target.value}; setGForm({...gForm, videos:arr}); }}/>
                 <input style={{...inp, flex:1}} placeholder="https://youtube.com/watch?v=... ou https://vimeo.com/..." value={v.url||""}
                   onChange={e=>{ const arr=[...gForm.videos]; arr[i]={...arr[i], url:e.target.value}; setGForm({...gForm, videos:arr}); }}/>
-                <button onClick={()=>{ const arr=gForm.videos.filter((_,j)=>j!==i); setGForm({...gForm, videos:arr}); }}
+                <button onClick={()=>{ if(!window.confirm("Retirer cette vidéo ?")) return; const arr=gForm.videos.filter((_,j)=>j!==i); setGForm({...gForm, videos:arr}); }}
                   style={{background:"none", border:"none", color:C.red, fontSize:20, cursor:"pointer", padding:"0 4px", flexShrink:0}}>✕</button>
               </div>
             ))}
@@ -9200,7 +9205,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                   <div style={{display:"flex", gap:6, flexShrink:0}}>
                     <button onClick={()=>{ setEditingRf(r.id); setRfForm({titre:r.titre||"", societe:r.societe||"", datePublication:r.datePublication||"", specialite:r.specialite||"", urlPdf:r.urlPdf||"", resume:r.resume||""}); window.scrollTo(0,0); }}
                       style={{background:"#E8A82E", color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>✏️</button>
-                    <button onClick={()=>{ if(window.confirm("Supprimer cette reco ?")) deleteItem("recoflash","admin_recoflash",r.id); }}
+                    <button onClick={()=>{ deleteItem("recoflash","admin_recoflash",r.id); }}
                       style={{background:C.red, color:"#fff", border:"none", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer"}}>Suppr.</button>
                   </div>
                 </div>
@@ -9365,7 +9370,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                   placeholder="04 XX XX XX XX"
                   style={{flex:1, border:`1px solid ${C.border}`, borderRadius:8, padding:"9px 10px", fontSize:13, color:C.text, background:C.bg, fontFamily:"inherit"}}/>
                 {cForm.telephones.length>1 && (
-                  <button onClick={()=>setCForm(f=>({...f, telephones:f.telephones.filter((_,j)=>j!==i)}))}
+                  <button onClick={()=>{ if(window.confirm("Retirer ce numéro ?")) setCForm(f=>({...f, telephones:f.telephones.filter((_,j)=>j!==i)})); }}
                     style={{background:C.redLight, border:"none", borderRadius:8, padding:"9px 10px", color:C.red, fontSize:14, cursor:"pointer", flexShrink:0}}>✕</button>
                 )}
               </div>
@@ -9412,7 +9417,7 @@ function AdminScreenInner({ onNewItem, onBack }) {
                       </div>
                     ))}
                   </div>
-                  <button onClick={async()=>{ await removeItem("contacts","admin_contacts",p.id); showSaved("Contact supprimé"); }}
+                  <button onClick={async()=>{ if(!window.confirm("Supprimer définitivement ce contact ?")) return; await removeItem("contacts","admin_contacts",p.id); showSaved("Contact supprimé"); }}
                     style={{background:C.redLight, border:"none", borderRadius:8, padding:"6px 10px", color:C.red, fontSize:12, cursor:"pointer", flexShrink:0, marginLeft:8}}>
                     🗑️
                   </button>
