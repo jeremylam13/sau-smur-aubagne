@@ -2496,31 +2496,32 @@ function HomeScreen({onNav}) {
   },[]);
 
   const shortcuts = [
-    // ── Ligne 1 : action immédiate ──
+    // ── Ligne 1 ──
     {id:"calcChoix",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
     {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
-    {id:"anomalies",  icon:"🧪", label:"Anomalies bio",     color:"#2E7EAD", bg:"#EBF4FA"},
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
     // ── Ligne 2 ──
-    {id:"checklists", icon:"📋", label:"Checklists",         color:"#2563EB", bg:"#DBEAFE"},
     {id:"antibioguide", icon:"🦠", label:"Antibioguide",    color:"#16A34A", bg:"#DCFCE7"},
+    {id:"anomalies",  icon:"🧪", label:"Anomalies bio",     color:"#2E7EAD", bg:"#EBF4FA"},
     {id:"pedia",      icon:"👶", label:"Pédiatrie",         color:"#EC4899", bg:"#FCE7F3"},
-    {id:"echo",       icon:"SONDE", label:"Échographie",       color:"#0E7490", bg:"#CFFAFE"},
+    {id:"checklists", icon:"📋", label:"Checklists",         color:"#2563EB", bg:"#DBEAFE"},
     // ── Ligne 3 ──
-    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
+    {id:"retex",      icon:"🔬", label:"RETEX/cas",         color:C.green,   bg:C.greenLight},
     {id:"ecg",        icon:"❤️", label:"ECG",               color:C.red,     bg:C.redLight},
     {id:"imagerie",   icon:"🖼️", label:"Imagerie",          color:"#9B59B6", bg:"#F3E8FF"},
-    {id:"retex",      icon:"🔬", label:"RETEX/cas",         color:C.green,   bg:C.greenLight},
+    {id:"recoflash",  icon:"⚡", label:"Reco Flash",        color:"#0EA5E9", bg:"#E0F2FE"},
     // ── Ligne 4 ──
+    {id:"echo",       icon:"SONDE", label:"Échographie",       color:"#0E7490", bg:"#CFFAFE"},
     {id:"quiz",       icon:"🧠", label:"Quiz",              color:"#6366F1", bg:"#E0E7FF"},
-    {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
-    {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
     {id:"divers",     icon:"⚡", label:"Divers",            color:C.navy,    bg:C.blueLight},
+    {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
     // ── Ligne 5 ──
     {id:"annuaire",   icon:"📒", label:"Contacts",          color:C.navy,    bg:C.blueLight, hideForConsultatif:true},
-    {id:"agenda",     icon:"📅", label:"Agenda",            color:C.amber,   bg:C.amberLight},
+    {id:"sondages",   icon:"📊", label:"Sondages",          color:"#7C3AED", bg:"#F3E8FF"},
+    {id:"favoris",    icon:"⭐", label:"Favoris",           color:"#F59E0B", bg:"#FEF7E8"},
     {id:"admin",      icon:"🗂️", label:"Éditeur de fiches", color:"#475569", bg:"#F1F5F9", hideForConsultatif:true},
+    // ── Ligne 6 ──
     {id:"comptes",    icon:"👥", label:"Comptes",           color:"#0F172A", bg:"#F1F5F9", adminOnly:true},
   ];
 
