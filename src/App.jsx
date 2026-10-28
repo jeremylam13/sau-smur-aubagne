@@ -144,8 +144,8 @@ function itemToRow(table, item) {
   delete r.schemaData;
   delete r.photoData;
   // On retire aussi les données binaires des médias pour l'upsert DB
-  if (r.medias) r.medias = (r.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "" }));
-  if (r.mediasApres) r.mediasApres = (r.mediasApres || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "" }));
+  if (r.medias) r.medias = (r.medias || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "", title: m.title || "" }));
+  if (r.mediasApres) r.mediasApres = (r.mediasApres || []).map(m => ({ url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "", title: m.title || "" }));
   if ("mediasApres" in r) { r.medias_apres = r.mediasApres; delete r.mediasApres; }
 
   if ("imageUrl"         in r) { r.image_url          = r.imageUrl;         delete r.imageUrl; }
@@ -1469,7 +1469,7 @@ function DataProvider({ children }) {
     const cleanItem = {
       ...item,
       medias: (item.medias || []).filter(m => !m._uploading).map(m => ({
-        url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || ""
+        url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "", title: m.title || ""
       })),
     };
     // POST Supabase via supaFetch
@@ -1501,7 +1501,7 @@ function DataProvider({ children }) {
     const cleanItem = {
       ...item,
       medias: (item.medias || []).filter(m => !m._uploading).map(m => ({
-        url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || ""
+        url: m.url, name: m.name, isVideo: m.isVideo, credit: m.credit || "", title: m.title || ""
       })),
     };
     const row = itemToRow("retex", cleanItem);
@@ -1976,7 +1976,7 @@ function StarBtn({ filled, onToggle, color }) {
 }
 
 // ── MediaUploader : upload multiple photos/videos ──────────────────────────
-function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Photos / Vidéos" }) {
+function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Photos / Vidéos", withTitle=false }) {
   const C = useC();
   const fileRef = useRef(null);
 
@@ -1987,13 +1987,13 @@ function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Phot
         const tmpId = Date.now() + "_" + Math.random().toString(36).slice(2, 8);
         const isVideo = file.type.startsWith("video/");
         // Placeholder avec data en local pour preview immédiat
-        const tmpItem = { url: "⏳ upload_" + tmpId, name: file.name, data: ev.target.result, isVideo, credit: "", _uploading: true };
+        const tmpItem = { url: "⏳ upload_" + tmpId, name: file.name, data: ev.target.result, isVideo, credit: "", title: "", _uploading: true };
         onChange(prev => [...prev, tmpItem]);
         // Upload réel vers Supabase Storage
         try {
           const publicUrl = await uploadMedia(file.name, ev.target.result);
           // Remplace l'item temporaire par l'item final avec la vraie URL
-          onChange(prev => prev.map(m => m.url === tmpItem.url ? { url: publicUrl, name: file.name, data: ev.target.result, isVideo, credit: m.credit || "", _uploading: false } : m));
+          onChange(prev => prev.map(m => m.url === tmpItem.url ? { url: publicUrl, name: file.name, data: ev.target.result, isVideo, credit: m.credit || "", title: m.title || "", _uploading: false } : m));
         } catch(err) {
           console.error("uploadMedia error", err);
           alert("Erreur upload : " + err.message);
@@ -2008,6 +2008,10 @@ function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Phot
   function remove(idx) {
     if(!window.confirm("Retirer ce fichier ?")) return;
     onChange(prev => prev.filter((_,i) => i !== idx));
+  }
+
+  function updateTitle(idx, val) {
+    onChange(prev => prev.map((m,i) => i===idx ? {...m, title:val} : m));
   }
 
   function updateCredit(idx, val) {
@@ -2038,6 +2042,17 @@ function MediaUploader({ medias, onChange, accept="image/*,video/*", label="Phot
                   ✕
                 </button>
               </div>
+              {/* Titre de la photo (RETEX / cas) */}
+              {withTitle && (
+                <div style={{background:"#1A2B3C", padding:"8px 10px", borderBottom:"1px solid rgba(255,255,255,.1)"}}>
+                  <input
+                    value={m.title||""}
+                    onChange={e=>updateTitle(i, e.target.value)}
+                    placeholder="Titre de la photo (ex : ECG initial, scanner J1…)"
+                    style={{width:"100%", background:"transparent", border:"none", outline:"none", fontSize:13, fontWeight:700, color:"#fff", boxSizing:"border-box"}}
+                  />
+                </div>
+              )}
               {/* Champ crédit */}
               <div style={{background:"#1A2B3C", padding:"6px 10px"}}>
                 <input
@@ -2220,6 +2235,12 @@ function MediaGallery({ medias }) {
                 </div>
               )}
             </div>
+            {/* Titre si présent */}
+            {m.title && (
+              <div style={{background:"#1A2B3C", padding:"8px 10px", fontSize:13, fontWeight:700, color:"#fff", lineHeight:1.35}}>
+                {m.title}
+              </div>
+            )}
             {/* Crédit si présent */}
             {m.credit && (
               <div style={{background:"#1A2B3C", padding:"4px 10px", fontSize:10, color:"rgba(255,255,255,.55)", fontStyle:"italic"}}>
@@ -5302,6 +5323,7 @@ function RetexSubmitForm({ onSubmit, onCancel, initial }) {
           medias={form.medias||[]}
           onChange={upd => setForm(f=>({...f, medias: typeof upd==="function"?upd(f.medias):upd}))}
           accept="image/*,video/*,application/pdf"
+          withTitle
         />
 
         <label style={{...lbl, marginTop:14}}>🎯 Message à retenir *</label>
