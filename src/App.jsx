@@ -2251,6 +2251,7 @@ function useGlobalSearch(store) {
       dilutions: [...DILUTIONS, ...(store.dilutions||[])],
       gestes: [...GESTES, ...(store.gestes||[])],
       scores: SCORES_LIST,
+      anomalies: ANOMALIES_SEARCH,
       quizzes: store.quizzes||[],
       recoflash: store.recoflash||[],
       antibioguide: Abg_MODULES,
@@ -2337,6 +2338,14 @@ function GlobalSearch({query, allData, onNav, onClose}) {
         title:s.title, sub:s.subtitle||"Score clinique", nav:"scores", id:s.id});
   });
 
+  // Anomalies biologiques
+  (allData.anomalies||[]).forEach(a=>{
+    const hay=[a.title,a.sub,a.kw].filter(Boolean).join(" ");
+    if(matchSearch(hay, query))
+      results.push({type:"anomalie", icon:"🧪", color:"#2E7EAD", bg:"#EBF4FA",
+        title:a.title, sub:a.sub, nav:"anomalies", id:a.id});
+  });
+
   // Quiz
   (allData.quizzes||[]).forEach(qz=>{
     const hay=[qz.title,qz.description,qz.theme].filter(Boolean).join(" ");
@@ -2390,6 +2399,7 @@ function GlobalSearch({query, allData, onNav, onClose}) {
     {type:"medic_adulte", label:"Calc. doses — Adulte"},
     {type:"medic_pedia",  label:"Calc. doses — Pédiatrie"},
     {type:"score",        label:"Scores"},
+    {type:"anomalie",     label:"Anomalies biologiques"},
     {type:"ecg",          label:"ECG"},
     {type:"imagerie",     label:"Imagerie"},
     {type:"reco",         label:"Reco Flash"},
@@ -2489,6 +2499,7 @@ function HomeScreen({onNav}) {
     // ── Ligne 1 : action immédiate ──
     {id:"calcChoix",  icon:"⚖️",  label:"Calcul de doses",   color:"#0891B2", bg:"#CFFAFE"},
     {id:"scores",     icon:"🧮", label:"Scores",            color:"#0D9488", bg:"#CCFBF1"},
+    {id:"anomalies",  icon:"🧪", label:"Anomalies bio",     color:"#2E7EAD", bg:"#EBF4FA"},
     {id:"dilutions",  icon:"💉", label:"Dilutions",         color:"#E05260", bg:"#FDF0F1"},
     {id:"gestes",     icon:"✂️",  label:"Gestes urgents",    color:"#C0392B", bg:"#FDECEA"},
     // ── Ligne 2 ──
@@ -38051,6 +38062,4701 @@ function EchoAtlasEditor() {
   );
 }
 
+
+// ════════════════════════════════════════════════════════════════════════
+// MODULE « ANOMALIES BIOLOGIQUES » — code isolé dans une fonction pour ne pas
+// entrer en conflit avec les noms (Card, Btn, COLOR...) du reste de l'application.
+// ════════════════════════════════════════════════════════════════════════
+const AnomaliesBio = (() => {
+
+/* ════════════════════════════════════════════════════════════════════════
+   THEME — copié tel quel depuis App.jsx (LIGHT / DARK) pour garder
+   exactement le même graphisme que l'application mère.
+   Quand tu réintégreras ce fichier dans App.jsx, supprime ce bloc et
+   utilise le useC()/DataCtx existants à la place.
+   ════════════════════════════════════════════════════════════════════════ */
+const LIGHT = {
+  bg:"#F0F4F8", card:"#FFFFFF", navy:"#1A3A5C", blue:"#2E7EAD", blueLight:"#EBF4FA",
+  green:"#2E9E6B", greenLight:"#E8F7F1", red:"#E05260", redLight:"#FDF0F1",
+  amber:"#E8A82E", amberLight:"#FEF7E8", text:"#1A2B3C", sub:"#5A7184",
+  border:"#DCE8F0", white:"#FFFFFF",
+};
+const DARK = {
+  bg:"#0F172A", card:"#1E293B", navy:"#0F172A", blue:"#38BDF8", blueLight:"#0F2942",
+  green:"#34D399", greenLight:"#0D2B20", red:"#F87171", redLight:"#2D1217",
+  amber:"#FBBF24", amberLight:"#2A1F05", text:"#F1F5F9", sub:"#94A3B8",
+  border:"#334155", white:"#1E293B",
+};
+
+/* ── Petits composants repris de App.jsx ─────────────────────────────── */
+function Card({ children, onClick, style = {}, C }) {
+  return (
+    <div onClick={onClick} style={{
+      background: C.card, borderRadius: 14, padding: 16,
+      boxShadow: "0 2px 12px rgba(26,58,92,.07)", border: `1px solid ${C.border}`,
+      cursor: onClick ? "pointer" : "default", ...style,
+    }}>{children}</div>
+  );
+}
+function Btn({ children, onClick, color, outline, disabled, style = {}, C }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: outline ? "transparent" : (color || C.blue),
+      color: outline ? (color || C.blue) : "#fff",
+      border: outline ? `2px solid ${color || C.blue}` : "none",
+      borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 13,
+      cursor: disabled ? "default" : "pointer", opacity: disabled ? .5 : 1,
+      touchAction: "manipulation", ...style,
+    }}>{children}</button>
+  );
+}
+function BackBtn({ onClick, C }) {
+  return (
+    <button onClick={onClick} style={{
+      background: "none", border: "none", color: C.sub, fontWeight: 700, fontSize: 13,
+      cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 16,
+    }}>« Retour</button>
+  );
+}
+function OptionBtn({ label, help, selected, onSelect, color, C }) {
+  return (
+    <button onClick={onSelect} style={{
+      width: "100%", display: "flex", flexDirection: "column", alignItems: "flex-start",
+      textAlign: "left", padding: "12px 14px", marginBottom: 8,
+      border: `1.5px solid ${selected ? color : C.border}`,
+      background: selected ? color + "14" : C.white, borderRadius: 11,
+      cursor: "pointer", touchAction: "manipulation",
+    }}>
+      <span style={{ fontSize: 13, fontWeight: selected ? 800 : 600, color: selected ? color : C.text }}>{label}</span>
+      {help && <span style={{ fontSize: 11, color: C.sub, fontStyle: "italic", marginTop: 2 }}>{help}</span>}
+    </button>
+  );
+}
+/* Carte compacte pour une étape déjà répondue (empilement type AlgoTree) */
+function StepSummary({ title, value, onEdit, color, C }) {
+  return (
+    <div style={{
+      display: "flex", justifyContent: "space-between", alignItems: "center",
+      background: C.white, border: `1px solid ${C.border}`, borderLeft: `4px solid ${color}`,
+      borderRadius: 12, padding: "10px 14px", marginBottom: 10,
+    }}>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 800, color: C.sub, letterSpacing: .3 }}>{title}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginTop: 2 }}>{value}</div>
+      </div>
+      <button onClick={onEdit} style={{ background: "none", border: "none", color, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        Modifier
+      </button>
+    </div>
+  );
+}
+
+/* ── Mémorisation de la saisie (écran verrouillé, onglet rechargé) ──
+   Les valeurs saisies sont gardées en local sur l'appareil (pas de nom, pas d'identifiant patient),
+   expirent après 1 h d'inactivité, et sont effacées dès qu'on rouvre un module depuis la liste ou qu'on quitte l'écran « Anomalies biologiques ». */
+const AB_KEY = "anomalies-etat-v1";
+const AB_TTL = 1 * 3600 * 1000;
+let AB_STATE = null;
+let AB_TIMER = null;
+function abLoad() {
+  if (AB_STATE) return AB_STATE;
+  try {
+    const r = JSON.parse(localStorage.getItem(AB_KEY) || "null");
+    AB_STATE = r && r.d && Date.now() - r.ts < AB_TTL ? r.d : {};
+  } catch (e) { AB_STATE = {}; }
+  return AB_STATE;
+}
+function abFlush() {
+  clearTimeout(AB_TIMER);
+  try { localStorage.setItem(AB_KEY, JSON.stringify({ ts: Date.now(), d: abLoad() })); } catch (e) { /* stockage indisponible */ }
+}
+function abSave() { clearTimeout(AB_TIMER); AB_TIMER = setTimeout(abFlush, 250); }
+function abClear(prefix) {
+  const s = abLoad();
+  Object.keys(s).forEach(k => { if (!prefix || k.startsWith(prefix)) delete s[k]; });
+  abFlush();
+}
+function useP(key, init) {
+  const [v, setV] = useState(() => {
+    const s = abLoad();
+    return key in s ? s[key] : (typeof init === "function" ? init() : init);
+  });
+  useEffect(() => { abLoad()[key] = v; abSave(); }, [key, v]);
+  return [v, setV];
+}
+
+/* Bloc explicatif dépliable "Pourquoi ?" — pédagogie pour les internes */
+function Pourquoi({ children, C }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        background: "none", border: "none", padding: 0, cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 6, color: C.blue, fontSize: 11, fontWeight: 700,
+      }}>
+        <span>{open ? "▾" : "▸"}</span> Pourquoi ?
+      </button>
+      {open && (
+        <div style={{ background: C.blueLight, borderRadius: 10, padding: "10px 12px", marginTop: 6, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Bloc dépliable fermé par défaut — explications pour étudiants / pour comprendre (l'urgentiste voit d'abord la conduite à tenir) */
+function Comprendre({ children, C, label = "Comprendre" }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        background: "none", border: "none", padding: 0, cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 6, color: C.blue, fontSize: 11, fontWeight: 700,
+      }}>
+        <span>{open ? "▾" : "▸"}</span> {label}
+      </button>
+      {open && (
+        <div style={{ background: C.blueLight, borderRadius: 10, padding: "10px 12px", marginTop: 6, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Carte « conduite à tenir » — résumé en tête de module : gravité, geste immédiat, examens, suite */
+function ConduiteCard({ C, color, gravite, geste, examens, suite }) {
+  const row = (label, content) => content ? (
+    <div style={{ display: "flex", gap: 8, marginBottom: 5, fontSize: 12, lineHeight: 1.5, color: C.text }}>
+      <div style={{ width: 64, flexShrink: 0, fontSize: 10, fontWeight: 800, color: C.sub, paddingTop: 2 }}>{label}</div>
+      <div style={{ flex: 1 }}>{content}</div>
+    </div>
+  ) : null;
+  return (
+    <div style={{ background: C.white, border: `2px solid ${color}`, borderRadius: 14, padding: "12px 14px", marginBottom: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color, marginBottom: 6, letterSpacing: .3 }}>CONDUITE À TENIR — EN BREF</div>
+      {row("GRAVITÉ", gravite)}
+      {row("GESTE", geste)}
+      {row("EXAMENS", examens)}
+      {row("SUITE", suite)}
+    </div>
+  );
+}
+
+/* Bandeau « résultat provisoire » — affiché quand une donnée est marquée non disponible */
+function Provisoire({ C, children }) {
+  return (
+    <div style={{ background: C.amberLight, border: `2px solid ${C.amber}`, borderRadius: 14, padding: "10px 14px", marginBottom: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, marginBottom: 4 }}>⏳ RÉSULTAT PROVISOIRE — À COMPLÉTER</div>
+      <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>{children}</div>
+    </div>
+  );
+}
+
+/* Bouton « non disponible / pas encore » — discret, pleine largeur */
+function NonDispoBtn({ C, onClick, selected, children }) {
+  return (
+    <button onClick={onClick} style={{
+      width: "100%", marginTop: 8, padding: "9px 12px", borderRadius: 10, cursor: "pointer",
+      border: `1.5px dashed ${selected ? C.amber : C.border}`, background: selected ? C.amberLight : "transparent",
+      color: selected ? C.amber : C.sub, fontSize: 12, fontWeight: 700,
+    }}>{children}</button>
+  );
+}
+
+/* Ligne "dernière mise à jour" — affichée à côté des sources */
+function MiseAJour({ date, C }) {
+  return <div style={{ fontSize: 10, color: C.sub, marginBottom: 10, fontStyle: "italic" }}>Dernière mise à jour : {date}</div>;
+}
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   DONNÉES MÉDICALES — VALIDÉES PAR JEREMY (dysnatrémie, volet hyponatrémie)
+   Seuils, vitesse de correction et protocole d'urgence confirmés en chat.
+   Référence : Reco européennes 2014 (ESE/ERA-EDTA/ESICM) — NDT 2014.
+   ⚠️ Toute anomalie non encore validée par Jeremy est marquée "À VALIDER".
+   ════════════════════════════════════════════════════════════════════════ */
+const COLOR = "#2E7EAD";
+
+const ETIOLOGIES = {
+  hypo_renale: {
+    label: "Hyponatrémie hypovolémique — pertes rénales",
+    causes: "Diurétiques (surtout thiazidiques), insuffisance surrénalienne, néphropathie avec perte de sel, syndrome de perte de sel cérébral.",
+    exams: ["Ionogramme urinaire (Na urinaire > 20-30 mmol/L)", "Cortisol / ACTH si suspicion d'insuffisance surrénale", "Bilan rénal complet"],
+    pec: ["Arrêt des diurétiques et de tout facteur causal", "Remplissage par sérum salé isotonique 0,9%", "Surveillance rapprochée de la natrémie pendant la correction"],
+  },
+  hypo_indetermine: {
+    label: "Hyponatrémie hypovolémique — cause indéterminée",
+    causes: "Hypovolémie clinique sans orientation rénale / extra-rénale (ionogramme urinaire non disponible, contexte flou, diurétiques non précisés).",
+    exams: ["⚠️ Ionogramme urinaire (Na, K) AVANT le remplissage si possible : il devient ininterprétable après", "Cortisolémie avant remplissage si insuffisance surrénalienne possible (hypotension, hyperkaliémie, hypoglycémie, corticothérapie)", "Ionogramme, urée, créatinine, glycémie", "Recherche de diurétiques (thiazidiques surtout) dans le traitement habituel", "Recherche de pertes digestives, cutanées, 3e secteur"],
+    pec: ["Arrêt des diurétiques et de tout facteur causal", "Remplissage par sérum salé isotonique 0,9% (le rythme est à adapter à l'état hémodynamique)", "⚠️ Risque de surcorrection : une fois la volémie restaurée, l'ADH s'éteint → diurèse aqueuse brutale. Surveiller la diurèse (une diurèse abondante diluée doit alerter) et contrôler la natrémie de façon rapprochée", "Respecter les limites de correction (≤ 10 mmol/L / 24 h ; ≤ 8 si facteur de risque de myélinolyse)", "Si surcorrection : eau libre (G5%) ± desmopressine", "Si insuffisance surrénalienne suspectée avec instabilité : prélever le cortisol puis ne pas retarder l'hydrocortisone"],
+  },
+  inc_indetermine: {
+    label: "Hyponatrémie — volémie difficile à apprécier",
+    causes: "Examen clinique non concluant (œdèmes discrets, pli cutané peu fiable, hémodynamique limite, patient âgé ou confus, traitements diurétiques).",
+    exams: ["⚠️ Ionogramme urinaire (Na, K) et osmolalité urinaire AVANT tout remplissage : ils deviennent ininterprétables après", "Osmolalité plasmatique, glycémie, urée, créatinine, uricémie", "TSH, cortisolémie avant remplissage si insuffisance surrénalienne possible", "Recherche de diurétiques (thiazidiques surtout), de pertes digestives, cutanées, de 3e secteur et de surcharge (œdèmes, épanchements)", "Réexaminer le patient : pli cutané, TA couché/debout, poids, œdèmes, turgescence jugulaire"],
+    pec: ["Si symptômes sévères : le protocole d'urgence (NaCl 3 %) s'applique quelle que soit la volémie", "Sans symptôme sévère : pas de remplissage ni de restriction hydrique systématiques avant d'avoir précisé la volémie", "Arrêt des diurétiques et de tout facteur causal", "Respecter les limites de correction (≤ 10 mmol/L / 24 h ; ≤ 8 si facteur de risque de myélinolyse) et contrôler la natrémie de façon rapprochée", "Reprendre l'algorithme dès que la volémie est précisée"],
+  },
+  hypo_extrarenale: {
+    label: "Hyponatrémie hypovolémique — pertes extra-rénales",
+    causes: "Pertes digestives (vomissements, diarrhées), 3e secteur, sudation excessive, brûlures.",
+    exams: ["Ionogramme urinaire (Na urinaire < 20 mmol/L)", "Bilan de la cause des pertes (digestif, cutané...)"],
+    pec: ["Compensation des pertes", "Sérum salé isotonique 0,9%", "Traitement de la cause"],
+  },
+  eu_indetermine: {
+    label: "Hyponatrémie euvolémique — cause indéterminée (SIADH / hypothyroïdie / insuffisance surrénalienne / potomanie)",
+    causes: "Le SIADH est un diagnostic d'exclusion : on le retient après avoir écarté hypothyroïdie et insuffisance surrénalienne.",
+    exams: ["Ionogramme urinaire sur échantillon (Na, K, urée) — voir calcul ci-dessus", "TSH", "Cortisolémie (de préférence à 8 h ; un cortisol aléatoire bas dans ce contexte doit alerter)", "Uricémie et urée (basses en faveur d'un SIADH)", "Recherche de médicaments inducteurs (ISRS, carbamazépine, thiazidiques...) et de causes de SIADH (pulmonaire, cérébrale, néoplasique, douleur, nausées)"],
+    pec: ["Restriction hydrique en attendant les résultats", "Pas de sérum salé hypertonique en l'absence de symptômes sévères", "Si insuffisance surrénalienne suspectée avec instabilité hémodynamique : prélever le cortisol puis ne pas retarder l'hydrocortisone", "Traiter la cause une fois identifiée"],
+  },
+  eu_siadh: {
+    label: "Hyponatrémie euvolémique — SIADH",
+    causes: "Néoplasie, atteinte du SNC, pathologie pulmonaire, médicaments (ISRS, carbamazépine...), douleur/stress post-opératoire.",
+    exams: ["Osmolalité urinaire (> 100 mOsm/kg)", "Na urinaire (souvent > 30-40 mmol/L)", "TSH, cortisol pour éliminer un diagnostic différentiel", "Recherche étiologique (imagerie thoracique/cérébrale selon contexte)"],
+    pec: ["Restriction hydrique 500-700 mL/j en 1ère intention si non sévère", "Traitement de la cause si identifiée", "Sérum salé hypertonique si symptômes sévères (cf. protocole d'urgence)"],
+  },
+  eu_hypothyroidie: {
+    label: "Hyponatrémie euvolémique — Hypothyroïdie",
+    causes: "Hypothyroïdie profonde (rare cause isolée, souvent associée à d'autres facteurs).",
+    exams: ["TSH, T4L"],
+    pec: ["Traitement substitutif de l'hypothyroïdie", "Restriction hydrique 500-700 mL/j en attendant"],
+  },
+  eu_surrenale: {
+    label: "Hyponatrémie euvolémique — Insuffisance surrénalienne",
+    causes: "Insuffisance corticotrope (souvent normovolémique par atteinte isolée du cortisol).",
+    exams: ["Cortisol de base ± test au Synacthène", "ACTH"],
+    pec: ["Hydrocortisone IV en urgence si suspicion forte", "Ne pas attendre les résultats si instabilité"],
+  },
+  eu_potomanie: {
+    label: "Hyponatrémie euvolémique — Potomanie / apports hypotoniques excessifs",
+    causes: "Potomanie psychiatrique, régime « tea and toast », bière (beer potomania), apports IV hypotoniques excessifs.",
+    exams: ["Osmolalité urinaire basse (< 100 mOsm/kg)", "Enquête des apports hydriques"],
+    pec: ["Restriction hydrique 500-700 mL/j", "Correction très prudente : risque de sur-correction rapide dans ce contexte"],
+  },
+  hyper_indetermine: {
+    label: "Hyponatrémie hypervolémique — cause indéterminée",
+    causes: "Surcharge hydrosodée (œdèmes, épanchements, prise de poids) sans cause évidente : insuffisance cardiaque, cirrhose, syndrome néphrotique, insuffisance rénale.",
+    exams: ["NT-proBNP/BNP, ECG, échocardiographie (cœur)", "Bilan hépatique, TP, albuminémie, échographie abdominale (foie)", "Créatinine, urée, DFG (rein) ; protéinurie / rapport protéinurie-créatininurie (néphrotique)", "Ionogramme urinaire sur échantillon, de préférence avant diurétique", "Traitement habituel (diurétiques, AINS...)"],
+    pec: ["Restriction hydrique 500-700 mL/j", "Restriction sodée", "Diurétiques de l'anse (furosémide) si surcharge, selon l'état hémodynamique et rénal", "Éviter le sérum salé isotonique ou hypertonique en l'absence de symptômes sévères (aggrave la surcharge)", "Respecter les limites de correction (≤ 10 mmol/L / 24 h ; ≤ 8 si facteur de risque de myélinolyse)", "Traiter la cause une fois identifiée"],
+  },
+  hyper_ic: {
+    label: "Hyponatrémie hypervolémique — Insuffisance cardiaque",
+    causes: "Insuffisance cardiaque décompensée avec baisse du volume circulant efficace.",
+    exams: ["BNP/NT-proBNP", "Échocardiographie", "Bilan rénal"],
+    pec: ["Restriction hydrique 500-700 mL/j", "Optimisation du traitement de l'insuffisance cardiaque", "Diurétiques de l'anse (Furosémide)"],
+  },
+  hyper_cirrhose: {
+    label: "Hyponatrémie hypervolémique — Cirrhose",
+    causes: "Cirrhose avec ascite, vasodilatation splanchnique.",
+    exams: ["Bilan hépatique", "Échographie abdominale"],
+    pec: ["Restriction hydrique 500-700 mL/j", "Traitement de la cirrhose décompensée", "Éviter les diurétiques natriurétiques agressifs"],
+  },
+  hyper_nephrotique: {
+    label: "Hyponatrémie hypervolémique — Syndrome néphrotique",
+    causes: "Fuite protéique majeure, hypoalbuminémie.",
+    exams: ["Protéinurie des 24h / rapport protéinurie-créatininurie", "Albuminémie"],
+    pec: ["Restriction hydrosodée", "Traitement étiologique néphrologique"],
+  },
+  hyper_ira: {
+    label: "Hyponatrémie hypervolémique — Insuffisance rénale aiguë/chronique",
+    causes: "Incapacité rénale à éliminer l'eau libre.",
+    exams: ["Bilan rénal complet", "Échographie rénale"],
+    pec: ["Restriction hydrosodée", "Discuter épuration extra-rénale si surcharge sévère ou hyperkaliémie associée"],
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════════════
+   COMPOSANT PRINCIPAL — Algorithme Hyponatrémie
+   ════════════════════════════════════════════════════════════════════════ */
+function HyponatremieAlgo({ pre, onBack, C, noOwnBack, naBasse, naHaute }) {
+  const [na, setNa] = useP("dysnatremie.HyponatremieAlgo.na", pre?.na ?? "");
+  const [symptomes, setSymptomes] = useP("dysnatremie.HyponatremieAlgo.symptomes", null); // true/false
+  const [glycemie, setGlycemie] = useP("dysnatremie.HyponatremieAlgo.glycemie", pre?.gly ?? ""); // g/L, optionnel — pour Na corrigé
+  const [risqueMCP, setRisqueMCP] = useP("dysnatremie.HyponatremieAlgo.risqueMCP", false); // dénutrition/alcoolisme/cirrhose/hypoK sévère
+  const [uree, setUree] = useP("dysnatremie.HyponatremieAlgo.uree", ""); // mmol/L, optionnel — pour osmolalité calculée
+  const [uNa, setUNa] = useP("dysnatremie.HyponatremieAlgo.uNa", ""); const [uK, setUK] = useP("dysnatremie.HyponatremieAlgo.uK", ""); const [uUree, setUUree] = useP("dysnatremie.HyponatremieAlgo.uUree", ""); // ionogramme urinaire
+  const [osmolarite, setOsmolarite] = useP("dysnatremie.HyponatremieAlgo.osmolarite", null); // 'basse' | 'normale_haute'
+  const [volemie, setVolemie] = useP("dysnatremie.HyponatremieAlgo.volemie", null); // 'hypo' | 'eu' | 'hyper'
+  const [cause, setCause] = useP("dysnatremie.HyponatremieAlgo.cause", null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [na && symptomes !== null, osmolarite, volemie, cause]);
+
+  const naVal = parseFloat(na);
+  const naValid = !isNaN(naVal);
+  const glyVal = parseFloat((glycemie || "").replace(",", "."));
+  const glyValid = !isNaN(glyVal) && glyVal > 0;
+  const naCorrige = glyValid ? naVal + 1.6 * (glyVal - 1) : null;
+  const ureeVal = parseFloat((uree || "").replace(",", "."));
+  const ureeValid = !isNaN(ureeVal) && ureeVal >= 0;
+  // Osmolalité calculée (mOsm/kg) = 2 × Na + glycémie (mmol/L) + urée (mmol/L) ; glycémie g/L × 5,55
+  const osmCalc = naValid && glyValid && ureeValid ? 2 * naVal + glyVal * 5.55 + ureeVal : null;
+  const pf = v => parseFloat((v || "").replace(",", "."));
+  const uNaV = pf(uNa), uKV = pf(uK), uUreeV = pf(uUree);
+  const furst = naValid && !isNaN(uNaV) && !isNaN(uKV) && naVal > 0 ? (uNaV + uKV) / naVal : null;
+  const osmUEst = !isNaN(uNaV) && !isNaN(uKV) && !isNaN(uUreeV) ? 2 * (uNaV + uKV) + uUreeV : null;
+  const osmSuggere = osmCalc === null ? null : (osmCalc < 275 ? "basse" : "normale_haute");
+
+  let severite = null, sevColor = C.sub, sevBg = C.border;
+  if (naValid) {
+    if (naVal >= 130) { severite = "Légère"; sevColor = C.amber; sevBg = C.amberLight; }
+    else if (naVal >= 125) { severite = "Modérée"; sevColor = C.amber; sevBg = C.amberLight; }
+    else { severite = "Sévère"; sevColor = C.red; sevBg = C.redLight; }
+  }
+  const urgent = naValid && symptomes === true;
+  const naBasseAsympto = naValid && naVal < 120 && symptomes === false;
+
+  function reset() {
+    setNa(""); setSymptomes(null); setUree(""); setUNa(""); setUK(""); setUUree(""); setOsmolarite(null); setVolemie(null); setCause(null);
+  }
+
+  const step1Done = naValid && symptomes !== null;
+  const step2Done = step1Done && osmolarite !== null;
+  const pseudo = osmolarite === "normale_haute";
+  const step3Done = step2Done && !pseudo && volemie !== null;
+
+  const causeOptions = {
+    hypo: [
+      { v: "hypo_renale", label: "Na urinaire > 20-30 mmol/L", help: "Pertes rénales (diurétiques, insuffisance surrénale...)" },
+      { v: "hypo_extrarenale", label: "Na urinaire < 20 mmol/L", help: "Pertes extra-rénales (digestif, 3e secteur, sudation...)" },
+      { v: "hypo_indetermine", label: "Cause indéterminée / Na urinaire non disponible", help: "Conduite à tenir en urgence" },
+    ],
+    eu: [
+      { v: "eu_siadh", label: "SIADH", help: "Osmolalité urinaire > 100 mOsm/kg, contexte évocateur" },
+      { v: "eu_hypothyroidie", label: "Hypothyroïdie" },
+      { v: "eu_surrenale", label: "Insuffisance surrénalienne" },
+      { v: "eu_potomanie", label: "Potomanie / apports hypotoniques" },
+      { v: "eu_indetermine", label: "Cause indéterminée", help: "Aide au tri avec l'ionogramme urinaire" },
+    ],
+    hyper: [
+      { v: "hyper_ic", label: "Insuffisance cardiaque" },
+      { v: "hyper_cirrhose", label: "Cirrhose" },
+      { v: "hyper_nephrotique", label: "Syndrome néphrotique" },
+      { v: "hyper_ira", label: "Insuffisance rénale aiguë/chronique" },
+      { v: "hyper_indetermine", label: "Cause indéterminée", help: "Conduite à tenir en urgence" },
+    ],
+    inc: [{ v: "inc_indetermine", label: "Volémie difficile à apprécier" }],
+  };
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: COLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🧂</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hyponatrémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Raisonnement diagnostique et prise en charge</div>
+        </div>
+      </div>
+
+      {/* ── Étape 1 : seuils ─────────────────────────────────────────── */}
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Natrémie mesurée</div>
+          {naBasse && naHaute && (
+            <div style={{ fontSize: 10, color: C.sub, marginBottom: 8, fontStyle: "italic" }}>Normale locale : {naBasse}-{naHaute} mmol/L</div>
+          )}
+          <input
+            type="number" inputMode="decimal" placeholder="Ex : 128"
+            value={na} onChange={e => setNa(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 15, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }}
+          />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Glycémie (g/L) — optionnel, pour dépister une fausse hyponatrémie</div>
+          <input
+            type="number" inputMode="decimal" placeholder="Ex : 4,5"
+            value={glycemie} onChange={e => setGlycemie(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }}
+          />
+          {glyValid && (
+            <div style={{ background: C.blueLight, borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: C.text }}>
+              Na corrigé ≈ <b>{naCorrige.toFixed(1)} mmol/L</b> {Math.abs(naCorrige - naVal) >= 3 && "— écart notable, penser à une fausse hyponatrémie de transfert"}
+            </div>
+          )}
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Signes neurologiques sévères (confusion, coma, convulsions) ?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setSymptomes(true)} color={C.red} outline={symptomes !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setSymptomes(false)} color={C.green} outline={symptomes !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={sevColor}
+          title="NATRÉMIE"
+          value={`${naVal} mmol/L — ${severite}${symptomes ? " · symptômes sévères" : ""}`}
+          onEdit={reset} />
+      )}
+
+      {step1Done && (
+        <ConduiteCard C={C} color={sevColor}
+          gravite={<b>{severite}{symptomes ? " — signes neurologiques sévères" : " — sans signe neurologique sévère"}</b>}
+          geste={urgent
+            ? <span><b>NaCl 3 %</b> 150 mL sur 20 min, contrôle de la natrémie en fin de perfusion (3 bolus max)</span>
+            : naBasseAsympto ? <span>Pas de NaCl 3 % : surveillance rapprochée, hospitalisation</span>
+            : <span>Pas d'urgence : bilan étiologique, pas de correction rapide</span>}
+          examens={<span>Osmolalité, volémie clinique, ionogramme urinaire (Na, K, urée)</span>}
+          suite={<span>Correction ≤ {risqueMCP ? "8" : "10"} mmol/L/24 h{risqueMCP ? " (risque de myélinolyse)" : ""}</span>} />
+      )}
+
+      {/* ── Alerte urgence — visible dès que connue, quelle que soit l'étiologie ── */}
+      {step1Done && urgent && (
+        <>
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 PROTOCOLE D'URGENCE — hyponatrémie sévère symptomatique</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>NaCl 3%</b> : bolus IV de <b>150 mL sur 20 min</b><br/>
+            • Contrôle natrémie <b>en fin de perfusion</b> (voie d'abord maintenue)<br/>
+            • Si symptômes persistent : répéter, jusqu'à <b>2 fois maximum</b> (3 bolus au total, 450 mL max)<br/>
+            • <b>Arrêt du SSH 3%</b> dès que : symptômes améliorés <b>OU</b> +5 mmol/L atteint <b>OU</b> natrémie atteint <b>120 mmol/L</b><br/>
+            <span style={{ fontStyle: "italic", color: C.sub }}>Réf. : recommandations SFAR/SRLF/SFMU.</span>
+          </div>
+        </div>
+        <div style={{ background: C.amberLight, border: `1px solid ${C.amber}`, borderRadius: 12, padding: "10px 14px", marginBottom: 12, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
+          ⚠️ <b>Si surcorrection accidentelle</b> : interrompre immédiatement les apports sodés, envisager de l'eau libre (G5% IV) +/- desmopressine (Minirin) pour freiner la correction.
+        </div>
+        </>
+      )}
+
+      {step1Done && naBasseAsympto && (
+        <div style={{ background: C.amberLight, border: `2px solid ${C.amber}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.amber, marginBottom: 6 }}>⚠️ Natrémie &lt; 120 mmol/L sans signe neurologique sévère</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>Pas de bolus de NaCl 3 %</b> en l'absence de symptômes sévères<br/>
+            • Surveillance rapprochée (natrémie répétée, neurologique), hospitalisation<br/>
+            • Bilan étiologique ci-dessous ; respecter la limite de correction<br/>
+            • Si des symptômes apparaissent (confusion, convulsions, coma) : protocole d'urgence NaCl 3 %
+          </div>
+        </div>
+      )}
+
+      {step1Done && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer" }}>
+          <input type="checkbox" checked={risqueMCP} onChange={e => setRisqueMCP(e.target.checked)} style={{ width: 16, height: 16 }} />
+          <span style={{ fontSize: 11, color: C.sub }}>Facteur de risque de myélinolyse (dénutrition, alcoolisme chronique, cirrhose, hypokaliémie sévère associée)</span>
+        </label>
+      )}
+
+      {step1Done && (
+        <div style={{ background: C.blueLight, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          <b>Limite de correction (hors symptômes aigus sévères)</b> : ≤ 10 mmol/L les 1ères 24h, puis ≤ 8 mmol/L/24h ensuite (max 18 mmol/L en 48h)
+          {risqueMCP && <div style={{ color: C.red, fontWeight: 700, marginTop: 4 }}>⚠️ Facteur de risque coché → limiter à ≤ 8 mmol/L/24h dès la 1ère 24h</div>}
+          <Pourquoi C={C}>
+            En hyponatrémie chronique, le cerveau s'est adapté en expulsant des osmoles pour limiter l'œdème cérébral. Si on corrige le sodium trop vite, le cerveau n'a pas le temps de réimporter ces osmoles : il se rétracte brutalement, ce qui peut léser la myéline du tronc cérébral (myélinolyse centropontine, souvent irréversible). D'où la règle : corriger vite si symptômes aigus sévères (œdème cérébral qui tue tout de suite), puis ralentir dès que les symptômes s'améliorent.
+          </Pourquoi>
+        </div>
+      )}
+
+      {/* ── Étape 2 : osmolalité ─────────────────────────────────────── */}
+      {step1Done && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Osmolalité plasmatique</div>
+          <div style={{ background: C.blueLight, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🧮 Calcul automatique</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Natrémie : <b>{naVal} mmol/L</b> (étape 1)</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Glycémie (g/L)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 1,1" value={glycemie} onChange={e => setGlycemie(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Urée (mmol/L)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 5" value={uree} onChange={e => setUree(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+            {osmCalc !== null ? (
+              <div style={{ background: osmSuggere === "basse" ? C.greenLight : C.amberLight, borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: osmSuggere === "basse" ? C.green : C.amber }}>Osmolalité calculée ≈ {osmCalc.toFixed(0)} mOsm/kg</div>
+                <div style={{ fontSize: 12, color: C.text, margin: "4px 0 8px", lineHeight: 1.5 }}>
+                  {osmSuggere === "basse"
+                    ? "< 275 : hyponatrémie hypotonique vraie → poursuivre vers l'évaluation de la volémie."
+                    : "≥ 275 : osmolalité normale ou élevée → pseudo-hyponatrémie ou hyponatrémie hypertonique (hyperglycémie...)."}
+                </div>
+                <Btn C={C} color={COLOR} onClick={() => setOsmolarite(osmSuggere)}>Valider ce résultat</Btn>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: C.sub, fontStyle: "italic" }}>Renseigner glycémie et urée pour obtenir le calcul.</div>
+            )}
+            <Comprendre C={C} label="Formule et limites">
+              2 × Na + glycémie (mmol/L = g/L × 5,55) + urée (mmol/L). ⚠️ Le calcul ne détecte pas une pseudo-hyponatrémie par hyperlipidémie/hyperprotidémie : en cas de doute, demander l'osmolalité mesurée.
+            </Comprendre>
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, margin: "0 0 8px", fontWeight: 700 }}>Ou choisir directement (osmolalité mesurée) :</div>
+          <OptionBtn C={C} color={COLOR} label="Basse (< 275 mOsm/kg)" help="Hyponatrémie hypotonique vraie" selected={osmolarite === "basse"} onSelect={() => setOsmolarite("basse")} />
+          <OptionBtn C={C} color={COLOR} label="Normale ou élevée" help="Pseudo-hyponatrémie ou hyponatrémie hypertonique" selected={osmolarite === "normale_haute"} onSelect={() => setOsmolarite("normale_haute")} />
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="OSMOLALITÉ" value={osmolarite === "basse" ? "Basse — vraie hyponatrémie" : "Normale/élevée — pseudo-hyponatrémie"} onEdit={() => { setOsmolarite(null); setVolemie(null); setCause(null); }} />
+      ))}
+
+      {/* ── Résultat : pseudo-hyponatrémie (fin de branche) ─────────── */}
+      {step2Done && pseudo && (
+        <Card C={C} style={{ border: `2px solid ${COLOR}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: COLOR, marginBottom: 6 }}>ÉTIOLOGIE PROBABLE</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>Pseudo-hyponatrémie / hyponatrémie hypertonique</div>
+          <div style={{ fontSize: 12, color: C.sub, marginBottom: 10, lineHeight: 1.5 }}>Hyperglycémie majeure, hyperprotidémie, hyperlipidémie sévère — la natrémie mesurée ne reflète pas l'eau libre corporelle.</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>EXAMENS</div>
+          <div style={{ fontSize: 12, color: C.text, marginBottom: 10 }}>Glycémie, protidémie, bilan lipidique — Na corrigé selon la formule de Katz si hyperglycémie.</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>PRISE EN CHARGE</div>
+          <div style={{ fontSize: 12, color: C.text }}>Traiter la cause sous-jacente (ex. insulinothérapie si hyperglycémie). Pas de sérum salé hypertonique.</div>
+        </Card>
+      )}
+
+      {/* ── Étape 3 : volémie clinique ───────────────────────────────── */}
+      {step2Done && !pseudo && (!step3Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>3. Volémie clinique</div>
+          <OptionBtn C={C} color={COLOR} label="Hypovolémique" help="Pli cutané, hypotension, tachycardie" selected={volemie === "hypo"} onSelect={() => setVolemie("hypo")} />
+          <OptionBtn C={C} color={COLOR} label="Euvolémique" help="Pas de signe de déshydratation ni de surcharge" selected={volemie === "eu"} onSelect={() => setVolemie("eu")} />
+          <OptionBtn C={C} color={COLOR} label="Hypervolémique" help="Œdèmes, épanchements, surcharge" selected={volemie === "hyper"} onSelect={() => setVolemie("hyper")} />
+          <NonDispoBtn C={C} onClick={() => { setVolemie("inc"); setCause("inc_indetermine"); }}>Volémie difficile à apprécier</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="VOLÉMIE CLINIQUE" value={volemie === "hypo" ? "Hypovolémique" : volemie === "eu" ? "Euvolémique" : volemie === "inc" ? "Difficile à apprécier" : "Hypervolémique"} onEdit={() => { setVolemie(null); setCause(null); }} />
+      ))}
+
+      {/* ── Étape 4 : orientation étiologique ────────────────────────── */}
+      {step3Done && (!cause ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Orientation étiologique</div>
+          {causeOptions[volemie].map(o => (
+            <OptionBtn key={o.v} C={C} color={COLOR} label={o.label} help={o.help} selected={cause === o.v} onSelect={() => setCause(o.v)} />
+          ))}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="ORIENTATION" value={causeOptions[volemie].find(o => o.v === cause)?.label} onEdit={() => setCause(null)} />
+      ))}
+
+      {cause === "hyper_indetermine" && (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 8 }}>🧮 Na urinaire (si disponible) — optionnel</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 12" value={uNa} onChange={e => setUNa(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+          {!isNaN(uNaV) && uNa !== "" && (
+            <div style={{ background: uNaV < 30 ? C.greenLight : C.amberLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+              {uNaV < 30 ? "< 30 mmol/L : rétention sodée avec volume circulant efficace bas → évoque insuffisance cardiaque, cirrhose ou syndrome néphrotique." : "> 30 mmol/L : natriurèse conservée → évoque insuffisance rénale (aiguë/chronique) ou effet des diurétiques."}
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 8 }}>Un Na urinaire prélevé sous diurétique est peu fiable.</div>
+        </Card>
+      )}
+
+      {cause === "hypo_indetermine" && (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 8 }}>🧮 Na urinaire (si disponible) — optionnel</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 12" value={uNa} onChange={e => setUNa(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+          {!isNaN(uNaV) && uNa !== "" && (
+            <div style={{ background: uNaV < 20 ? C.greenLight : uNaV > 30 ? C.amberLight : C.blueLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+              {uNaV < 20 ? "< 20 mmol/L : évoque des pertes extra-rénales (digestives, 3e secteur, sudation)." : uNaV > 30 ? "> 30 mmol/L : évoque des pertes rénales (diurétiques, insuffisance surrénalienne, perte de sel) — chercher les diurétiques et le cortisol." : "20-30 mmol/L : zone intermédiaire, interpréter avec la clinique."}
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 8 }}>Un Na urinaire prélevé après remplissage ou sous diurétique est peu fiable.</div>
+        </Card>
+      )}
+
+      {/* ── Aide au tri : cause euvolémique indéterminée ───────────── */}
+      {cause === "eu_indetermine" && (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 8 }}>🧮 Ionogramme urinaire (échantillon) — optionnel</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Na urinaire (mmol/L)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 45" value={uNa} onChange={e => setUNa(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>K urinaire (mmol/L)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 30" value={uK} onChange={e => setUK(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Urée urinaire (mmol/L) — optionnel, pour l'osmolalité estimée</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 200" value={uUree} onChange={e => setUUree(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+          {furst !== null && (
+            <div style={{ background: furst < 0.5 ? C.greenLight : furst > 1 ? C.amberLight : C.blueLight, borderRadius: 10, padding: "10px 12px", marginTop: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy }}>Rapport (Na u + K u) / Na plasmatique = {furst.toFixed(2)}</div>
+              <div style={{ fontSize: 12, color: C.text, marginTop: 4, lineHeight: 1.5 }}>
+                {furst < 0.5 ? "< 0,5 : urine très diluée, excrétion d'eau libre → évoque potomanie / apports hypotoniques." : furst > 1 ? "> 1 : urine concentrée, ADH active → évoque SIADH, hypothyroïdie ou insuffisance surrénalienne (restriction hydrique peu efficace)." : "Entre 0,5 et 1 : zone intermédiaire, restriction hydrique possible mais efficacité incertaine — interpréter avec la clinique."}
+              </div>
+              {uNaV > 30 && <div style={{ fontSize: 11, color: C.sub, marginTop: 4 }}>Na urinaire &gt; 30 mmol/L : cohérent avec SIADH / hypothyroïdie / insuffisance surrénalienne.</div>}
+            </div>
+          )}
+          {osmUEst !== null && (
+            <div style={{ fontSize: 12, color: C.text, marginTop: 8 }}>Osmolalité urinaire estimée ≈ <b>{osmUEst.toFixed(0)} mOsm/kg</b> ({osmUEst <= 100 ? "≤ 100 : ADH freinée" : "> 100 : ADH active"})</div>
+          )}
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 8, lineHeight: 1.5 }}>Formules : Furst = (Na u + K u) / Na p ; osmolalité urinaire estimée = 2 × (Na u + K u) + urée u. Estimation, non substituable à une osmolalité mesurée. Réf. : ESE/ERA-EDTA 2014.</div>
+        </Card>
+      )}
+
+      {/* ── Résultat final ───────────────────────────────────────────── */}
+      {cause && ETIOLOGIES[cause] && (
+        <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE PROBABLE</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>{ETIOLOGIES[cause].label}</div>
+          <Comprendre C={C} label="Comprendre cette étiologie"><div style={{ lineHeight: 1.5 }}>{ETIOLOGIES[cause].causes}</div></Comprendre>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>EXAMENS COMPLÉMENTAIRES</div>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES[cause].exams.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>PRISE EN CHARGE</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES[cause].pec.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </Card>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : SFAR/SRLF/SFMU, recommandations européennes 2014 (ESE/ERA-EDTA/ESICM) — vérifié sfar.org</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {(step1Done) && (
+        <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>
+      )}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HYPERNATRÉMIE — VALIDÉE PAR JEREMY
+   Seuils 1&2 validés par analogie hypo. Vitesse 0,5 mmol/L/h et limite
+   10 mmol/L/24h validées. Forme grave → glucosé 2,5% IV (validé).
+   Pas de protocole diabète insipide pour l'instant (à compléter plus tard).
+   ════════════════════════════════════════════════════════════════════════ */
+const ETIOLOGIES_HYPER = {
+  hypo_extrarenale_h: {
+    label: "Hypernatrémie hypovolémique — pertes extra-rénales",
+    causes: "Pertes digestives (diarrhées, vomissements), sudation excessive, brûlures — Na urinaire bas (< 20 mmol/L).",
+    exams: ["Ionogramme urinaire (Na urinaire bas)", "Bilan de la cause des pertes"],
+    pec: ["1. Traiter le choc/hypovolémie avec NaCl 0,9%", "2. Puis corriger le déficit en eau libre (PO/SNG ou G5% IV) dès la tension stable", "Traiter la cause"],
+  },
+  hypo_renale_h: {
+    label: "Hypernatrémie hypovolémique — pertes rénales",
+    causes: "Diurèse osmotique (hyperglycémie, mannitol), diurétiques de l'anse — Na urinaire variable.",
+    exams: ["Ionogramme urinaire", "Glycémie (éliminer une diurèse osmotique hyperglycémique)"],
+    pec: ["1. Traiter le choc/hypovolémie avec NaCl 0,9%", "2. Puis corriger le déficit en eau libre dès la tension stable", "Corriger la cause de la diurèse osmotique"],
+  },
+  eu_dic: {
+    label: "Hypernatrémie euvolémique — Diabète insipide central",
+    causes: "Défaut de sécrétion d'ADH (post-chirurgie hypophysaire, traumatisme crânien, tumeur, idiopathique).",
+    exams: ["Osmolalité urinaire basse malgré hypernatrémie", "IRM hypophysaire selon contexte"],
+    pec: ["Éviter le NaCl", "Eau libre PO/SNG (idéal) ou G5% IV si voie entérale impossible", "⚠️ Protocole desmopressine non encore défini dans ce module — à valider avec toi ultérieurement"],
+  },
+  eu_din: {
+    label: "Hypernatrémie euvolémique — Diabète insipide néphrogénique",
+    causes: "Résistance rénale à l'ADH (lithium, hypercalcémie, hypokaliémie, néphropathies).",
+    exams: ["Osmolalité urinaire basse", "Calcémie, kaliémie", "Recherche de toxique (lithium)"],
+    pec: ["Éviter le NaCl", "Eau libre PO/SNG ou G5% IV", "Corriger la cause (arrêt lithium, correction calcémie/kaliémie)"],
+  },
+  eu_hypodipsie: {
+    label: "Hypernatrémie euvolémique — Hypodipsie / pertes insensibles",
+    causes: "Trouble de la sensation de soif (atteinte hypothalamique, sujet âgé), fièvre, polypnée, environnement chaud.",
+    exams: ["Contexte clinique", "Bilan hypothalamique si suspicion d'hypodipsie centrale"],
+    pec: ["Apports hydriques systématiques PO/SNG (ne pas attendre la soif)", "G5% IV si voie entérale impossible", "Traiter la cause des pertes insensibles"],
+  },
+  inc_indetermine_h: {
+    label: "Hypernatrémie — volémie difficile à apprécier",
+    causes: "Examen clinique non concluant (déshydratation et surcharge possibles, patient âgé ou confus, apports sodés récents).",
+    exams: ["Ionogramme urinaire et osmolalité urinaire AVANT remplissage si possible", "Glycémie (diurèse osmotique), urée, créatinine, calcémie, kaliémie", "Relecture des apports IV reçus (NaCl hypertonique, bicarbonate)", "Réexaminer le patient : pli cutané, TA, œdèmes, poids, diurèse"],
+    pec: ["En cas de choc ou d'hypovolémie hémodynamique : NaCl 0,9 % d'abord", "Puis corriger le déficit en eau libre (PO/SNG ou G5 % IV) dès l'hémodynamique stabilisée", "Vitesse de correction ≤ 0,5 mmol/L/h et ≤ 10 mmol/L/24 h", "Contrôles rapprochés de la natrémie et de la diurèse", "Reprendre l'algorithme dès que la volémie est précisée"],
+  },
+  hypo_indetermine_h: {
+    label: "Hypernatrémie hypovolémique — cause indéterminée",
+    causes: "Déshydratation globale (perte d'eau et de sodium, avec perte d'eau prédominante) sans orientation rénale / extra-rénale.",
+    exams: ["Ionogramme urinaire et osmolalité urinaire AVANT remplissage si possible", "Glycémie (diurèse osmotique), urée, créatinine", "Recherche de pertes digestives, cutanées, fièvre, diurétiques, mannitol"],
+    pec: ["1. Traiter l'hypovolémie / le choc avec NaCl 0,9% d'abord", "2. Puis corriger le déficit en eau libre (PO/SNG ou G5% IV) dès l'hémodynamique stabilisée", "Vitesse de correction ≤ 0,5 mmol/L/h et ≤ 10 mmol/L/24 h", "Contrôles rapprochés de la natrémie et de la diurèse", "Traiter la cause une fois identifiée"],
+  },
+  eu_indetermine_h: {
+    label: "Hypernatrémie euvolémique — cause indéterminée",
+    causes: "Perte d'eau pure sans signe de déshydratation : diabète insipide (central ou néphrogénique), pertes insensibles, hypodipsie.",
+    exams: ["Osmolalité urinaire (voir repères ci-dessus) et diurèse", "Calcémie, kaliémie, glycémie", "Médicaments et toxiques (lithium...)", "Contexte neurologique : traumatisme crânien, chirurgie hypophysaire, tumeur", "Test à la desmopressine / bilan endocrinien selon avis spécialisé"],
+    pec: ["Éviter le NaCl", "Eau libre PO/SNG (idéal) ou G5% IV si voie entérale impossible", "Vitesse de correction ≤ 0,5 mmol/L/h et ≤ 10 mmol/L/24 h", "Contrôles rapprochés de la natrémie et de la diurèse", "⚠️ Protocole desmopressine non défini dans ce module — avis endocrinologue / réanimateur", "Corriger la cause (arrêt lithium, correction calcémie/kaliémie)"],
+  },
+  hyper_indetermine_h: {
+    label: "Hypernatrémie hypervolémique — cause indéterminée",
+    causes: "Surcharge sodée avec œdèmes : apports sodés (NaCl hypertonique, bicarbonate), hyperaldostéronisme, dialyse.",
+    exams: ["Relecture des apports IV reçus (NaCl hypertonique, bicarbonate, antibiotiques en sels sodés)", "Fonction rénale, ionogramme urinaire", "Bilan hormonal si suspicion d'hyperaldostéronisme"],
+    pec: ["Arrêter les apports sodés", "Diurétiques de l'anse (furosémide) pour favoriser l'élimination du sodium", "Compenser les pertes d'eau libre associées (G5% IV)", "Vitesse de correction ≤ 0,5 mmol/L/h et ≤ 10 mmol/L/24 h", "Si insuffisance rénale sévère : avis néphrologue (épuration)"],
+  },
+  hyper_apport: {
+    label: "Hypernatrémie hypervolémique — Apport excessif de sodium",
+    causes: "Perfusion de NaCl hypertonique ou de bicarbonate de sodium, hyperaldostéronisme primaire (plus rare).",
+    exams: ["Relecture des apports IV reçus", "Bilan hormonal si suspicion d'hyperaldostéronisme"],
+    pec: ["Arrêter les apports sodés", "Diurétiques de l'anse (Furosémide) pour favoriser l'élimination du sodium", "Compenser les pertes d'eau libre associées (G5% IV)"],
+  },
+};
+
+function HypernatremieAlgo({ pre, onBack, C, noOwnBack, naBasse, naHaute }) {
+  const [na, setNa] = useP("dysnatremie.HypernatremieAlgo.na", pre?.na ?? "");
+  const [symptomes, setSymptomes] = useP("dysnatremie.HypernatremieAlgo.symptomes", null);
+  const [cinetique, setCinetique] = useP("dysnatremie.HypernatremieAlgo.cinetique", null); // 'aigue' | 'chronique'
+  const [uOsm, setUOsm] = useP("dysnatremie.HypernatremieAlgo.uOsm", ""); // osmolalité urinaire (mOsm/kg), optionnel
+  const [volemie, setVolemie] = useP("dysnatremie.HypernatremieAlgo.volemie", null);
+  const [cause, setCause] = useP("dysnatremie.HypernatremieAlgo.cause", null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [na && symptomes !== null, cinetique, volemie, cause]);
+
+  const naVal = parseFloat(na);
+  const naValid = !isNaN(naVal);
+  const uOsmV = parseFloat((uOsm || "").replace(",", "."));
+
+  let severite = null, sevColor = C.sub;
+  if (naValid) {
+    if (naVal < 150) { severite = "Légère"; sevColor = C.amber; }
+    else if (naVal < 160) { severite = "Modérée"; sevColor = C.amber; }
+    else { severite = "Sévère"; sevColor = C.red; }
+  }
+  const grave = naValid && (naVal >= 160 || symptomes === true);
+
+  function reset() { setUOsm(""); setNa(""); setSymptomes(null); setCinetique(null); setVolemie(null); setCause(null); }
+
+  const step1Done = naValid && symptomes !== null;
+  const step1bDone = step1Done && cinetique !== null;
+  const step2Done = step1bDone && volemie !== null;
+
+  const causeOptions = {
+    hypo: [
+      { v: "hypo_extrarenale_h", label: "Na urinaire bas (< 20 mmol/L)", help: "Pertes extra-rénales (digestif, sudation, brûlures)" },
+      { v: "hypo_renale_h", label: "Na urinaire variable", help: "Pertes rénales (diurèse osmotique, diurétiques)" },
+      { v: "hypo_indetermine_h", label: "Cause indéterminée", help: "Conduite à tenir en urgence" },
+    ],
+    eu: [
+      { v: "eu_dic", label: "Diabète insipide central" },
+      { v: "eu_din", label: "Diabète insipide néphrogénique" },
+      { v: "eu_hypodipsie", label: "Hypodipsie / pertes insensibles" },
+      { v: "eu_indetermine_h", label: "Cause indéterminée", help: "Aide au tri avec l'osmolalité urinaire" },
+    ],
+    hyper: [
+      { v: "hyper_apport", label: "Apport sodé excessif", help: "NaCl/bicarbonate hypertonique, hyperaldostéronisme" },
+      { v: "hyper_indetermine_h", label: "Cause indéterminée", help: "Conduite à tenir en urgence" },
+    ],
+    inc: [{ v: "inc_indetermine_h", label: "Volémie difficile à apprécier" }],
+  };
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: COLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🧂</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hypernatrémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Raisonnement diagnostique et prise en charge</div>
+        </div>
+      </div>
+
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Natrémie mesurée</div>
+          {naBasse && naHaute && (
+            <div style={{ fontSize: 10, color: C.sub, marginBottom: 8, fontStyle: "italic" }}>Normale locale : {naBasse}-{naHaute} mmol/L</div>
+          )}
+          <input
+            type="number" inputMode="decimal" placeholder="Ex : 152"
+            value={na} onChange={e => setNa(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 15, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }}
+          />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Signes neurologiques sévères (confusion, coma, convulsions) ?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setSymptomes(true)} color={C.red} outline={symptomes !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setSymptomes(false)} color={C.green} outline={symptomes !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={sevColor} title="NATRÉMIE" value={`${naVal} mmol/L — ${severite}${symptomes ? " · symptômes sévères" : ""}`} onEdit={reset} />
+      )}
+
+      {step1Done && (!step1bDone ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Cinétique d'installation</div>
+          <OptionBtn C={C} color={COLOR} label="Aiguë (< 48h)" help="Souvent iatrogène ou post-ACR — mal tolérée, correction plus rapide possible" selected={cinetique === "aigue"} onSelect={() => setCinetique("aigue")} />
+          <OptionBtn C={C} color={COLOR} label="Chronique ou durée inconnue" help="Cas le plus fréquent aux urgences — prudence extrême" selected={cinetique === "chronique"} onSelect={() => setCinetique("chronique")} />
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="CINÉTIQUE" value={cinetique === "aigue" ? "Aiguë (< 48h)" : "Chronique / durée inconnue"} onEdit={() => setCinetique(null)} />
+      ))}
+
+      {step1bDone && (
+        <ConduiteCard C={C} color={grave ? C.red : sevColor}
+          gravite={<b>{severite}{symptomes ? " — signes neurologiques sévères" : ""}{grave ? " · forme grave" : ""}</b>}
+          geste={<span>Eau libre : <b>voie entérale</b> (PO/SNG) ; sinon <b>G5 % IV</b>. NaCl 0,9 % d'abord si choc ou hypovolémie sévère</span>}
+          examens="Volémie clinique, osmolalité urinaire, diurèse ; natrémie toutes les 4 à 6 h"
+          suite={cinetique === "aigue" ? "Correction ≈ 1 mmol/L/h jusqu'à 145 mmol/L" : "Correction ≤ 0,5 mmol/L/h et ≤ 10 mmol/L/24 h"} />
+      )}
+
+      {step1bDone && (
+        <div style={{ background: C.blueLight, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          <b>Vitesse de correction recommandée</b> :{" "}
+          {cinetique === "aigue"
+            ? "≈ 1 mmol/L/h jusqu'à un chiffre de sécurité de 145 mmol/L (le cerveau n'a pas eu le temps de s'adapter)"
+            : "≤ 0,5 mmol/L/h, max 10 mmol/L/24h (prudence extrême — le cerveau s'est adapté en 48h)"}
+        </div>
+      )}
+
+      {step1bDone && grave && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 FORME GRAVE — Na ≥ 160 mmol/L ou symptômes sévères</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>Voie entérale privilégiée</b> si patient conscient sans trouble de déglutition : eau plate PO ou par SNG (la plus physiologique et sûre)<br/>
+            • Si voie entérale impossible : <b>Glucosé 5% (G5%) IV</b> — soluté de choix, le glucose est métabolisé et ne laisse que de l'eau libre<br/>
+            • Alternative : <b>NaCl 0,45%</b> si instabilité hémodynamique modérée associée<br/>
+            • ⚠️ Le NaCl 0,9% n'est pas le soluté optimal pour corriger un déficit en eau pure<br/>
+            • Ionogramme (ou GDS avec Na⁺) de contrôle toutes les <b>4 à 6h</b> pour ajuster le débit<br/>
+            <span style={{ fontStyle: "italic", color: C.sub }}>Réf. : recommandations SFAR/SRLF/SFMU.</span>
+          </div>
+        </div>
+      )}
+
+      {step1bDone && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>3. Volémie clinique</div>
+          <OptionBtn C={C} color={COLOR} label="Hypovolémique" help="Pli cutané, hypotension, tachycardie" selected={volemie === "hypo"} onSelect={() => setVolemie("hypo")} />
+          <OptionBtn C={C} color={COLOR} label="Euvolémique" help="Le cas le plus fréquent (diabète insipide, hypodipsie...)" selected={volemie === "eu"} onSelect={() => setVolemie("eu")} />
+          <OptionBtn C={C} color={COLOR} label="Hypervolémique" help="Apport sodé excessif — plus rare" selected={volemie === "hyper"} onSelect={() => setVolemie("hyper")} />
+          <NonDispoBtn C={C} onClick={() => { setVolemie("inc"); setCause("inc_indetermine_h"); }}>Volémie difficile à apprécier</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="VOLÉMIE CLINIQUE" value={volemie === "hypo" ? "Hypovolémique" : volemie === "eu" ? "Euvolémique" : volemie === "inc" ? "Difficile à apprécier" : "Hypervolémique"} onEdit={() => { setVolemie(null); setCause(null); }} />
+      ))}
+
+      {step2Done && (!cause ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Orientation étiologique</div>
+          {causeOptions[volemie].map(o => (
+            <OptionBtn key={o.v} C={C} color={COLOR} label={o.label} help={o.help} selected={cause === o.v} onSelect={() => setCause(o.v)} />
+          ))}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="ORIENTATION" value={causeOptions[volemie].find(o => o.v === cause)?.label} onEdit={() => setCause(null)} />
+      ))}
+
+      {cause === "eu_indetermine_h" && (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 8 }}>🧮 Osmolalité urinaire (mOsm/kg) — optionnel</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 250" value={uOsm} onChange={e => setUOsm(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+          {!isNaN(uOsmV) && uOsm !== "" && (
+            <div style={{ background: uOsmV < 300 ? C.redLight : uOsmV < 800 ? C.amberLight : C.greenLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+              {uOsmV < 300 ? "< 300 mOsm/kg : urine diluée malgré l'hypernatrémie → évoque un diabète insipide (central ou néphrogénique)." : uOsmV < 800 ? "300-800 mOsm/kg : zone intermédiaire → diabète insipide partiel ou diurèse osmotique (glycémie, urée, mannitol)." : "> 800 mOsm/kg : le rein concentre normalement → pertes extra-rénales ou apports insuffisants en eau, pas de diabète insipide."}
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 8 }}>Repères classiques d'interprétation. Mesure de laboratoire ; si indisponible, se fier à la clinique, à la diurèse et à la glycémie.</div>
+        </Card>
+      )}
+
+      {cause && ETIOLOGIES_HYPER[cause] && (
+        <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE PROBABLE</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>{ETIOLOGIES_HYPER[cause].label}</div>
+          <Comprendre C={C} label="Comprendre cette étiologie"><div style={{ lineHeight: 1.5 }}>{ETIOLOGIES_HYPER[cause].causes}</div></Comprendre>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>EXAMENS COMPLÉMENTAIRES</div>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES_HYPER[cause].exams.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>PRISE EN CHARGE</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES_HYPER[cause].pec.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </Card>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : SFAR/SRLF/SFMU</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   GAZOMÉTRIE — VALIDÉE PAR JEREMY (poster "Gazomaîtrise", Marins-Pompiers Marseille)
+   Seuils : pH 7,35-7,45 · PaCO2 35-45 mmHg · HCO3- 22-26 mmol/L
+   Trou anionique = Na+ - (Cl- + HCO3-), normal 4-12 mmol/L (validé).
+   ════════════════════════════════════════════════════════════════════════ */
+const GDSCOLOR = "#5B4FA6";
+
+const ETIOLOGIES_GDS = {
+  acidose_resp: {
+    label: "Acidose respiratoire",
+    sub: "pH bas, PaCO2 haute, HCO3⁻ normal (ou haut si compensée) — le CO2 est retenu et se transforme en H+",
+    groups: [
+      { titre: "Obstruction", causes: "Asthme, BPCO" },
+      { titre: "Dépression neuro", causes: "Médicamenteuse (morphine, BZD...), HTIC, AVC" },
+      { titre: "Neuro-musculaire", causes: "Myasthénie, myopathies, neuropathies" },
+    ],
+    exams: ["Radio thorax", "Recherche d'un facteur déclenchant (toxique, infectieux, neuro)"],
+    pec: ["Traiter la cause", "Discuter VNI/ventilation selon la tolérance et l'épuisement respiratoire", "Prudence sur l'oxygénothérapie si BPCO connue (risque d'aggravation de l'hypercapnie)"],
+  },
+  alcalose_resp: {
+    label: "Alcalose respiratoire",
+    sub: "pH haut, PaCO2 basse, HCO3⁻ normal (ou bas si compensée) — le CO2 est trop rejeté",
+    groups: [
+      { titre: "Hyperventilation / Polypnée", causes: "Embolie pulmonaire, hypoxie, OAP (phase initiale)" },
+      { titre: "Stimulation neuro", causes: "Fièvre, douleur/angoisse, hypoxémie" },
+    ],
+    exams: ["Selon orientation clinique : D-dimères/angioscanner si suspicion EP, radio thorax"],
+    pec: ["Traiter la cause déclenchante"],
+    note: "⚠️ Effet shunt dans l'EP → possible hypoxie ET hypocapnie associées. Hypercapnie fréquente dans l'OAP à l'épuisement (OAP hypercapnique).",
+  },
+  acidose_meta: {
+    label: "Acidose métabolique",
+    sub: "pH bas, HCO3⁻ bas, PaCO2 normale (ou basse si compensée) — trop d'acide ou pas assez de HCO3⁻",
+    groups: [], // détail via trou anionique
+    exams: ["Trou anionique (Na+, Cl-)", "Lactates", "Glycémie/cétonémie", "Fonction rénale", "Recherche toxique si TA augmenté inexpliqué"],
+    pec: ["Traiter la cause", "Bicarbonate réservé aux formes sévères (pH très bas) — à discuter au cas par cas"],
+  },
+  alcalose_meta: {
+    label: "Alcalose métabolique",
+    sub: "pH haut, HCO3⁻ haut, PaCO2 normale (ou haute si compensée) — trop de HCO3⁻ ou pas assez d'acide",
+    groups: [
+      { titre: "Pertes digestives de H+", causes: "Vomissements, aspiration SNG, certaines diarrhées" },
+      { titre: "Pertes rénales de H+", causes: "Diurétiques, insuffisance cardiaque, syndrome néphrotique" },
+    ],
+    exams: ["Ionogramme complet", "Kaliémie (hypokaliémie souvent associée)"],
+    pec: ["Traiter la cause", "Corriger une hypokaliémie associée"],
+  },
+};
+
+const CAUSES_TA_AUGMENTE = "Metformine, acidose lactique, méthanol, acidocétose, éthylène glycol, paracétamol (surdosage), salicylés";
+const CAUSES_TA_NORMAL = "Diarrhée, fistules digestives, troubles rénaux (acidose tubulaire...)";
+const MNEMO_KUSSMAUL = "Ketones (acidocétose) · Urémie (IRA sévère) · Salicylates/méthanol/éthylène glycol · Sepsis/Lactates (choc, hypoxie tissulaire)";
+
+function classifyGDS(ph, pco2, hco3) {
+  const phStatus = ph < 7.35 ? "acide" : ph > 7.45 ? "alcalin" : "normal";
+  const pco2Status = pco2 < 35 ? "basse" : pco2 > 45 ? "haute" : "normale";
+  const hco3Status = hco3 < 22 ? "bas" : hco3 > 26 ? "haut" : "normal";
+
+  if (phStatus === "normal" && pco2Status === "normale" && hco3Status === "normal") {
+    return { type: "normal", phStatus, pco2Status, hco3Status };
+  }
+  if (phStatus === "normal") {
+    if (pco2Status !== "normale" && hco3Status !== "normal") {
+      // Compensé — primaire déduit du sens (celui qui "domine" au repos est ambigu sans pH anormal ; on affiche les deux pistes)
+      return { type: "compense", phStatus, pco2Status, hco3Status };
+    }
+    return { type: "incoherent", phStatus, pco2Status, hco3Status };
+  }
+  // pH anormal
+  const bothAbnormal = pco2Status !== "normale" && hco3Status !== "normal";
+  const onlyOne = (pco2Status !== "normale") !== (hco3Status !== "normal");
+
+  if (!bothAbnormal && !onlyOne) {
+    return { type: "incoherent", phStatus, pco2Status, hco3Status };
+  }
+  if (onlyOne) {
+    const primary = pco2Status !== "normale"
+      ? (phStatus === "acide" ? "acidose_resp" : "alcalose_resp")
+      : (phStatus === "acide" ? "acidose_meta" : "alcalose_meta");
+    return { type: "decompense", primary, phStatus, pco2Status, hco3Status };
+  }
+  // bothAbnormal
+  const sameDirection = (pco2Status === "haute" && hco3Status === "haut") || (pco2Status === "basse" && hco3Status === "bas");
+  if (sameDirection) {
+    let primary;
+    if (phStatus === "acide") primary = pco2Status === "haute" ? "acidose_resp" : "acidose_meta";
+    else primary = pco2Status === "haute" ? "alcalose_meta" : "alcalose_resp";
+    return { type: "partiel", primary, phStatus, pco2Status, hco3Status };
+  }
+  // directions opposées
+  const concordant = (phStatus === "acide" && pco2Status === "haute" && hco3Status === "bas")
+    || (phStatus === "alcalin" && pco2Status === "basse" && hco3Status === "haut");
+  if (concordant) {
+    return { type: "mixte", phStatus, pco2Status, hco3Status };
+  }
+  return { type: "incoherent", phStatus, pco2Status, hco3Status };
+}
+
+function GazometrieAlgo({ pre, onBack, C, noOwnBack }) {
+  const [ph, setPh] = useP("gaz.GazometrieAlgo.ph", pre?.ph ?? "");
+  const [pco2, setPco2] = useP("gaz.GazometrieAlgo.pco2", "");
+  const [hco3, setHco3] = useP("gaz.GazometrieAlgo.hco3", "");
+  const [naGds, setNaGds] = useP("gaz.GazometrieAlgo.naGds", "");
+  const [clGds, setClGds] = useP("gaz.GazometrieAlgo.clGds", "");
+  const [lactate, setLactate] = useP("gaz.GazometrieAlgo.lactate", "");
+  const [pao2, setPao2] = useP("gaz.GazometrieAlgo.pao2", "");
+  const [fio2, setFio2] = useP("gaz.GazometrieAlgo.fio2", "");
+  const [valuesConfirmed, setValuesConfirmed] = useP("gaz.GazometrieAlgo.valuesConfirmed", false);
+  const bottomRef = useRef(null);
+
+  const phVal = parseFloat((ph || "").replace(",", "."));
+  const pco2Val = parseFloat((pco2 || "").replace(",", "."));
+  const hco3Val = parseFloat((hco3 || "").replace(",", "."));
+  const rawValid = !isNaN(phVal) && !isNaN(pco2Val) && !isNaN(hco3Val);
+  const allValid = rawValid && valuesConfirmed;
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [allValid, naGds, clGds, lactate, pao2, fio2]);
+
+  const result = allValid ? classifyGDS(phVal, pco2Val, hco3Val) : null;
+
+  const naVal = parseFloat((naGds || "").replace(",", "."));
+  const clVal = parseFloat((clGds || "").replace(",", "."));
+  const taValid = !isNaN(naVal) && !isNaN(clVal) && allValid;
+  const ta = taValid ? naVal - (clVal + hco3Val) : null;
+
+  const lactateVal = parseFloat((lactate || "").replace(",", "."));
+  const lactateValid = !isNaN(lactateVal);
+  const lactateHaut = lactateValid && lactateVal > 2;
+  const lactateSevere = lactateValid && lactateVal > 4;
+
+  const pao2Val = parseFloat((pao2 || "").replace(",", "."));
+  const fio2Val = parseFloat((fio2 || "").replace(",", "."));
+  const pfValid = !isNaN(pao2Val) && !isNaN(fio2Val) && fio2Val > 0;
+  const pfRatio = pfValid ? pao2Val / (fio2Val / 100) : null;
+  const typeInsuffResp = pfValid && allValid
+    ? (pco2Val > 45 ? "Type 2 — hypoxémie + hypercapnie" : "Type 1 — hypoxémie pure")
+    : null;
+
+  const gravite = allValid && (phVal < 7.10 || pco2Val > 70 || lactateSevere);
+
+  function reset() { setPh(""); setPco2(""); setHco3(""); setNaGds(""); setClGds(""); setLactate(""); setPao2(""); setFio2(""); setValuesConfirmed(false); }
+
+  const isMetaAcid = result && (result.primary === "acidose_meta" || (result.type === "mixte" && result.hco3Status === "bas"));
+
+  // Formule de Winter — adéquation de la compensation respiratoire d'une acidose métabolique
+  const winterApplicable = allValid && hco3Val < 22;
+  const winterAttendue = winterApplicable ? 1.5 * hco3Val + 8 : null;
+  const winterLow = winterAttendue !== null ? winterAttendue - 2 : null;
+  const winterHigh = winterAttendue !== null ? winterAttendue + 2 : null;
+  let winterConclusion = null;
+  if (winterApplicable) {
+    if (pco2Val > winterHigh) winterConclusion = "surajoutee_resp"; // compensation insuffisante → acidose respiratoire surajoutée
+    else if (pco2Val < winterLow) winterConclusion = "surajoutee_alc"; // hyperventilation excessive → alcalose respiratoire surajoutée
+    else winterConclusion = "adaptee";
+  }
+
+  // Aiguë/chronique — acidose respiratoire (adéquation de la compensation rénale)
+  const [cinetiqueResp, setCinetiqueResp] = useP("gaz.GazometrieAlgo.cinetiqueResp", null); // 'aigue' | 'chronique'
+  const respAcidApplicable = result && result.primary === "acidose_resp" && pco2Val > 45;
+  const deltaPco2 = respAcidApplicable ? pco2Val - 40 : null;
+  const hco3AttenduDelta = respAcidApplicable && cinetiqueResp
+    ? (cinetiqueResp === "aigue" ? (deltaPco2 / 10) * 1 : (deltaPco2 / 10) * 3.5)
+    : null;
+  const hco3Attendu = hco3AttenduDelta !== null ? 24 + hco3AttenduDelta : null;
+
+  const TYPE_LABEL = {
+    normal: "Gazométrie normale",
+    decompense: "Trouble décompensé",
+    partiel: "Trouble partiellement compensé",
+    compense: "Trouble compensé",
+    mixte: "Trouble mixte (double composante)",
+    incoherent: "Profil atypique",
+  };
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: GDSCOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🫁</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Gazométrie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Interprétation de l'équilibre acido-basique</div>
+        </div>
+      </div>
+
+      {!allValid ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Valeurs mesurées</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>pH</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 7,28" value={ph} onChange={e => setPh(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>PaCO2 (mmHg)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 50" value={pco2} onChange={e => setPco2(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>HCO3⁻ (mmol/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 22" value={hco3} onChange={e => setHco3(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 14, outline: "none" }} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 8 }}>OPTIONNEL</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Lactate (mmol/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 2,1" value={lactate} onChange={e => setLactate(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>PaO2 (mmHg)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 65" value={pao2} onChange={e => setPao2(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>FiO2 (%)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 40" value={fio2} onChange={e => setFio2(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+          </div>
+          <Btn C={C} onClick={() => setValuesConfirmed(true)} disabled={!rawValid} style={{ width: "100%", marginTop: 12 }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={GDSCOLOR} title="VALEURS" value={`pH ${phVal} · PaCO2 ${pco2Val} · HCO3⁻ ${hco3Val}`} onEdit={() => { reset(); }} />
+      )}
+
+      {/* ── Alerte gravité — prioritaire, avant même l'interprétation détaillée ── */}
+      {gravite && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 VALEURS CRITIQUES</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {phVal < 7.10 && <div>• pH &lt; 7,10</div>}
+            {pco2Val > 70 && <div>• PaCO2 &gt; 70 mmHg</div>}
+            {lactateSevere && <div>• Lactate &gt; 4 mmol/L</div>}
+            <div style={{ marginTop: 6, fontWeight: 700 }}>Discuter un avis senior/réanimation sans attendre l'interprétation complète.</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Type d'insuffisance respiratoire (si PaO2/FiO2 renseignés) ── */}
+      {pfValid && allValid && (
+        <div style={{ background: pfRatio < 300 ? C.redLight : C.blueLight, border: `1px solid ${pfRatio < 300 ? C.red : C.blue}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: pfRatio < 300 ? C.red : C.blue, marginBottom: 4 }}>P/F ratio = {pfRatio.toFixed(0)}{pfRatio < 300 && " — SDRA"}</div>
+          <div style={{ fontSize: 12, color: C.text }}>{typeInsuffResp}</div>
+        </div>
+      )}
+
+      {result && (
+        <Card C={C} style={{ border: `2px solid ${result.type === "normal" ? C.green : result.type === "incoherent" ? C.sub : GDSCOLOR}`, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: GDSCOLOR, marginBottom: 6 }}>INTERPRÉTATION</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 8 }}>{TYPE_LABEL[result.type]}</div>
+
+          {result.type === "normal" && (
+            <div style={{ fontSize: 12, color: C.sub }}>Aucune anomalie acido-basique détectée.</div>
+          )}
+
+          {result.type === "incoherent" && (
+            <div style={{ fontSize: 12, color: C.sub, lineHeight: 1.6 }}>
+              Le profil pH/PaCO2/HCO3⁻ n'est pas cohérent avec un trouble simple ou une compensation attendue — vérifier les valeurs saisies, ou évoquer un trouble mixte complexe à analyser avec un senior.
+            </div>
+          )}
+
+          {(result.type === "decompense" || result.type === "partiel") && ETIOLOGIES_GDS[result.primary] && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>{ETIOLOGIES_GDS[result.primary].label}{result.type === "partiel" ? " (partiellement compensée)" : " (non compensée)"}</div>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 10, fontStyle: "italic" }}>{ETIOLOGIES_GDS[result.primary].sub}</div>
+              {ETIOLOGIES_GDS[result.primary].groups.length > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  {ETIOLOGIES_GDS[result.primary].groups.map((g, i) => (
+                    <div key={i} style={{ fontSize: 12, color: C.text, marginBottom: 4 }}><b>{g.titre}</b> : {g.causes}</div>
+                  ))}
+                </div>
+              )}
+              {ETIOLOGIES_GDS[result.primary].note && (
+                <div style={{ fontSize: 11, color: C.amber, marginBottom: 10 }}>{ETIOLOGIES_GDS[result.primary].note}</div>
+              )}
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>EXAMENS COMPLÉMENTAIRES</div>
+              <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                {ETIOLOGIES_GDS[result.primary].exams.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>PRISE EN CHARGE</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                {ETIOLOGIES_GDS[result.primary].pec.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </>
+          )}
+
+          {result.type === "compense" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              pH normal, mais PaCO2 ({result.pco2Status}) et HCO3⁻ ({result.hco3Status}) tous les deux anormaux → trouble chronique bien compensé. Le sens de la compensation oriente vers :
+              {result.pco2Status === "haute" && result.hco3Status === "haut" && <div style={{ marginTop: 4 }}>• <b>Acidose respiratoire chronique</b> compensée (rétention rénale de HCO3⁻)</div>}
+              {result.pco2Status === "basse" && result.hco3Status === "bas" && <div style={{ marginTop: 4 }}>• <b>Alcalose respiratoire chronique</b> compensée (excrétion rénale de HCO3⁻)</div>}
+              {result.pco2Status === "haute" && result.hco3Status === "bas" && <div style={{ marginTop: 4 }}>• Profil atypique pour un trouble compensé simple — vérifier les valeurs</div>}
+              {result.pco2Status === "basse" && result.hco3Status === "haut" && <div style={{ marginTop: 4 }}>• Profil atypique pour un trouble compensé simple — vérifier les valeurs</div>}
+            </div>
+          )}
+
+          {result.type === "mixte" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              {result.phStatus === "acide"
+                ? "Acidose respiratoire ET métabolique associées — les deux composantes aggravent le pH simultanément. Situation potentiellement sévère."
+                : "Alcalose respiratoire ET métabolique associées — les deux composantes aggravent le pH simultanément."}
+              <div style={{ marginTop: 6 }}>Rechercher les 2 causes séparément (cf. fiches acidose/alcalose respiratoire et métabolique).</div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── Formule de Winter — adéquation compensation respiratoire d'une acidose métabolique ── */}
+      {winterApplicable && (
+        <div style={{ background: winterConclusion === "adaptee" ? C.greenLight : C.redLight, border: `1px solid ${winterConclusion === "adaptee" ? C.green : C.red}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: winterConclusion === "adaptee" ? C.green : C.red, marginBottom: 4 }}>
+            Formule de Winter — PaCO2 attendue ≈ {winterLow.toFixed(0)}-{winterHigh.toFixed(0)} (mesurée : {pco2Val})
+          </div>
+          <div style={{ fontSize: 12, color: C.text }}>
+            {winterConclusion === "adaptee" && "Compensation respiratoire adaptée à l'acidose métabolique."}
+            {winterConclusion === "surajoutee_resp" && "Compensation insuffisante → composante d'acidose respiratoire surajoutée (trouble mixte, gravité ++, risque d'épuisement)."}
+            {winterConclusion === "surajoutee_alc" && "Hyperventilation excessive → composante d'alcalose respiratoire surajoutée (trouble mixte)."}
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 4, fontStyle: "italic" }}>Raccourci clinique : PaCO2 attendue ≈ les 2 derniers chiffres du pH</div>
+          <Pourquoi C={C}>
+            Face à une acidose métabolique, le poumon compense en hyperventilant (respiration de Kussmaul) pour évacuer du CO2 et limiter la chute du pH. La formule de Winter prédit jusqu'où cette compensation devrait aller. Si la PaCO2 mesurée est plus haute que prévu, le poumon ne compense pas assez (fatigue respiratoire, ou acidose respiratoire surajoutée) ; si elle est plus basse, il compense trop (hyperventilation propre, ex. douleur, anxiété, ou alcalose respiratoire associée).
+          </Pourquoi>
+        </div>
+      )}
+
+      {/* ── Aiguë/chronique — adéquation compensation rénale d'une acidose respiratoire ── */}
+      {respAcidApplicable && (
+        <Card C={C} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Cinétique de l'acidose respiratoire</div>
+          <OptionBtn C={C} color={GDSCOLOR} label="Aiguë" help="OAP, asthme aigu grave — pas le temps de compenser, HCO3⁻ ~normal (+1 mmol/L/10 mmHg)" selected={cinetiqueResp === "aigue"} onSelect={() => setCinetiqueResp("aigue")} />
+          <OptionBtn C={C} color={GDSCOLOR} label="Chronique" help="BPCO ancienne — rein a eu le temps de travailler, HCO3⁻ ↑↑ (+3-4 mmol/L/10 mmHg)" selected={cinetiqueResp === "chronique"} onSelect={() => setCinetiqueResp("chronique")} />
+          {hco3Attendu !== null && (
+            <div style={{ marginTop: 10, background: C.blueLight, borderRadius: 10, padding: "8px 12px", fontSize: 12, color: C.text }}>
+              HCO3⁻ attendu ≈ <b>{hco3Attendu.toFixed(1)} mmol/L</b> (mesuré : {hco3Val}) — {Math.abs(hco3Val - hco3Attendu) <= 3 ? "cohérent avec cette cinétique" : "écart notable, réévaluer la cinétique ou évoquer une composante métabolique associée"}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── Trou anionique — si acidose métabolique impliquée ── */}
+      {result && isMetaAcid && (
+        <Card C={C} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Trou anionique</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Na⁺ (mmol/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 138" value={naGds} onChange={e => setNaGds(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Cl⁻ (mmol/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 100" value={clGds} onChange={e => setClGds(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", outline: "none" }} />
+          {taValid && (
+            <div style={{ marginTop: 12, background: ta > 16 ? C.redLight : C.greenLight, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: ta > 16 ? C.red : C.green, marginBottom: 4 }}>TA = {ta.toFixed(1)} mmol/L — {ta > 16 ? "augmenté" : "normal"}</div>
+              {ta > 16 && lactateHaut && (
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.red, marginBottom: 4 }}>→ Lactate à {lactateVal} mmol/L : acidose lactique probable (cause la plus fréquente)</div>
+              )}
+              <div style={{ fontSize: 12, color: C.text }}>{ta > 16 ? CAUSES_TA_AUGMENTE : CAUSES_TA_NORMAL}</div>
+              {ta > 16 && <div style={{ fontSize: 10, color: C.sub, marginTop: 4, fontStyle: "italic" }}>Mnémo KUSSMAUL/GOLDMARK : {MNEMO_KUSSMAUL}</div>}
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 4, fontStyle: "italic" }}>Normale ≈ 12 ± 2-4 mmol/L</div>
+              <Pourquoi C={C}>
+                Le plasma est électriquement neutre : les charges positives (Na+, non mesuré ici : K+) doivent équilibrer les charges négatives (Cl-, HCO3-, et des anions non dosés comme les protéines, phosphates, lactate...). Le trou anionique représente ces anions non mesurés. S'il est augmenté, c'est qu'un acide anormal s'est accumulé (cétones, lactate, toxiques) — l'acide apporte son proton (qui consomme le HCO3-) et son anion, qui n'est pas dosé et fait "gonfler" le trou. Si le trou est normal, l'acidose vient d'une perte directe de bicarbonate (digestive ou rénale), compensée par une rétention de chlore (d'où "acidose hyperchlorémique").
+              </Pourquoi>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* ── Remarques du poster — toujours visibles ── */}
+      <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 20, fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+        <b>Remarques :</b><br/>
+        • OAP : alcalose respiratoire en phase initiale, puis évolution vers l'acidose respiratoire ± hypercapnie à l'épuisement<br/>
+        • Rapport PaO2/FiO2 (P/F ratio) &lt; 300 = SDRA<br/>
+        • La compensation respiratoire est beaucoup plus rapide que la compensation métabolique (rénale)<br/>
+        • Gazométrie veineuse : fiable pour pH, lactates, HCO3⁻
+      </div>
+
+      {allValid && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : Poster "Gazomaîtrise" (Marins-Pompiers Marseille) · méthode diagnostique SFMU</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {allValid && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HYPERKALIÉMIE — VALIDÉE PAR JEREMY
+   Seuils ERC 2025 : légère 5,0-5,9 · modérée 6,0-6,4 · sévère ≥ 6,5 mmol/L
+   (ou le moindre signe ECG, quel que soit le chiffre — validé).
+   Calcium/insuline-glucose/salbutamol/Kayexalate : valeurs du service.
+   Bicarbonate et seuil EER : alignés sur ERC 2025 (réservés cas graves/ACR).
+   ════════════════════════════════════════════════════════════════════════ */
+const ETIOLOGIES_HYPERK = {
+  hyperk_irenale: {
+    label: "Hyperkaliémie — Insuffisance rénale (aiguë ou chronique)",
+    causes: "Défaut d'élimination rénale du potassium.",
+    exams: ["Créatinine, DFG", "Échographie rénale si IRA", "Bilan étiologique de l'IRA/IRC"],
+    pec: ["Traiter la cause de l'IRA si aiguë", "Discuter EER si hyperK réfractaire ou IRA anurique (cf. protocole d'urgence)"],
+  },
+  hyperk_medicamenteuse: {
+    label: "Hyperkaliémie médicamenteuse",
+    causes: "IEC, ARA2, spironolactone/anti-aldostérone, AINS, digoxine (surdosage), triméthoprime.",
+    exams: ["Relecture exhaustive du traitement", "Digoxinémie si traitement en cours"],
+    pec: ["Arrêt/suspension du(des) médicament(s) en cause", "Réévaluer l'indication avant réintroduction"],
+  },
+  hyperk_acidose: {
+    label: "Hyperkaliémie par acidose métabolique",
+    causes: "Transfert extracellulaire du potassium lié à l'acidose (acidocétose, acidose lactique, IRA...).",
+    exams: ["Gaz du sang / bicarbonates", "Trou anionique", "Lactates"],
+    pec: ["Traiter la cause de l'acidose", "Bicarbonate réservé aux formes sévères/ACR hyperkaliémique (cf. protocole d'urgence)"],
+  },
+  hyperk_lyse: {
+    label: "Hyperkaliémie par lyse cellulaire",
+    causes: "Rhabdomyolyse, syndrome de lyse tumorale, brûlures étendues, hémolyse massive.",
+    exams: ["CPK", "LDH, uricémie, phosphorémie (lyse tumorale)", "Bilan rénal (risque IRA associée)"],
+    pec: ["Traitement de la cause", "Hyperhydratation si rhabdomyolyse", "Surveillance rapprochée kaliémie/fonction rénale"],
+  },
+  hyperk_indetermine: {
+    label: "Hyperkaliémie — cause indéterminée",
+    causes: "Le traitement en urgence ne dépend pas de la cause : il est guidé par la kaliémie et l'ECG. Les causes les plus fréquentes aux urgences sont l'insuffisance rénale, les médicaments et l'acidose ; penser aussi à la lyse cellulaire et à l'insuffisance surrénalienne.",
+    exams: ["ECG (ne pas attendre les résultats biologiques)", "Créatinine, urée, DFG : IRA / IRC ?", "Gaz du sang, bicarbonates, trou anionique, lactates : acidose ?", "Glycémie et cétonémie (acidocétose / carence en insuline)", "CPK (rhabdomyolyse), LDH, uricémie, phosphorémie (lyse tumorale)", "Natrémie : une hyponatrémie associée, avec hypotension ou hypoglycémie, évoque une insuffisance surrénalienne → cortisol", "Relecture exhaustive du traitement : IEC, ARA2, spironolactone, AINS, héparine, triméthoprime, digoxine", "Contrôle sur prélèvement de qualité si suspicion de pseudo-hyperkaliémie (hémolyse)"],
+    pec: ["Ne pas retarder le traitement : appliquer le protocole d'urgence selon la kaliémie et l'ECG", "Arrêter / suspendre les médicaments hyperkaliémiants", "Rechercher et traiter un facteur aigu : IRA obstructive ou fonctionnelle, déshydratation, acidose, rhabdomyolyse", "Si insuffisance surrénalienne suspectée avec instabilité hémodynamique : prélever le cortisol puis ne pas retarder l'hydrocortisone", "Discuter l'EER si hyperkaliémie réfractaire ou IRA anurique (cf. protocole d'urgence)", "Surveillance de la kaliémie et de l'ECG jusqu'à normalisation"],
+  },
+  hyperk_surrenale: {
+    label: "Hyperkaliémie — Insuffisance surrénalienne",
+    causes: "Maladie d'Addison, insuffisance surrénalienne aiguë.",
+    exams: ["Cortisol de base ± test au Synacthène", "Natrémie associée (souvent basse)"],
+    pec: ["Hydrocortisone IV en urgence si suspicion forte", "Ne pas attendre les résultats si instabilité hémodynamique"],
+  },
+};
+
+function HyperkaliemieAlgo({ pre, onBack, C, noOwnBack, kBasse, kHaute }) {
+  const [k, setK] = useP("dyskaliemie.HyperkaliemieAlgo.k", pre?.k ?? "");
+  const [ecg, setEcg] = useP("dyskaliemie.HyperkaliemieAlgo.ecg", null);
+  const [pseudo, setPseudo] = useP("dyskaliemie.HyperkaliemieAlgo.pseudo", null);
+  const [cause, setCause] = useP("dyskaliemie.HyperkaliemieAlgo.cause", null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [k && ecg !== null, pseudo, cause]);
+
+  const kVal = parseFloat(k);
+  const kValid = !isNaN(kVal);
+  let severite = null, sevColor = C.sub;
+  if (kValid) {
+    if (kVal < 6.0) { severite = "Légère"; sevColor = C.amber; }
+    else if (kVal < 6.5) { severite = "Modérée"; sevColor = C.amber; }
+    else { severite = "Sévère"; sevColor = C.red; }
+  }
+
+  function reset() { setK(""); setEcg(null); setPseudo(null); setCause(null); }
+
+  const step1Done = kValid && ecg !== null;
+  const step2Done = step1Done && pseudo !== null;
+  const isPseudo = pseudo === true;
+  const step3Done = step2Done && !isPseudo && cause !== null;
+
+  const CAUSES = [
+    { v: "hyperk_irenale", label: "Insuffisance rénale aiguë/chronique" },
+    { v: "hyperk_medicamenteuse", label: "Médicamenteuse", help: "IEC, ARA2, spironolactone, AINS, digoxine" },
+    { v: "hyperk_acidose", label: "Acidose métabolique" },
+    { v: "hyperk_lyse", label: "Lyse cellulaire", help: "Rhabdomyolyse, syndrome de lyse tumorale, brûlures" },
+    { v: "hyperk_surrenale", label: "Insuffisance surrénalienne" },
+    { v: "hyperk_indetermine", label: "Cause indéterminée", help: "Conduite à tenir en urgence" },
+  ];
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: "#E8A82E22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>⚡</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hyperkaliémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Raisonnement diagnostique et prise en charge</div>
+        </div>
+      </div>
+
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Kaliémie mesurée</div>
+          {kBasse && kHaute && (
+            <div style={{ fontSize: 10, color: C.sub, marginBottom: 8, fontStyle: "italic" }}>Normale locale : {kBasse}-{kHaute} mmol/L</div>
+          )}
+          <input type="number" inputMode="decimal" placeholder="Ex : 6,8"
+            value={k} onChange={e => setK(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Signes ECG d'hyperkaliémie (T amples, QRS élargi, BAV, disparition onde P...) ?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setEcg(true)} color={C.red} outline={ecg !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setEcg(false)} color={C.green} outline={ecg !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <NonDispoBtn C={C} selected={ecg === "nonfait"} onClick={() => setEcg("nonfait")}>ECG pas encore fait</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={sevColor} title="KALIÉMIE" value={`${kVal} mmol/L — ${severite}${ecg === true ? " · signes ECG" : ecg === "nonfait" ? " · ECG non fait" : ""}`} onEdit={reset} />
+      )}
+
+      {step1Done && ecg === "nonfait" && (
+        <Provisoire C={C}><b>ECG à faire immédiatement</b> — il décide du traitement. En attendant, la conduite ci-dessous est celle de la kaliémie seule. S'il montre des signes d'hyperkaliémie : gluconate de calcium + traitement complet, quelle que soit la kaliémie.</Provisoire>
+      )}
+
+      {step1Done && (
+        <ConduiteCard C={C} color={sevColor}
+          gravite={<b>{severite}{ecg === true ? " — signes ECG" : ecg === "nonfait" ? " — ECG à faire" : " — sans signe ECG"}</b>}
+          geste={ecg === true
+            ? <span><b>Gluconate de calcium</b> 10 mL sur 10 min, puis <b>insuline-glucose + salbutamol</b> d'emblée</span>
+            : kVal < 6 ? <span><b>Kayexalate</b> 3 cuillères-mesure + traiter la cause</span>
+            : kVal < 6.5 ? <span><b>Insuline-glucose</b> IV (10 UI + G10 % 500 mL en 15-20 min), salbutamol en complément</span>
+            : <span><b>Insuline-glucose + salbutamol</b> d'emblée</span>}
+          examens={<span>ECG, éliminer une pseudo-hyperkaliémie, <b>contrôle K à 60 min</b></span>}
+          suite="Pas d'amélioration à 60 min : répéter le traitement et discuter l'épuration extrarénale" />
+      )}
+
+      {/* ── Stabilisation membranaire — déclenchée par l'ECG, indépendamment du K+ ── */}
+      {step1Done && ecg === true && (
+        <div style={{ background: C.blueLight, border: `2px solid ${C.blue}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.blue, marginBottom: 6 }}>💙 STABILISATION DE LA MEMBRANE MYOCARDIQUE</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>Gluconate de calcium</b> IV : 10 mL sur 10 min<br/>
+            • Réévaluer l'ECG à <b>5 min</b><br/>
+            • Si pas de normalisation à 5 min <b>OU</b> réapparition des anomalies ECG → <b>répéter la dose</b>
+          </div>
+        </div>
+      )}
+
+      {/* ── Diminution de la kaliémie — selon le seuil de K+ ── */}
+      {step1Done && (
+        <div style={{ background: C.amberLight, border: `2px solid ${C.amber}`, borderRadius: 14, padding: "14px 16px", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.amber, marginBottom: 6 }}>🟠 DIMINUTION DE LA KALIÉMIE</div>
+          {ecg !== true && kVal < 6 ? (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              • Traitement de la cause (arrêt des hyperkaliémiants...)<br/>
+              • <b>Kayexalate</b> 3 cuillères-mesure (~45 g)
+            </div>
+          ) : ecg !== true && kVal < 6.5 ? (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              En 1ère intention : <b>Insuline-glucose IV</b> (10 UI + G10% 500 mL en 15-20 min) — prudence si risque d'hypoglycémie<br/>
+              • <b>En complément</b> : nébulisation β2-mimétique (salbutamol 5 mg) — à éviter si tachycardie/coronaropathie<br/>
+              → Contrôle K+ à <b>60 min</b>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              {ecg === true && kVal < 6.5 && <><b>Signes ECG : traitement complet quelle que soit la kaliémie.</b><br/></>}
+              <b>Association</b> β2-mimétique nébulisé (5 mg) <b>et</b> Insuline-glucose IV (10 UI + G10% 500 mL en 15-20 min) d'emblée<br/>
+              → Contrôle K+ à <b>60 min</b>
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 8, fontStyle: "italic" }}>
+            Absence d'amélioration à 60 min : répéter le traitement initial (ou passer en association si monothérapie), recontrôler à 60 min, et discuter l'épuration extrarénale.
+          </div>
+        </div>
+      )}
+
+      {/* ── Contextes additionnels — toujours à considérer en plus du traitement principal ── */}
+      {step1Done && (
+        <div style={{ background: C.border + "55", border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.sub, marginBottom: 6 }}>À CONSIDÉRER EN PLUS, SELON LE CONTEXTE</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • Si <b>hypovolémie ou acidose métabolique</b> : remplissage NaCl 0,9% + bicarbonates IV (pas de bicarbonate si acidocétose)<br/>
+            • Si <b>insuffisance rénale aiguë</b> : remplissage NaCl 0,9% + discuter épuration extrarénale
+          </div>
+        </div>
+      )}
+
+      {step1Done && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Éliminer une pseudo-hyperkaliémie</div>
+          <div style={{ fontSize: 12, color: C.sub, marginBottom: 10 }}>Hémolyse du prélèvement, garrot trop serré/prolongé, prélèvement difficile, thrombocytose/hyperleucocytose majeure ?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setPseudo(true)} color={C.amber} outline={pseudo !== true} style={{ flex: 1 }}>Suspectée</Btn>
+            <Btn C={C} onClick={() => setPseudo(false)} color={C.green} outline={pseudo !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <NonDispoBtn C={C} selected={pseudo === "inconnu"} onClick={() => setPseudo("inconnu")}>Je ne sais pas / passer</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="PSEUDO-HYPERKALIÉMIE" value={isPseudo ? "Suspectée" : pseudo === "inconnu" ? "Non évaluée — recontrôler si doute" : "Écartée"} onEdit={() => { setPseudo(null); setCause(null); }} />
+      ))}
+
+      {step2Done && isPseudo && (
+        <Card C={C} style={{ border: `2px solid ${COLOR}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: COLOR, marginBottom: 6 }}>CONDUITE À TENIR</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Recontrôler la kaliémie sur un prélèvement de qualité (sans garrot prolongé, acheminement rapide au laboratoire) avant tout traitement, sauf signes ECG francs.</div>
+        </Card>
+      )}
+
+      {step2Done && !isPseudo && (!cause ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>3. Orientation étiologique</div>
+          {CAUSES.map(o => (
+            <OptionBtn key={o.v} C={C} color={COLOR} label={o.label} help={o.help} selected={cause === o.v} onSelect={() => setCause(o.v)} />
+          ))}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="ORIENTATION" value={CAUSES.find(o => o.v === cause)?.label} onEdit={() => setCause(null)} />
+      ))}
+
+      {cause && ETIOLOGIES_HYPERK[cause] && (
+        <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE PROBABLE</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>{ETIOLOGIES_HYPERK[cause].label}</div>
+          <Comprendre C={C} label="Comprendre cette étiologie"><div style={{ lineHeight: 1.5 }}>{ETIOLOGIES_HYPERK[cause].causes}</div></Comprendre>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>EXAMENS COMPLÉMENTAIRES</div>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES_HYPERK[cause].exams.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>PRISE EN CHARGE</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES_HYPERK[cause].pec.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </Card>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : ERC Guidelines 2025, ANSM · protocole du service</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HYPOKALIÉMIE — VALIDÉE PAR JEREMY
+   Seuils ERC 2025/KDIGO 2020 : légère 3,0-3,5 · modérée 2,5-2,9 · sévère < 2,5
+   (prise en charge urgente dès < 3 mmol/L si symptomatique ou signes ECG).
+   KCl IV : 1 g/h max en périphérique, VVC si besoin d'un débit supérieur
+   (au cas par cas — validé). Toujours dilué, jamais en IVD (ANSM).
+   ════════════════════════════════════════════════════════════════════════ */
+const ETIOLOGIES_HYPOK = {
+  hypok_renale: {
+    label: "Hypokaliémie — pertes rénales",
+    causes: "Diurétiques (thiazidiques, de l'anse), hyperaldostéronisme 1aire/2aire, tubulopathies (Bartter, Gitelman), vomissements avec alcalose.",
+    exams: ["Kaliurèse (K urinaire élevé)", "Gaz du sang (alcalose ?)", "Rénine/aldostérone si HTA associée"],
+    pec: ["Arrêt/adaptation du diurétique si possible", "Supplémentation potassique", "Bilan étiologique orienté par le contexte"],
+  },
+  hypok_indetermine: {
+    label: "Hypokaliémie — cause indéterminée (kaliurèse non disponible)",
+    causes: "La correction ne dépend pas de la cause : elle est guidée par la kaliémie et l'ECG. La cause s'oriente par la clinique, le traitement habituel et les gaz du sang.",
+    exams: ["Ionogramme urinaire (K urinaire) sur échantillon, idéalement AVANT toute supplémentation et diurétique", "Gaz du sang : alcalose métabolique → vomissements, diurétiques, hyperaldostéronisme ; acidose métabolique → diarrhées, laxatifs, acidose tubulaire", "Magnésémie (systématique si hypokaliémie sévère), glycémie, ionogramme, créatinine", "ECG", "Tension artérielle : HTA associée → hyperaldostéronisme, rénine/aldostérone à discuter"],
+    pec: ["Ne pas retarder la correction : appliquer le protocole ci-dessus selon la kaliémie et l'ECG", "Rechercher dans l'interrogatoire : vomissements, diarrhées, laxatifs, diurétiques (thiazidiques, anse), insuline, β2-mimétiques (salbutamol), corticoïdes, carence d'apport, alcoolisme", "Arrêter ou adapter le médicament en cause", "Corriger la magnésémie en parallèle", "Compléter le bilan étiologique (kaliurèse) en hospitalisation / en différé"],
+  },
+  hypok_extrarenale: {
+    label: "Hypokaliémie — pertes extra-rénales / transfert intracellulaire",
+    causes: "Diarrhées, laxatifs, carence d'apport, transfert intracellulaire (insuline, β2-mimétiques, alcalose).",
+    exams: ["Kaliurèse (K urinaire bas)", "Contexte digestif/médicamenteux"],
+    pec: ["Supplémentation potassique", "Traiter la cause des pertes ou arrêter le facteur de transfert"],
+  },
+};
+
+function HypokaliemieAlgo({ pre, onBack, C, noOwnBack, kBasse, kHaute }) {
+  const [k, setK] = useP("dyskaliemie.HypokaliemieAlgo.k", pre?.k ?? "");
+  const [symptomes, setSymptomes] = useP("dyskaliemie.HypokaliemieAlgo.symptomes", null);
+  const [renale, setRenale] = useP("dyskaliemie.HypokaliemieAlgo.renale", null);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [k && symptomes !== null, renale]);
+
+  const kVal = parseFloat(k);
+  const kValid = !isNaN(kVal);
+  let severite = null, sevColor = C.sub;
+  if (kValid) {
+    if (kVal >= 3.0) { severite = "Légère"; sevColor = C.amber; }
+    else if (kVal >= 2.5) { severite = "Modérée"; sevColor = C.amber; }
+    else { severite = "Sévère"; sevColor = C.red; }
+  }
+  const urgent = kValid && (kVal < 3.0 || symptomes === true);
+  const cause = renale === true ? "hypok_renale" : renale === false ? "hypok_extrarenale" : renale === "inconnue" ? "hypok_indetermine" : null;
+
+  function reset() { setK(""); setSymptomes(null); setRenale(null); }
+
+  const step1Done = kValid && symptomes !== null;
+  const step2Done = step1Done && renale !== null;
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: "#E8A82E22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>⚡</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hypokaliémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Raisonnement diagnostique et prise en charge</div>
+        </div>
+      </div>
+
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Kaliémie mesurée</div>
+          {kBasse && kHaute && (
+            <div style={{ fontSize: 10, color: C.sub, marginBottom: 8, fontStyle: "italic" }}>Normale locale : {kBasse}-{kHaute} mmol/L</div>
+          )}
+          <input type="number" inputMode="decimal" placeholder="Ex : 2,4"
+            value={k} onChange={e => setK(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 4 }}>Signes ECG ou symptômes (paralysie, troubles du rythme) ?</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, lineHeight: 1.5, fontStyle: "italic" }}>ECG, le juge de paix — dans l'ordre d'apparition : aplatissement/inversion T → sous-décalage ST → onde U → QT long → troubles du rythme (ESV, TV, FV)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setSymptomes(true)} color={C.red} outline={symptomes !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setSymptomes(false)} color={C.green} outline={symptomes !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <NonDispoBtn C={C} selected={symptomes === "nonfait"} onClick={() => setSymptomes("nonfait")}>ECG pas encore fait</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={sevColor} title="KALIÉMIE" value={`${kVal} mmol/L — ${severite}${symptomes === true ? " · symptomatique" : symptomes === "nonfait" ? " · ECG non fait" : ""}`} onEdit={reset} />
+      )}
+
+      {step1Done && symptomes === "nonfait" && (
+        <Provisoire C={C}><b>ECG à faire immédiatement.</b> En attendant, la conduite est celle de la kaliémie seule ; des signes ECG ou une kaliémie &lt; 3,0 imposent le protocole d'urgence (scope, KCl IV).</Provisoire>
+      )}
+
+      {step1Done && (
+        <ConduiteCard C={C} color={sevColor}
+          gravite={<b>{severite}{symptomes === true ? " — signes ECG ou symptômes" : symptomes === "nonfait" ? " — ECG à faire" : " — sans signe ECG"}</b>}
+          geste={urgent
+            ? <span><b>Scope</b>, voie IV : <b>KCl 0,5 à 1 g/h</b> dans NaCl 0,9 % (≤ 4 g/L sur VVP), <b>magnésium</b> systématique</span>
+            : <span><b>Voie orale</b> à privilégier ; si IV : KCl ≤ 1 g/h dans NaCl 0,9 %</span>}
+          examens="ECG, magnésémie, kaliurèse (avant supplémentation), gaz du sang"
+          suite={urgent ? "Contrôle de la kaliémie 1 à 2 h après la fin de la perfusion" : "Rechercher et traiter la cause"} />
+      )}
+
+      {step1Done && !urgent && (
+        <div style={{ background: C.greenLight, border: `2px solid ${C.green}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.green, marginBottom: 6 }}>Hypokaliémie modérée (K+ ≥ 2,5, sans signe ECG)</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>Voie orale à privilégier absolument</b> (Kaléorid, Diffu-K, sirop de KCl) — plus sûre et très efficace<br/>
+            • Si IV nécessaire (vomissements, occlusion...) : poches prédiluées (KCl 2 g ou 4 g dans 1 L de NaCl 0,9%), jamais &gt; 4 g/L sur VVP<br/>
+            • Vitesse max <b>1 g/h</b> · vecteur <b>NaCl 0,9%</b>, éviter le glucosé (stimule l'insuline endogène, aggrave transitoirement l'hypoK)
+          </div>
+        </div>
+      )}
+
+      {step1Done && urgent && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 PROTOCOLE D'URGENCE — hypokaliémie sévère (K+ &lt; 2,5) ou signes ECG</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>Scope cardiaque continu</b> obligatoire — transfert en soins intensifs (déchoquage/réa/USIC)<br/>
+            • Voie <b>IV impérative</b>, toujours diluée, jamais en IVD/bolus (risque d'ACR en systole)<br/>
+            • Dilution max <b>4 g/L sur VVP</b> ; concentration supérieure → VVC indispensable, au PSE<br/>
+            • Débit <b>0,5 à 1 g/h</b> de KCl<br/>
+            • Vecteur <b>NaCl 0,9%</b> — éviter le glucosé initialement<br/>
+            • <b>Magnésium systématique</b> : MgSO4 1,5-3 g sur 2-4h (l'hypoK sévère est souvent réfractaire sans correction de la magnésémie associée)<br/>
+            • Contrôle biologique <b>1 à 2h après la fin</b> de la perfusion (pas pendant, pour éviter de doser en plein transfert intracellulaire)<br/>
+            <span style={{ fontStyle: "italic", color: C.sub }}>Réf. : ANSM (KCl injectable = médicament à haut risque) + consensus SFAR/SRLF.</span>
+          </div>
+        </div>
+      )}
+
+      {step1Done && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Kaliurèse</div>
+          <OptionBtn C={C} color={COLOR} label="K urinaire élevé" help="Pertes rénales (diurétiques, hyperaldostéronisme...)" selected={renale === true} onSelect={() => setRenale(true)} />
+          <OptionBtn C={C} color={COLOR} label="K urinaire bas" help="Pertes extra-rénales ou transfert intracellulaire" selected={renale === false} onSelect={() => setRenale(false)} />
+          <OptionBtn C={C} color={COLOR} label="Kaliurèse non disponible / cause indéterminée" help="Conduite à tenir en urgence" selected={renale === "inconnue"} onSelect={() => setRenale("inconnue")} />
+        </Card>
+      ) : (
+        <StepSummary C={C} color={COLOR} title="KALIURÈSE" value={renale === "inconnue" ? "Non disponible / indéterminée" : renale ? "K urinaire élevé" : "K urinaire bas"} onEdit={() => setRenale(null)} />
+      ))}
+
+      {cause && ETIOLOGIES_HYPOK[cause] && (
+        <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE PROBABLE</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10 }}>{ETIOLOGIES_HYPOK[cause].label}</div>
+          <Comprendre C={C} label="Comprendre cette étiologie"><div style={{ lineHeight: 1.5 }}>{ETIOLOGIES_HYPOK[cause].causes}</div></Comprendre>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>EXAMENS COMPLÉMENTAIRES</div>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES_HYPOK[cause].exams.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+          <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginBottom: 6 }}>PRISE EN CHARGE</div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {ETIOLOGIES_HYPOK[cause].pec.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </Card>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : ANSM, consensus SFAR/SRLF</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DYSKALIÉMIE — écran avec 2 onglets (Hypo / Hyper)
+   ════════════════════════════════════════════════════════════════════════ */
+function DyskaliemieScreen({ pre, onBack, C, kBasse, kHaute }) {
+  const [tab, setTab] = useP("dyskaliemie.DyskaliemieScreen.tab", () => { if (pre?.tab) return pre.tab; const x = parseFloat(String(pre?.k ?? "").replace(",", ".")); return !isNaN(x) && x > (kBasse + kHaute) / 2 ? "hyper" : "hypo"; });
+  const KCOLOR = "#E8A82E";
+  return (
+    <div>
+      <BackBtn onClick={onBack} C={C} />
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.navy, marginBottom: 14 }}>Dyskaliémie</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <button onClick={() => setTab("hypo")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${tab === "hypo" ? KCOLOR : C.border}`, background: tab === "hypo" ? KCOLOR + "18" : C.white, color: tab === "hypo" ? KCOLOR : C.sub, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Hypokaliémie</button>
+        <button onClick={() => setTab("hyper")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${tab === "hyper" ? KCOLOR : C.border}`, background: tab === "hyper" ? KCOLOR + "18" : C.white, color: tab === "hyper" ? KCOLOR : C.sub, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Hyperkaliémie</button>
+      </div>
+      {tab === "hypo"
+        ? <HypokaliemieAlgo pre={pre} C={C} onBack={onBack} noOwnBack kBasse={kBasse} kHaute={kHaute} />
+        : <HyperkaliemieAlgo pre={pre} C={C} onBack={onBack} noOwnBack kBasse={kBasse} kHaute={kHaute} />
+      }
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DYSNATRÉMIE — écran avec 2 onglets (Hypo / Hyper)
+   ════════════════════════════════════════════════════════════════════════ */
+function DysnatremieScreen({ pre, onBack, C, naBasse, naHaute }) {
+  const [tab, setTab] = useP("dysnatremie.DysnatremieScreen.tab", () => { if (pre?.tab) return pre.tab; const x = parseFloat(String(pre?.na ?? "").replace(",", ".")); return !isNaN(x) && x > (naBasse + naHaute) / 2 ? "hyper" : "hypo"; });
+  return (
+    <div>
+      <BackBtn onClick={onBack} C={C} />
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.navy, marginBottom: 14 }}>Dysnatrémie</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <button onClick={() => setTab("hypo")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${tab === "hypo" ? COLOR : C.border}`, background: tab === "hypo" ? COLOR + "18" : C.white, color: tab === "hypo" ? COLOR : C.sub, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Hyponatrémie</button>
+        <button onClick={() => setTab("hyper")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${tab === "hyper" ? COLOR : C.border}`, background: tab === "hyper" ? COLOR + "18" : C.white, color: tab === "hyper" ? COLOR : C.sub, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Hypernatrémie</button>
+      </div>
+      {tab === "hypo"
+        ? <HyponatremieAlgo pre={pre} C={C} onBack={onBack} noOwnBack naBasse={naBasse} naHaute={naHaute} />
+        : <HypernatremieAlgo pre={pre} C={C} onBack={onBack} noOwnBack naBasse={naBasse} naHaute={naHaute} />
+      }
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ÉCRAN LISTE — "Anomalies biologiques"
+   D'autres entrées (dyskaliémie, gaz du sang, anémie...) viendront ici.
+   ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   ANÉMIE — VALIDÉE PAR JEREMY
+   Diagnostic uniquement pour l'instant (PEC détaillée à venir), sauf le tri
+   urgence vitale (2VVP/scope/O2/groupage-RAI/transfusion sans attendre),
+   gardé car sécurité immédiate et non "PEC étiologique" (validé).
+   Seuils OMS : Hb < 13 g/dL (H) / < 12 g/dL (F). Rétic seuil 120 G/L.
+   Seuil transfusionnel restrictif 7 g/dL (8 si CV, 10 si SCA).
+   ════════════════════════════════════════════════════════════════════════ */
+const ANEMIECOLOR = "#C0392B";
+
+function AnemieAlgo({ pre, onBack, C, noOwnBack }) {
+  const [hb, setHb] = useP("anemie.AnemieAlgo.hb", pre?.hb ?? "");
+  const [sexe, setSexe] = useP("anemie.AnemieAlgo.sexe", pre?.sexe ?? null); // 'H' | 'F'
+  const [toleranceMauvaise, setToleranceMauvaise] = useP("anemie.AnemieAlgo.toleranceMauvaise", null);
+  const [cinetique, setCinetique] = useP("anemie.AnemieAlgo.cinetique", null); // 'aigue' | 'chronique'
+  const [triConfirmed, setTriConfirmed] = useP("anemie.AnemieAlgo.triConfirmed", false);
+  const [terrain, setTerrain] = useP("anemie.AnemieAlgo.terrain", "standard"); // 'standard' | 'cv' | 'sca'
+  const [vgm, setVgm] = useP("anemie.AnemieAlgo.vgm", "");
+  const [retic, setRetic] = useP("anemie.AnemieAlgo.retic", "");
+  // Microcytaire
+  const [ferritine, setFerritine] = useP("anemie.AnemieAlgo.ferritine", "");
+  const [crpHaute, setCrpHaute] = useP("anemie.AnemieAlgo.crpHaute", null);
+  // Macrocytaire arégénérative
+  const [b12, setB12] = useP("anemie.AnemieAlgo.b12", "");
+  const [folates, setFolates] = useP("anemie.AnemieAlgo.folates", "");
+  // Normocytaire régénérative
+  const [hemorragieEvidente, setHemorragieEvidente] = useP("anemie.AnemieAlgo.hemorragieEvidente", null);
+  const [hemolyseSignes, setHemolyseSignes] = useP("anemie.AnemieAlgo.hemolyseSignes", null);
+  const [coombs, setCoombs] = useP("anemie.AnemieAlgo.coombs", null); // 'positif' | 'negatif'
+  const [schizocytes, setSchizocytes] = useP("anemie.AnemieAlgo.schizocytes", null);
+  // Normocytaire arégénérative
+  const [bipenie, setBipenie] = useP("anemie.AnemieAlgo.bipenie", null);
+  const [vgmConfirmed, setVgmConfirmed] = useP("anemie.AnemieAlgo.vgmConfirmed", false);
+  const [reticConfirmed, setReticConfirmed] = useP("anemie.AnemieAlgo.reticConfirmed", false);
+  const [reticNd, setReticNd] = useP("anemie.AnemieAlgo.reticNd", false); // réticulocytes non disponibles
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [hb, sexe, toleranceMauvaise, cinetique, vgmConfirmed, reticConfirmed, reticNd, ferritine, crpHaute, b12, folates, hemorragieEvidente, hemolyseSignes, coombs, schizocytes, bipenie]);
+
+  const hbVal = parseFloat((hb || "").replace(",", "."));
+  const hbValid = !isNaN(hbVal);
+  const triReady = hbValid && sexe !== null && toleranceMauvaise !== null;
+  const step1Done = triReady && triConfirmed;
+
+  const vgmVal = parseFloat((vgm || "").replace(",", "."));
+  const vgmValid = !isNaN(vgmVal);
+  const vgmType = vgmValid ? (vgmVal < 80 ? "micro" : vgmVal > 100 ? "macro" : "normo") : null;
+  const step2Done = step1Done && vgmValid && vgmConfirmed;
+
+  const reticVal = parseFloat((retic || "").replace(",", "."));
+  const reticValid = !isNaN(reticVal);
+  const regenerative = reticNd ? null : reticValid ? reticVal > 120 : null;
+  const step3Done = step2Done && ((reticValid && reticConfirmed) || reticNd);
+
+  function reset() {
+    setHb(""); setSexe(null); setToleranceMauvaise(null); setCinetique(null); setTriConfirmed(false); setTerrain("standard");
+    setVgm(""); setRetic(""); setFerritine(""); setCrpHaute(null);
+    setB12(""); setFolates(""); setHemorragieEvidente(null); setHemolyseSignes(null);
+    setCoombs(null); setSchizocytes(null); setBipenie(null);
+    setVgmConfirmed(false); setReticConfirmed(false); setReticNd(false);
+  }
+
+  // Décision transfusionnelle
+  const seuilTransf = terrain === "sca" ? 10 : terrain === "cv" ? 8 : 7;
+  const sousSeuil = hbValid && hbVal < seuilTransf;
+  const transfusionIndiquee = step1Done && (toleranceMauvaise === true || sousSeuil);
+
+  // Micro
+  const ferritineVal = parseFloat((ferritine || "").replace(",", "."));
+  const ferritineValid = !isNaN(ferritineVal);
+  let microResult = null;
+  if (step3Done && vgmType === "micro" && ferritineValid && crpHaute !== null) {
+    if (ferritineVal < 30 || (ferritineVal < 100 && crpHaute)) microResult = "ferriprive";
+    else if (crpHaute) microResult = "inflammatoire";
+    else microResult = "autre";
+  }
+
+  // Macro arégénérative
+  const b12Val = parseFloat((b12 || "").replace(",", "."));
+  const folatesVal = parseFloat((folates || "").replace(",", "."));
+  const b12Valid = !isNaN(b12Val), folatesValid = !isNaN(folatesVal);
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: ANEMIECOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🩸</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Anémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Typage diagnostique (VGM → réticulocytes → étiologie)</div>
+        </div>
+      </div>
+
+      {/* ── Étape 1 : Hb, sexe, tolérance, cinétique ── */}
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Tri urgentiste</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Hémoglobine (g/dL)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 8,5" value={hb} onChange={e => setHb(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Sexe</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setSexe("H")} outline={sexe !== "H"} style={{ flex: 1 }}>Homme</Btn>
+            <Btn C={C} onClick={() => setSexe("F")} outline={sexe !== "F"} style={{ flex: 1 }}>Femme</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Signes de mauvaise tolérance (choc, ischémie, confusion, pâleur intense) ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setToleranceMauvaise(true)} color={C.red} outline={toleranceMauvaise !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setToleranceMauvaise(false)} color={C.green} outline={toleranceMauvaise !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Cinétique estimée (optionnel)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setCinetique("aigue")} outline={cinetique !== "aigue"} style={{ flex: 1 }}>Aiguë</Btn>
+            <Btn C={C} onClick={() => setCinetique("chronique")} outline={cinetique !== "chronique"} style={{ flex: 1 }}>Chronique</Btn>
+          </div>
+          {triReady && (
+            <Btn C={C} onClick={() => setTriConfirmed(true)} style={{ width: "100%", marginTop: 14 }}>Valider →</Btn>
+          )}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={toleranceMauvaise ? C.red : C.green}
+          title="TRI URGENTISTE"
+          value={`Hb ${hbVal} g/dL (${sexe}) — ${toleranceMauvaise ? "mal tolérée" : "bien tolérée"}, ${cinetique === "aigue" ? "aiguë" : cinetique === "chronique" ? "chronique" : "cinétique non précisée"}`}
+          onEdit={reset} />
+      )}
+
+      {step1Done && (
+        <div style={{ fontSize: 10, color: C.sub, marginBottom: 12, fontStyle: "italic" }}>
+          Seuil OMS anémie : Hb &lt; 13 g/dL (homme) / &lt; 12 g/dL (femme)
+        </div>
+      )}
+
+      {step1Done && toleranceMauvaise && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 URGENCE VITALE — mauvaise tolérance</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            • <b>2 VVP de gros calibre</b>, scope, oxygénothérapie<br/>
+            • <b>UVI (&lt; 10 min)</b> — choc hémorragique/détresse immédiate : CGR groupe O sans délai (O négatif, ou O positif chez l'homme/femme sans potentiel de maternité si stocks tendus)<br/>
+            • <b>UV (&lt; 30 min)</b> — patient instable mais recherche possible : groupage ABO-Rhésus complet (2 déterminations) + phénotype Kell, sans attendre la RAI<br/>
+            • <b>UR (2-3h)</b> — anémie sévère tolérée sans défaillance : bilan pré-transfusionnel complet (2 groupes + RAI &lt; 3 jours), attendre validation EFS<br/>
+            • <b>Contrôle ultime pré-transfusionnel</b> obligatoire, même en UVI<br/>
+            • Prélever le bilan étiologique (ferritine, B12, folates, Coombs, haptoglobine) <b>avant</b> la 1ère poche
+          </div>
+        </div>
+      )}
+
+      {step1Done && (
+        <ConduiteCard C={C} color={transfusionIndiquee ? C.red : C.green}
+          gravite={<b>Hb {hbVal} g/dL{toleranceMauvaise ? " — mauvaise tolérance" : ""}</b>}
+          geste={transfusionIndiquee
+            ? <span><b>Transfusion à envisager</b> (1 CGR à la fois), bilan étiologique <b>avant</b> la 1ère poche, groupage ×2 + RAI</span>
+            : <span>Pas de transfusion sur le chiffre : traiter la cause</span>}
+          examens="VGM, réticulocytes, ferritine, B12/folates, Coombs et haptoglobine si hémolyse"
+          suite={`Seuil retenu : ${seuilTransf} g/dL (selon le terrain choisi ci-dessous)`} />
+      )}
+
+      {/* ── Décision transfusionnelle ── */}
+      {step1Done && (
+        <Card C={C} style={{ border: `2px solid ${transfusionIndiquee ? C.red : C.green}`, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 8 }}>🩸 Transfusion ?</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 6 }}>Terrain du patient</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setTerrain("standard")} outline={terrain !== "standard"}>Tout-venant — seuil 7 g/dL</Btn>
+            <Btn C={C} onClick={() => setTerrain("cv")} outline={terrain !== "cv"}>ATCD cardiovasculaires (IC, coronaropathie stable) ou onco-hématologie — seuil 8 g/dL</Btn>
+            <Btn C={C} onClick={() => setTerrain("sca")} outline={terrain !== "sca"}>SCA en cours (&lt; 48 h) — seuil 10 g/dL</Btn>
+          </div>
+          <div style={{ background: transfusionIndiquee ? C.redLight : C.greenLight, borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: transfusionIndiquee ? C.red : C.green, marginBottom: 6 }}>
+              {toleranceMauvaise ? "Transfusion indiquée — mauvaise tolérance clinique (quel que soit le chiffre d'Hb)" : sousSeuil ? `Transfusion à envisager — Hb ${hbVal} g/dL < seuil ${seuilTransf} g/dL` : `Pas de transfusion sur le chiffre — Hb ${hbVal} g/dL ≥ seuil ${seuilTransf} g/dL`}
+            </div>
+            {transfusionIndiquee ? (
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                • Prélever le <b>bilan étiologique AVANT la 1ère poche</b> (ferritine, B12, folates, Coombs, haptoglobine, réticulocytes)<br/>
+                • Bilan pré-transfusionnel : groupage ABO-Rhésus (2 déterminations) + RAI ; délai selon l'urgence (UVI / UV / UR, voir ci-dessus)<br/>
+                • <b>Single Unit Transfusion</b> : 1 CGR à la fois (hors choc), puis réévaluation clinique et biologique (1 CGR ≈ +1 g/dL)<br/>
+                • <b>Contrôle ultime pré-transfusionnel</b> obligatoire<br/>
+                {toleranceMauvaise !== true && cinetique === "chronique" && <span><b>Anémie chronique bien tolérée :</b> la transfusion n'est pas systématique même sous le seuil — privilégier le traitement de la cause (fer, B12, folates...), orientation en HDJ ou hospitalisation, à discuter avec l'hématologue de garde.<br/></span>}
+                <span style={{ color: C.red }}>⚠️ Si hémolyse auto-immune suspectée (Coombs positif) : ne pas transfuser sur un chiffre d'Hb, réserver aux détresses vitales — avis hématologue.</span>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                Seuil restrictif : on ne transfuse pas au-dessus du seuil en l'absence de mauvaise tolérance. Poursuivre le bilan étiologique et traiter la cause (voir ci-dessous).
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 8, fontStyle: "italic" }}>Seuils : restrictif 7 g/dL (cible 7-9) ; 8 g/dL si ATCD cardiovasculaires ou onco-hématologie ; 10 g/dL si SCA en cours. Réf. : AABB 2023.</div>
+        </Card>
+      )}
+
+      {/* ── Étape 2 : VGM ── */}
+      {step1Done && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. VGM (fL) <span style={{ fontWeight: 600, color: C.sub, fontSize: 11 }}>(normal : 80-100 ; &lt; 80 micro, &gt; 100 macro)</span></div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 75" value={vgm} onChange={e => setVgm(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && vgmValid) setVgmConfirmed(true); }}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <Btn C={C} onClick={() => setVgmConfirmed(true)} disabled={!vgmValid} style={{ width: "100%" }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={ANEMIECOLOR} title="VGM" value={`${vgmVal} fL — ${vgmType === "micro" ? "Microcytaire" : vgmType === "macro" ? "Macrocytaire" : "Normocytaire"}`} onEdit={() => { setVgm(""); setVgmConfirmed(false); }} />
+      ))}
+
+      {/* ── Étape 3 : Réticulocytes ── */}
+      {step2Done && (!step3Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>3. Réticulocytes (G/L) <span style={{ fontWeight: 600, color: C.sub, fontSize: 11 }}>(valeurs usuelles : 25-100 ; régénérative si &gt; 120)</span></div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 45" value={retic} onChange={e => setRetic(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && reticValid) setReticConfirmed(true); }}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <Btn C={C} onClick={() => setReticConfirmed(true)} disabled={!reticValid} style={{ width: "100%" }}>Valider</Btn>
+          <NonDispoBtn C={C} onClick={() => setReticNd(true)}>Réticulocytes non disponibles</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={ANEMIECOLOR} title="RÉTICULOCYTES" value={reticNd ? "Non disponibles — orientation provisoire" : `${reticVal} G/L — ${regenerative ? "Régénérative" : "Arégénérative"}`} onEdit={() => { setRetic(""); setReticConfirmed(false); setReticNd(false); }} />
+      ))}
+
+      {step3Done && reticNd && (
+        <Provisoire C={C}><b>Réticulocytes à demander</b> (NFS avec réticulocytes) : ils séparent l'anémie régénérative (hémorragie, hémolyse) de l'arégénérative (carence, inflammation, moelle). En attendant, l'orientation ci-dessous repose sur le VGM et la clinique.</Provisoire>
+      )}
+
+      {/* ══ MICROCYTAIRE ══ */}
+      {step3Done && vgmType === "micro" && (
+        <>
+          {!ferritineValid || crpHaute === null ? (
+            <Card C={C} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Ferritine et CRP</div>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Ferritine (µg/L) <span style={{ fontWeight: 600 }}>(carence si &lt; 30 ; &lt; 100 si contexte inflammatoire)</span></div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 8" value={ferritine} onChange={e => setFerritine(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>CRP élevée (syndrome inflammatoire) ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setCrpHaute(true)} outline={crpHaute !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setCrpHaute(false)} outline={crpHaute !== false} style={{ flex: 1 }}>Non</Btn>
+              </div>
+            </Card>
+          ) : microResult && (
+            <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE PROBABLE</div>
+              {microResult === "ferriprive" && (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Anémie carentielle martiale (ferriprive)</div>
+                  <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Causes : hémorragie chronique (saignement occulte : gynécologique chez la femme jeune, digestif chez l'homme/femme ménopausée — impose fibroscopie/coloscopie), malabsorption (maladie cœliaque), grossesse, saturnisme, carence en vitamine B6. Réserves vides = ferritine basse.</div>
+                  <div style={{ fontSize: 11, color: C.sub, marginTop: 8, fontStyle: "italic" }}>Si carence avérée (ferritine &lt; 30, CST &lt; 20%) bien tolérée : fer injectable (Ferinject®/Monofer®) envisageable — généralement orienté en HDJ ou hospitalisation plutôt que délivré directement aux urgences.</div>
+                </>
+              )}
+              {microResult === "inflammatoire" && (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Anémie inflammatoire</div>
+                  <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Détournement du fer : séquestré dans les macrophages, réserves normales (ferritine normale ou élevée). Causes : infections, cancers, maladies auto-immunes.</div>
+                </>
+              )}
+              {microResult === "autre" && (
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Ferritine normale sans syndrome inflammatoire</div>
+                  <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Penser à une hémoglobinopathie (bêta-thalassémie : contexte familial, origine méditerranéenne, microcytose isolée prononcée avec pseudo-polyglobulie), au saturnisme, ou à une anémie sidéroblastique (plus rare : plutôt microcytaire si congénitale, macrocytaire si acquise).</div>
+                </>
+              )}
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.navy, marginTop: 10, marginBottom: 6 }}>EXAMENS</div>
+              <div style={{ fontSize: 12, color: C.text }}>{microResult === "ferriprive" ? "Fibroscopie/coloscopie si contexte évocateur, bilan de malabsorption" : microResult === "inflammatoire" ? "Bilan étiologique du syndrome inflammatoire" : "Électrophorèse de l'hémoglobine, avis hématologique"}</div>
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 8, fontStyle: "italic" }}>Bilan de la microcytose en 3 temps : 1) bilan martial, 2) bilan inflammatoire, 3) recherche d'hémoglobinopathie (électrophorèse de l'Hb).</div>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ══ MACROCYTAIRE ══ */}
+      {step3Done && vgmType === "macro" && (
+        regenerative ? (
+          <Card C={C} style={{ border: `2px solid ${COLOR}`, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: COLOR, marginBottom: 6 }}>À NOTER</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Macrocytose régénérative : le VGM est artificiellement gonflé par les réticulocytes (plus gros que les GR matures). Le mécanisme réel est le même que pour une anémie normocytaire régénérative — se référer à cette branche (hémorragie aiguë ou hémolyse).</div>
+          </Card>
+        ) : (
+          <Card C={C} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Macrocytaire arégénérative</div>
+            <div style={{ fontSize: 12, color: C.sub, marginBottom: 10, lineHeight: 1.6 }}>Causes évidentes fréquentes en SAU : éthylisme chronique, hypothyroïdie, insuffisance hépatique, malabsorption, iatrogénie et toxiques (méthotrexate, chimiothérapie, barbituriques, arsenic, IPP au long cours). Penser au protoxyde d'azote (inactivation de la B12), notamment chez le sujet jeune.</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Vitamine B12 (pmol/L, optionnel)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 120" value={b12} onChange={e => setB12(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Folates B9 (nmol/L, optionnel)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 5" value={folates} onChange={e => setFolates(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 10, fontStyle: "italic" }}>Bilan de la macrocytose arégénérative : 1) dosage B9-B12, 2) myélogramme, 3) électrophorèse des protéines plasmatiques (EPP).</div>
+            {(b12Valid || folatesValid) && (
+              <div style={{ marginTop: 12, background: C.blueLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                {folatesValid && folatesVal < 7 && <div>• <b>Carence en B9</b> : apport insuffisant (dénutrition, éthylisme)</div>}
+                {b12Valid && b12Val < 150 && <div>• <b>Carence en B12</b> : maladie de Biermer (auto-immune, Ac anti-facteur intrinsèque), régime végétalien non supplémenté, résection gastrique/iléale, malabsorption (Crohn, maladie cœliaque), inactivation par le protoxyde d'azote</div>}
+                {!(folatesValid && folatesVal < 7) && !(b12Valid && b12Val < 150) && <div>Pas de carence B9/B12 évidente sur ces valeurs — réévaluer les causes évidentes ci-dessus.</div>}
+              </div>
+            )}
+          </Card>
+        )
+      )}
+
+      {/* ══ NORMOCYTAIRE RÉGÉNÉRATIVE ══ */}
+      {step3Done && vgmType === "normo" && (regenerative || reticNd) && (
+        <>
+          {hemorragieEvidente === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Hémorragie évidente ?</div>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 10 }}>Extériorisée (trauma, hématémèse, méléna) ou fortement suspectée (hémopéritoine, hématome profond sous anticoagulants) ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setHemorragieEvidente(true)} outline={hemorragieEvidente !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setHemorragieEvidente(false)} outline={hemorragieEvidente !== false} style={{ flex: 1 }}>Non</Btn>
+              </div>
+            </Card>
+          ) : hemorragieEvidente ? (
+            <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Hémorragie aiguë</div>
+              <div style={{ fontSize: 12, color: C.text, marginTop: 6 }}>Rechercher la source (digestive, traumatique, gynécologique...) et évaluer l'abondance/retentissement.</div>
+            </Card>
+          ) : hemolyseSignes === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Signes d'hémolyse ?</div>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 10 }}>Haptoglobine effondrée (le plus sensible), LDH élevée, bilirubine libre élevée ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setHemolyseSignes(true)} outline={hemolyseSignes !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setHemolyseSignes(false)} outline={hemolyseSignes !== false} style={{ flex: 1 }}>Non</Btn>
+              </div>
+            </Card>
+          ) : !hemolyseSignes ? (reticNd ? null : (
+            <Card C={C} style={{ border: `2px solid ${C.sub}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Pas d'hémorragie évidente ni de signes d'hémolyse francs malgré une anémie régénérative — réévaluer la clinique, répéter le bilan, envisager une hémorragie extériorisée secondairement (hémopéritoine, hématome profond) ou une sortie d'aplasie (régénération médullaire après aplasie).</div>
+            </Card>
+          )) : coombs === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Test de Coombs direct</div>
+              <OptionBtn C={C} color={ANEMIECOLOR} label="Positif" help="Origine immunologique" selected={coombs === "positif"} onSelect={() => setCoombs("positif")} />
+              <OptionBtn C={C} color={ANEMIECOLOR} label="Négatif" help="Origine non immunologique" selected={coombs === "negatif"} onSelect={() => setCoombs("negatif")} />
+            </Card>
+          ) : coombs === "positif" ? (
+            <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Anémie hémolytique auto-immune (AHAI)</div>
+              <div style={{ fontSize: 12, color: C.text, marginTop: 6 }}>Hémolyse extra-corpusculaire immunologique : auto-anticorps (AHAI, médicaments, infections, lymphome), allo-anticorps (penser à la réaction transfusionnelle si hémolyse après transfusion ou grossesse), hétéro-anticorps.</div>
+              <div style={{ background: C.amberLight, borderRadius: 10, padding: "10px 12px", marginTop: 10, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                ⚠️ <b>Ne pas transfuser sur un simple chiffre d'Hb</b> — risque élevé d'allo-immunisation/accident hémolytique aigu. Réserver aux détresses vitales neurologiques ou cardiaques.<br/>
+                Corticothérapie (Solumédrol) de 1ère ligne : dose <b>à discuter avec l'hématologue de garde</b>, pas de protocole fixe aux urgences.
+              </div>
+            </Card>
+          ) : schizocytes === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Schizocytes au frottis ?</div>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 10 }}>Coombs négatif → recherche urgente de schizocytes pour éliminer une MAT.</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setSchizocytes(true)} color={C.red} outline={schizocytes !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setSchizocytes(false)} color={C.green} outline={schizocytes !== false} style={{ flex: 1 }}>Non</Btn>
+              </div>
+            </Card>
+          ) : schizocytes ? (
+            <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 MICROANGIOPATHIE THROMBOTIQUE (MAT/PTT/SHU)</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Urgence vitale absolue. Avis hématologique/réanimation en urgence.</div>
+            </div>
+          ) : (
+            <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Hémolyse Coombs négatif, sans schizocyte</div>
+              <div style={{ fontSize: 12, color: C.text, marginTop: 6, lineHeight: 1.6 }}>
+                <b>Extra-corpusculaire non immunologique :</b> mécanique (valve mécanique), infectieuse (paludisme), toxique (venins, champignons, saturnisme).<br/>
+                <b>Corpusculaire (anomalie du GR lui-même) :</b><br/>
+                • membrane : sphérocytose héréditaire (Minkowski-Chauffard)<br/>
+                • enzymes : déficit en G6PD (favisme, médicaments inducteurs — les éviter), déficit en PK<br/>
+                • hémoglobine : drépanocytose (orientation crise, avis spécialisé), thalassémie
+              </div>
+              <div style={{ fontSize: 11, color: C.sub, marginTop: 8, fontStyle: "italic" }}>Examens : frottis sanguin, électrophorèse de l'hémoglobine, dosage G6PD (à distance d'un épisode hémolytique aigu), goutte épaisse / frottis si voyage en zone d'endémie.</div>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ══ NORMOCYTAIRE ARÉGÉNÉRATIVE ══ */}
+      {step3Done && vgmType === "normo" && (regenerative === false || (reticNd && hemorragieEvidente === false && hemolyseSignes === false)) && (
+        bipenie === null ? (
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Atteinte de plusieurs lignées (bipénie/pancytopénie) ?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn C={C} onClick={() => setBipenie(true)} outline={bipenie !== true} style={{ flex: 1 }}>Oui</Btn>
+              <Btn C={C} onClick={() => setBipenie(false)} outline={bipenie !== false} style={{ flex: 1 }}>Non</Btn>
+            </div>
+          </Card>
+        ) : bipenie ? (
+          <Card C={C} style={{ border: `2px solid ${C.amber}`, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, marginBottom: 6 }}>ÉTIOLOGIE</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Suspicion d'envahissement médullaire ou d'aplasie</div>
+            <div style={{ fontSize: 12, color: C.text, marginTop: 6 }}>Moelle pauvre (aplasie), moelle envahie (leucémie aiguë, lymphome), moelle dysplasique (myélodysplasie). Examens : autres lignées, causes métaboliques, myélogramme indispensable.</div>
+          </Card>
+        ) : (
+          <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ORIENTATION — atteinte isolée de la lignée rouge</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              • Évaluer la fonction rénale (déficit en érythropoïétine, insuffisance rénale chronique)<br/>
+              • Insuffisance hépatique, troubles endocriniens (TSH : hypothyroïdie), hémodilution<br/>
+              • Rechercher un syndrome inflammatoire débutant (pas encore microcytaire)<br/>
+              • Carence mixte débutante (fer + folates qui "normalise" artificiellement le VGM)
+            </div>
+          </Card>
+        )
+      )}
+
+      {/* ── Pièges à éviter — toujours visible dès Hb saisie ── */}
+      {step1Done && (
+        <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 20, fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+          <b>Pièges à éviter aux urgences :</b><br/>
+          • Seuil transfusionnel restrictif : <b>7 g/dL</b> (patient tout-venant, cible 7-9), <b>8 g/dL</b> si antécédents cardiovasculaires (IC, coronaropathie stable) ou patient d'onco-hématologie, <b>10 g/dL</b> si SCA en cours (&lt; 48h) ou mauvaise tolérance clinique avérée<br/>
+          • <b>Single Unit Transfusion</b> : 1 seul CGR à la fois (hors choc), puis réévaluation clinique/biologique — 1 CGR augmente l'Hb d'≈ 1 g/dL<br/>
+          • Toujours prélever le bilan étiologique (ferritine, B12, folates, Coombs, haptoglobine) <b>avant</b> de transfuser<br/>
+          • Toucher rectal systématique si anémie microcytaire/normocytaire arégénérative inexpliquée chez un patient &gt; 50 ans
+        </div>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : OMS/HAS (seuils Hb), AABB 2023 (seuils transfusionnels), SFMU, Société Française d'Hématologie, infographie « Know your anémie » (Dr P. Balaz, BMPM)</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HYPERGLYCÉMIE — VALIDÉE PAR JEREMY (SFMU/SRLF)
+   Seuils : hyperglycémie > 1,26 g/L à jeun, seuil d'alerte SAU > 2,5 g/L.
+   ACD : cétonémie > 3 mmol/L + acidose (pH < 7,30 ou HCO3- < 18, consensus ADA/EASD 2024).
+   SHN : cétonémie < 0,6, pas d'acidose (pH > 7,30, HCO3- > 18), osmo > 320.
+   Osmolarité = 2×Natrémie + Glycémie(mmol/L) + Urée(mmol/L).
+   Diagnostic + triage uniquement (PEC/insulinothérapie non détaillée ici).
+   ════════════════════════════════════════════════════════════════════════ */
+const GLYCOLOR = "#8E44AD";
+
+function HyperglycemieAlgo({ pre, onBack, C, noOwnBack }) {
+  const [glycemie, setGlycemie] = useP("glycemie.HyperglycemieAlgo.glycemie", pre?.gly ?? "");
+  const [cetonemie, setCetonemie] = useP("glycemie.HyperglycemieAlgo.cetonemie", "");
+  const [cetoNd, setCetoNd] = useP("glycemie.HyperglycemieAlgo.cetoNd", false); // cétonémie non disponible
+  const [ph, setPh] = useP("glycemie.HyperglycemieAlgo.ph", pre?.ph ?? "");
+  const [hco3, setHco3] = useP("glycemie.HyperglycemieAlgo.hco3", "");
+  const [confirmed, setConfirmed] = useP("glycemie.HyperglycemieAlgo.confirmed", false);
+  const [gcsAltere, setGcsAltere] = useP("glycemie.HyperglycemieAlgo.gcsAltere", null);
+  const [deshydratation, setDeshydratation] = useP("glycemie.HyperglycemieAlgo.deshydratation", null);
+  const [kussmaul, setKussmaul] = useP("glycemie.HyperglycemieAlgo.kussmaul", null);
+  const [naGly, setNaGly] = useP("glycemie.HyperglycemieAlgo.naGly", pre?.na ?? "");
+  const [uree, setUree] = useP("glycemie.HyperglycemieAlgo.uree", "");
+  // Protocole ACD (CH Aubagne, PPS/PT/186)
+  const [kaliemieACD, setKaliemieACD] = useP("glycemie.HyperglycemieAlgo.kaliemieACD", "");
+  const [phosphoremieACD, setPhosphoremieACD] = useP("glycemie.HyperglycemieAlgo.phosphoremieACD", "");
+  const [calcemieACD, setCalcemieACD] = useP("glycemie.HyperglycemieAlgo.calcemieACD", "");
+  const [etatChoc, setEtatChoc] = useP("glycemie.HyperglycemieAlgo.etatChoc", null);
+  const [autreDefaillance, setAutreDefaillance] = useP("glycemie.HyperglycemieAlgo.autreDefaillance", null);
+  const [poidsACD, setPoidsACD] = useP("glycemie.HyperglycemieAlgo.poidsACD", "");
+  // PEC hyperglycémie simple / découverte de diabète
+  const [diabeteConnu, setDiabeteConnu] = useP("glycemie.HyperglycemieAlgo.diabeteConnu", null);
+  const [dejaInsuline, setDejaInsuline] = useP("glycemie.HyperglycemieAlgo.dejaInsuline", null);
+  const [profilDecouverte, setProfilDecouverte] = useP("glycemie.HyperglycemieAlgo.profilDecouverte", null); // 'type1' | 'type2'
+  const [ciDfg, setCiDfg] = useP("glycemie.HyperglycemieAlgo.ciDfg", false);
+  const [ciIc, setCiIc] = useP("glycemie.HyperglycemieAlgo.ciIc", false);
+  const [ciHepatique, setCiHepatique] = useP("glycemie.HyperglycemieAlgo.ciHepatique", false);
+  const [poidsSimple, setPoidsSimple] = useP("glycemie.HyperglycemieAlgo.poidsSimple", "");
+  const bottomRef = useRef(null);
+
+  const glycemieVal = parseFloat((glycemie || "").replace(",", "."));
+  const cetonemieVal = parseFloat((cetonemie || "").replace(",", "."));
+  const phVal = parseFloat((ph || "").replace(",", "."));
+  const hco3Val = parseFloat((hco3 || "").replace(",", "."));
+  const rawValid = !isNaN(glycemieVal) && (cetoNd || !isNaN(cetonemieVal));
+  const step1Done = rawValid && confirmed;
+  const phProvided = !isNaN(phVal);
+  const hco3Provided = !isNaN(hco3Val);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [step1Done, gcsAltere, deshydratation, kussmaul, naGly, uree]);
+
+  const step2Done = step1Done && gcsAltere !== null && deshydratation !== null && kussmaul !== null;
+
+  // Classification ACD / SHN / hyperglycémie simple — le GDS est une aide, pas un prérequis
+  let diagnostic = null;
+  if (step1Done) {
+    const gdsProvided = phProvided || hco3Provided;
+    const acidose = (phProvided && phVal < 7.30) || (hco3Provided && hco3Val < 18);
+    const pasAcidoseConfirmee = gdsProvided && !acidose;
+    const cetoPositive = cetonemieVal > 3;
+    const cetoNegative = cetonemieVal < 0.6;
+
+    if (cetoNd) diagnostic = acidose ? "acd_suspectee" : "ceto_inconnue"; // cétonémie non disponible : pas de conclusion sur la cétose
+    else if (cetoPositive && acidose) diagnostic = "acd";
+    else if (cetoPositive && pasAcidoseConfirmee) diagnostic = "ceto_sans_acidose";
+    else if (cetoPositive && !gdsProvided) diagnostic = "acd_suspectee";
+    else if (cetoNegative) diagnostic = glycemieVal > 6 ? "shn" : "simple";
+    else diagnostic = "ceto_moderee"; // cétonémie 0,6-3, zone intermédiaire
+  }
+
+  const naGlyVal = parseFloat((naGly || "").replace(",", "."));
+  const ureeVal = parseFloat((uree || "").replace(",", "."));
+  const osmoValid = !isNaN(naGlyVal) && !isNaN(ureeVal) && rawValid;
+  const osmolarite = osmoValid ? 2 * naGlyVal + glycemieVal * 5.55 + ureeVal : null; // glycémie g/L → mmol/L ×5,55
+
+  const critique = step1Done && ((phProvided && phVal < 7.10) || gcsAltere === true);
+
+  // ── Protocole ACD (CH Aubagne, PPS/PT/186) ──
+  function getInsulinRate(g, cetoPos) {
+    if (isNaN(g)) return null;
+    if (g > 4) return { rate: "12", solute: "Ringer Lactate" };
+    if (g >= 3.5) return { rate: "10", solute: "Ringer Lactate" };
+    if (g >= 3) return { rate: "8", solute: "G5%" };
+    if (g >= 2.5) return { rate: "6", solute: "G5%" };
+    if (g >= 2) return cetoPos ? { rate: "5", solute: "G10%" } : { rate: "4", solute: "G5%" };
+    if (g >= 1.6) return cetoPos ? { rate: "5", solute: "G10%" } : { rate: "2", solute: "G5%" };
+    if (g >= 0.8) return cetoPos ? { rate: "5", solute: "G10% + bolus G30%" } : { rate: "1", solute: "G5%" };
+    if (g >= 0.6) return cetoPos ? { rate: "5", solute: "G30% (hydrat + bolus)" } : { rate: "0,5", solute: "G5%" };
+    return { rate: "STOP", solute: "G30%" };
+  }
+  const cetoPosACD = cetoNd ? true : cetonemieVal > 0.5; // cétonémie non disponible : ACD présumée, colonne « cétose » du protocole
+  const insulinLookup = (diagnostic === "acd" || diagnostic === "acd_suspectee") ? getInsulinRate(glycemieVal, cetoPosACD) : null;
+  const poidsVal = parseFloat((poidsACD || "").replace(",", "."));
+  const bolusInitial = (diagnostic === "acd" || diagnostic === "acd_suspectee") && glycemieVal > 4 && !isNaN(poidsVal) ? (0.1 * poidsVal).toFixed(1) : null;
+
+  const kaliemieACDVal = parseFloat((kaliemieACD || "").replace(",", "."));
+  const phosphoremieACDVal = parseFloat((phosphoremieACD || "").replace(",", "."));
+  const calcemieACDVal = parseFloat((calcemieACD || "").replace(",", "."));
+
+  const critereAdmissionPh = phProvided && phVal < 7.20;
+  const critereAdmissionHco3 = hco3Provided && hco3Val < 10;
+  const critereAdmissionK = !isNaN(kaliemieACDVal) && kaliemieACDVal < 3;
+  const critereAdmissionPhos = !isNaN(phosphoremieACDVal) && phosphoremieACDVal < 0.4;
+  const admissionReaUSC = (diagnostic === "acd" || diagnostic === "acd_suspectee") && (critereAdmissionPh || critereAdmissionHco3 || etatChoc === true || autreDefaillance === true || critereAdmissionK || critereAdmissionPhos);
+  const pasDeKCl = !isNaN(kaliemieACDVal) && kaliemieACDVal > 5;
+  const pasDePhocytan = (!isNaN(phosphoremieACDVal) && phosphoremieACDVal > 1.5) || (!isNaN(calcemieACDVal) && calcemieACDVal < 2.2);
+
+  // ── PEC hyperglycémie simple / découverte de diabète ──
+  const poidsSimpleVal = parseFloat((poidsSimple || "").replace(",", "."));
+  const poidsSimpleValid = !isNaN(poidsSimpleVal);
+  const doseCorrection = poidsSimpleValid ? (0.1 * poidsSimpleVal).toFixed(1) : null;
+  const doseLenteType1 = poidsSimpleValid ? (0.2 * poidsSimpleVal).toFixed(1) : null;
+  const doseAltType2Min = poidsSimpleValid ? (0.1 * poidsSimpleVal).toFixed(1) : null;
+  const doseAltType2Max = poidsSimpleValid ? (0.2 * poidsSimpleVal).toFixed(1) : null;
+  const ciMetformine = ciDfg || ciIc || ciHepatique;
+  const type2Ambulatoire = diagnostic === "simple" && profilDecouverte === "type2" && glycemieVal < 3 && cetonemieVal < 0.6;
+  const sortiePossible = diagnostic === "simple" && (diabeteConnu === true || type2Ambulatoire) && cetonemieVal < 0.6;
+
+  function reset() {
+    setGlycemie(""); setCetonemie(""); setCetoNd(false); setPh(""); setHco3(""); setConfirmed(false);
+    setGcsAltere(null); setDeshydratation(null); setKussmaul(null); setNaGly(""); setUree("");
+    setKaliemieACD(""); setPhosphoremieACD(""); setCalcemieACD(""); setEtatChoc(null); setAutreDefaillance(null); setPoidsACD("");
+    setDiabeteConnu(null); setDejaInsuline(null); setProfilDecouverte(null); setCiDfg(false); setCiIc(false); setCiHepatique(false); setPoidsSimple("");
+  }
+
+  const DIAG_LABEL = {
+    acd: "Acidocétose diabétique (ACD)",
+    acd_suspectee: "Suspicion d'ACD — GDS non réalisé",
+    ceto_sans_acidose: "Cétose sans acidocétose confirmée",
+    ceto_moderee: "Cétonémie modérée — profil intermédiaire",
+    ceto_inconnue: "Hyperglycémie — cétose non évaluée",
+    shn: "Syndrome hyperosmolaire (SHN)",
+    simple: "Hyperglycémie simple / diabète déséquilibré",
+    indetermine: "Profil atypique — réévaluer",
+  };
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: GLYCOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🍬</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hyperglycémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Triage et classification (ACD / SHN / simple)</div>
+        </div>
+      </div>
+
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Triptyque du lit (bedside)</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Glycémie capillaire (g/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 3,2" value={glycemie} onChange={e => setGlycemie(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Cétonémie capillaire (mmol/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 4,5" value={cetonemie} onChange={e => { setCetonemie(e.target.value); if (e.target.value) setCetoNd(false); }} disabled={cetoNd}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 4, outline: "none", opacity: cetoNd ? .5 : 1 }} />
+          <NonDispoBtn C={C} selected={cetoNd} onClick={() => setCetoNd(!cetoNd)}>{cetoNd ? "✓ Cétonémie non disponible (toucher pour annuler)" : "Cétonémie non disponible"}</NonDispoBtn>
+          <div style={{ height: 10 }} />
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 8 }}>OPTIONNEL — GDS (recommandé)</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>pH</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 7,15" value={ph} onChange={e => setPh(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>HCO3⁻ (mmol/L)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 10" value={hco3} onChange={e => setHco3(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+          </div>
+          <Btn C={C} onClick={() => setConfirmed(true)} disabled={!rawValid} style={{ width: "100%" }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={GLYCOLOR} title="TRIPTYQUE" value={`Glycémie ${glycemieVal} g/L · ${cetoNd ? "Cétonémie non disponible" : `Cétonémie ${cetonemieVal} mmol/L`}${phProvided ? ` · pH ${phVal}` : ""}${hco3Provided ? ` · HCO3⁻ ${hco3Val}` : ""}`} onEdit={reset} />
+      )}
+
+      {step1Done && cetoNd && (
+        <Provisoire C={C}><b>Cétonémie non disponible.</b> Demander une <b>cétonurie</b> ou une cétonémie au laboratoire. La classification repose sur le gaz du sang seul ; la colonne « cétose présumée » du protocole d'insuline n'est utilisée que si une acidose est présente.</Provisoire>
+      )}
+
+      {/* ── Évaluation clinique ── */}
+      {step1Done && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Évaluation clinique <span style={{ fontWeight: 600, color: C.sub, fontSize: 11 }}>(complète le tableau, facultatif)</span></div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Glasgow altéré / signes de souffrance cérébrale ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setGcsAltere(true)} color={C.red} outline={gcsAltere !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setGcsAltere(false)} color={C.green} outline={gcsAltere !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Signes de déshydratation (pli, hypoTA, tachycardie) ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setDeshydratation(true)} outline={deshydratation !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setDeshydratation(false)} outline={deshydratation !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Dyspnée de Kussmaul / polypnée ?</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn C={C} onClick={() => setKussmaul(true)} outline={kussmaul !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setKussmaul(false)} outline={kussmaul !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={GLYCOLOR} title="CLINIQUE" value={`${gcsAltere ? "GCS altéré" : "GCS normal"} · ${deshydratation ? "déshydraté" : "pas de déshydratation"} · ${kussmaul ? "Kussmaul" : "pas de Kussmaul"}`} onEdit={() => { setGcsAltere(null); setDeshydratation(null); setKussmaul(null); }} />
+      ))}
+
+      {critique && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 SIGNES DE GRAVITÉ</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            {phProvided && phVal < 7.10 && <div>• pH &lt; 7,10</div>}
+            {gcsAltere && <div>• Glasgow altéré / souffrance cérébrale</div>}
+            <div style={{ marginTop: 6, fontWeight: 700 }}>Discuter un avis senior/réanimation sans attendre la suite du bilan.</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Classification ── */}
+      {step1Done && diagnostic && (
+        <Card C={C} style={{ border: `2px solid ${diagnostic === "indetermine" ? C.sub : GLYCOLOR}`, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: GLYCOLOR, marginBottom: 6 }}>CLASSIFICATION</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.text, marginBottom: 8 }}>{DIAG_LABEL[diagnostic]}</div>
+          {diagnostic === "acd" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Terrain plutôt DT1 (ou DT2 évolué), sujet jeune. Cétonémie positive + acidose (pH &lt; 7,30 ou HCO3⁻ &lt; 18). Une glycémie modérée ou normale n'exclut pas l'ACD : penser à l'<b>acidocétose euglycémique</b> (iSGLT2, jeûne, grossesse, alcool).</div>
+          )}
+          {diagnostic === "acd_suspectee" && cetoNd && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Hyperglycémie avec <b>acidose</b> (pH &lt; 7,30 ou HCO3⁻ &lt; 18) mais cétonémie non disponible : <b>acidocétose présumée</b>, à confirmer (cétonurie, cétonémie au laboratoire). Une acidose lactique ou une autre acidose reste possible. Le protocole ci-dessous est affiché avec la colonne « cétose présumée ».</div>
+          )}
+          {diagnostic === "ceto_inconnue" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Cétonémie non disponible{(phProvided || hco3Provided) ? " et pas d'acidose sur le gaz du sang : acidocétose peu probable" : " et gaz du sang non réalisé : on ne peut ni confirmer ni écarter une acidocétose"}. <b>Faire une cétonurie (bandelette) ou un gaz du sang</b> ; si cétonurie positive ou acidose, reprendre en saisissant ces valeurs. Un syndrome hyperosmolaire reste à évoquer si la glycémie est &gt; 6 g/L (osmolarité calculée ci-dessous).</div>
+          )}
+          {diagnostic === "acd_suspectee" && !cetoNd && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Cétonémie &gt; 3 mmol/L, gaz du sang non réalisé. Le GDS n'est pas systématique pour une hyperglycémie, mais une cétonémie franchement positive justifie de le faire pour confirmer/éliminer l'acidose. Le protocole d'insulinothérapie ci-dessous reste utilisable (il ne dépend que de la glycémie/cétonémie) ; les critères d'admission réa/USC nécessitent en revanche le pH/HCO3⁻.</div>
+          )}
+          {diagnostic === "ceto_sans_acidose" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Cétonémie positive mais GDS sans acidose (pH &gt; 7,30 et/ou HCO3⁻ &gt; 15-18) — cétose sans acidocétose confirmée. Surveiller l'évolution, hydrater, traiter la cause du jeûne/stress ; répéter la cétonémie si le contexte clinique reste évocateur.</div>
+          )}
+          {diagnostic === "ceto_moderee" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Cétonémie modérée (0,6-3 mmol/L), profil intermédiaire. Peut correspondre à une hyperglycémie simple avec cétose débutante — surveiller, hydrater, répéter la cétonémie ; compléter le GDS si le contexte clinique est évocateur d'ACD (Kussmaul, déshydratation, GCS altéré).</div>
+          )}
+          {diagnostic === "shn" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Terrain plutôt DT2, sujet âgé/fragile/polypathologique. Cétonémie négative, pas d'acidose, glycémie souvent &gt; 6 g/L.</div>
+          )}
+          {diagnostic === "simple" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Diabète connu mal équilibré, ou découverte fortuite. Pas d'acidose, cétonémie négative/traces.</div>
+          )}
+          {diagnostic === "indetermine" && (
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Les valeurs saisies ne correspondent pas clairement à un profil type — réévaluer avec le contexte clinique.</div>
+          )}
+        </Card>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          PROTOCOLE ACD — CH Aubagne (PPS/PT/186, v1, avril 2023)
+          ══════════════════════════════════════════════════════════════════ */}
+      {step1Done && (diagnostic === "acd" || diagnostic === "acd_suspectee") && (
+        <>
+          {/* Critères d'admission réa/USC */}
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Critères d'admission réa/USC</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>État de choc ?</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <Btn C={C} onClick={() => setEtatChoc(true)} color={C.red} outline={etatChoc !== true} style={{ flex: 1 }}>Oui</Btn>
+              <Btn C={C} onClick={() => setEtatChoc(false)} outline={etatChoc !== false} style={{ flex: 1 }}>Non</Btn>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Autre défaillance d'organe (coma, IRA...) ?</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <Btn C={C} onClick={() => setAutreDefaillance(true)} color={C.red} outline={autreDefaillance !== true} style={{ flex: 1 }}>Oui</Btn>
+              <Btn C={C} onClick={() => setAutreDefaillance(false)} outline={autreDefaillance !== false} style={{ flex: 1 }}>Non</Btn>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Kaliémie (mmol/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 3,8" value={kaliemieACD} onChange={e => setKaliemieACD(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Phosphorémie (mmol/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 0,9" value={phosphoremieACD} onChange={e => setPhosphoremieACD(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+            </div>
+            {admissionReaUSC && (
+              <div style={{ marginTop: 12, background: C.redLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.red, fontWeight: 700, lineHeight: 1.6 }}>
+                Admission réa/USC requise — patient non transférable en service conventionnel
+                {critereAdmissionPh && " (pH < 7,20)"}{critereAdmissionHco3 && " (HCO3⁻ < 10)"}{critereAdmissionK && " (kaliémie < 3)"}{critereAdmissionPhos && " (phosphorémie < 0,4)"}
+              </div>
+            )}
+          </Card>
+
+          {/* Insulinothérapie IVSE */}
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Insulinothérapie IVSE</div>
+            <div style={{ fontSize: 12, color: C.text, marginBottom: 10 }}>Dilution standard : <b>Novorapid® 40 UI/40 mL (1 UI/mL)</b></div>
+            {glycemieVal > 4 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Poids (kg) — pour le bolus initial</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 75" value={poidsACD} onChange={e => setPoidsACD(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+                {bolusInitial && <div style={{ fontSize: 12, color: C.text, marginTop: 6 }}><b>Bolus initial : {bolusInitial} UI</b> IV (0,1 UI/kg) avant la mise en route de l'IVSE</div>}
+                {bolusInitial && <div style={{ fontSize: 10, color: C.sub, marginTop: 4, lineHeight: 1.5, fontStyle: "italic" }}>Bolus prévu par le protocole du service (glycémie &gt; 4 g/L). À noter : la reco SFMU/SRLF 2019 (R3.2) conseille probablement de ne pas en faire.</div>}
+              </div>
+            )}
+            {insulinLookup && (
+              <div style={{ background: C.blueLight, borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.blue, marginBottom: 4 }}>
+                  {insulinLookup.rate === "STOP" ? "STOP insuline" : `Insuline IVSE : ${insulinLookup.rate} mL/h`}
+                </div>
+                <div style={{ fontSize: 12, color: C.text }}>Soluté (après H6) : <b>{insulinLookup.solute}</b></div>
+                <div style={{ fontSize: 10, color: C.sub, marginTop: 6, fontStyle: "italic" }}>
+                  {cetoNd ? `Basé sur glycémie ${glycemieVal} g/L, cétonémie non disponible (cétose présumée — à confirmer)` : `Basé sur glycémie ${glycemieVal} g/L, cétonémie ${cetonemieVal} mmol/L (${cetoPosACD ? "> 0,5" : "≤ 0,5"})`}
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 10, lineHeight: 1.6 }}>
+              Objectifs : glycémie &lt; 3 g/L puis maintenue autour de 2 g/L (pas plus bas), jusqu'à disparition cétonémie/cétonurie (H24-H48). Maintenir IVSE &gt; 5 UI/h tant que cétonémie &gt; 0,5 mmol/L, et pendant au moins 12h après normalisation.<br/>
+              Reprise alimentation = vitesse prescrite + 3 mL/h juste avant le repas puis pendant 3h.
+            </div>
+            <div style={{ background: C.blueLight, borderRadius: 10, padding: "10px 12px", marginTop: 10, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              <b>Objectifs de décroissance (SFMU/SRLF 2019) :</b> cétonémie −0,5 mmol/L/h, ou à défaut bicarbonates −3 mmol/L/h et glycémie −3 mmol/L/h. S'ils ne sont pas atteints après les premières heures, augmenter l'insuline, <b>sauf hypokaliémie</b>.<br/>
+              <b>Pas de bicarbonate de sodium</b> dans l'acidocétose (R3.8, grade 2−).
+            </div>
+          </Card>
+
+          {/* Effets secondaires à éviter */}
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Effets secondaires à éviter absolument</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+              <b>1. Hypoglycémie</b> : si IVSE à fortes posologies nécessaire malgré cétonémie persistante — hydrater avec G5% si 2,5 &lt; glycémie ≤ 3,5 g/L, G10% si glycémie ≤ 2,5 g/L.<br/>
+              <b>2. Hyperkaliémie initiale fréquente</b> malgré une hypokalicytie constante — traitement : IVSE seule (rien d'autre, sauf EER si anurie + IRA organique).
+              {!isNaN(kaliemieACDVal) && (
+                <div style={{ marginTop: 4, fontWeight: 700, color: pasDeKCl ? C.red : C.green }}>
+                  {pasDeKCl ? "→ K+ > 5 : pas de KCl dans l'hydratation" : "→ K+ < 5 : ajouter du KCl selon le protocole"}
+                </div>
+              )}
+              <div style={{ marginTop: 6 }}><b>3. Hypophosphorémie</b> : supplémentation IV systématique sauf si phosphorémie &gt; 1,5 ou calcémie corrigée &lt; 2,2.</div>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4, marginTop: 8 }}>Calcémie corrigée (mmol/L, optionnel)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 2,3" value={calcemieACD} onChange={e => setCalcemieACD(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              {(!isNaN(phosphoremieACDVal) || !isNaN(calcemieACDVal)) && (
+                <div style={{ marginTop: 6, fontWeight: 700, color: pasDePhocytan ? C.amber : C.green }}>
+                  {pasDePhocytan ? "→ Pas de Phocytan (phosphorémie > 1,5 ou calcémie corrigée < 2,2)" : "→ Phocytan indiqué (10 mL/poche)"}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Hydratation 48h */}
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Modèle d'hydratation des 48 premières heures</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, fontStyle: "italic" }}>2 VVP : 1 pour l'hydratation (2 poches en Y), 1 pour l'insuline IVSE. VVC si faible capital veineux ou besoin K+ &gt; 4g/6h.</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.8 }}>
+              <b>H0-H1</b> : choc hypovolémique → 20 mL/kg RL (×2 si besoin) ; sinon 1L RL sur la 1ère heure<br/>
+              <b>H1-H3 / H3-H6</b> : Poche 1 = RL 500 + KCl 1g* · Poche 2 = RL 500 + Phocytan 10mL** + MgSO4 1,5g<br/>
+              <b>H6-H12 / H12-H24</b> : Poche 1 = 500mL soluté adapté (tableau) + KCl 2g* (1g si RL) · Poche 2 = 500mL soluté adapté + Phocytan 10mL** + MgSO4 1,5g<br/>
+              <b>H24-H48</b> : idem /12h, 2000mL total
+            </div>
+            <div style={{ fontSize: 10, color: C.sub, marginTop: 8, lineHeight: 1.6 }}>
+              *Pas de KCl si K+ &gt; 5 mmol/L et/ou anurie (surveillance iono à H2)<br/>
+              **Pas de Phocytan si phosphorémie &gt; 1,5 ou calcémie corrigée &lt; 2,2<br/>
+              Ajouter ≥ 2g NaCl/poche si sérum glucosé (pas RL) sauf si natrémie &gt; 145
+            </div>
+          </Card>
+
+          {/* Surveillance */}
+          <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 20, fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+            <b>Surveillance :</b><br/>
+            • HGT : q30min si IVSE ≥ 10 mL/h (ou ≥5 et HGT &lt; 1,5) · q1h si ≥5 et HGT &gt; 1,5 · q2h sinon<br/>
+            • Cétonémie q12h jusqu'à &lt; 0,5 sur 2 dosages consécutifs &gt; 12h d'intervalle<br/>
+            • Ionogramme/calcémie/phosphorémie/magnésémie : H4, puis q8h/24h, puis q12h jusqu'à H72<br/>
+            • GDS artérielle q8h/24h — arrêt possible si normalisée<br/>
+            <span style={{ fontStyle: "italic" }}>Réf. : Protocole CH Aubagne PPS/PT/186 v1 (Dr Parzy, avril 2023)</span>
+          </div>
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          PEC — Hyperglycémie simple / Découverte de diabète (SFMU/HAS)
+          ══════════════════════════════════════════════════════════════════ */}
+      {step1Done && diagnostic === "simple" && (
+        <>
+          {diabeteConnu === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Diabète déjà connu ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setDiabeteConnu(true)} outline={diabeteConnu !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setDiabeteConnu(false)} outline={diabeteConnu !== false} style={{ flex: 1 }}>Non (découverte)</Btn>
+              </div>
+            </Card>
+          ) : diabeteConnu ? (
+            <>
+              <Card C={C} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Diabétique connu — conduite à tenir</div>
+                <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+                  • <b>Pas d'insuline IV</b>, éviter les corrections agressives en "schéma flash" si patient non traité habituellement par insuline (risque d'hypoglycémie après le RAD)<br/>
+                  • Hydratation orale (eau plate)<br/>
+                  • Traiter le facteur déclenchant (antibiothérapie si infection, adaptation corticoïdes...)
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginTop: 12, marginBottom: 6 }}>Déjà sous insuline ?</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn C={C} onClick={() => setDejaInsuline(true)} outline={dejaInsuline !== true} style={{ flex: 1 }}>Oui</Btn>
+                  <Btn C={C} onClick={() => setDejaInsuline(false)} outline={dejaInsuline !== false} style={{ flex: 1 }}>Non</Btn>
+                </div>
+                {dejaInsuline && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Poids (kg)</div>
+                    <input type="number" inputMode="decimal" placeholder="Ex : 70" value={poidsSimple} onChange={e => setPoidsSimple(e.target.value)}
+                      style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 8, outline: "none" }} />
+                    <div style={{ fontSize: 12, color: C.text }}>Après vérification du matériel (cathéter pompe/stylo) : dose de correction possible{doseCorrection && <> ≈ <b>{doseCorrection} UI</b> SC (0,1 UI/kg)</>}</div>
+                  </div>
+                )}
+              </Card>
+            </>
+          ) : profilDecouverte === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Découverte de diabète — profil phénotypique</div>
+              <OptionBtn C={C} color={GLYCOLOR} label="Suspicion Type 1" help="Sujet jeune, mince, asthénie, perte de poids rapide" selected={profilDecouverte === "type1"} onSelect={() => setProfilDecouverte("type1")} />
+              <OptionBtn C={C} color={GLYCOLOR} label="Suspicion Type 2" help="Sujet d'âge mûr, surpoids/obésité, asymptomatique ou peu symptomatique" selected={profilDecouverte === "type2"} onSelect={() => setProfilDecouverte("type2")} />
+            </Card>
+          ) : profilDecouverte === "type1" ? (
+            <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>⚠️ Suspicion DT1 — RAD direct proscrit</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+                Même sans acidocétose à l'instant T, risque de décompensation rapide élevé.<br/>
+                • <b>Hospitalisation ou avis diabétologique urgent</b> (souvent UHCD/médecine) pour insulinothérapie basal-bolus<br/>
+                {glycemieVal > 3 && (
+                  <>
+                    Si l'avis tarde et glycémie &gt; 3 g/L : 1ère injection d'insuline lente (Lantus/Abasaglar/Tresiba) <b>à discuter avec le spécialiste de garde</b>
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Poids (kg)</div>
+                      <input type="number" inputMode="decimal" placeholder="Ex : 60" value={poidsSimple} onChange={e => setPoidsSimple(e.target.value)}
+                        style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+                      {doseLenteType1 && <div style={{ fontSize: 12, color: C.text, marginTop: 6 }}>Dose prudente indicative ≈ <b>{doseLenteType1} UI</b> SC (0,2 UI/kg) — sous réserve de l'accord du spécialiste</div>}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Découverte DT2</div>
+              {type2Ambulatoire ? (
+                <>
+                  <div style={{ fontSize: 12, color: C.green, fontWeight: 700, marginBottom: 10 }}>Glycémie &lt; 3 g/L et cétonémie négative → prise en charge ambulatoire possible</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Contre-indications à la Metformine :</div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={ciDfg} onChange={e => setCiDfg(e.target.checked)} style={{ width: 16, height: 16 }} />
+                    <span style={{ fontSize: 12, color: C.text }}>IRC sévère (DFG &lt; 30 mL/min/1,73m²)</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+                    <input type="checkbox" checked={ciIc} onChange={e => setCiIc(e.target.checked)} style={{ width: 16, height: 16 }} />
+                    <span style={{ fontSize: 12, color: C.text }}>Insuffisance cardiaque décompensée / hypoxie tissulaire aiguë</span>
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, cursor: "pointer" }}>
+                    <input type="checkbox" checked={ciHepatique} onChange={e => setCiHepatique(e.target.checked)} style={{ width: 16, height: 16 }} />
+                    <span style={{ fontSize: 12, color: C.text }}>Insuffisance hépatocellulaire sévère</span>
+                  </label>
+                  {!ciMetformine ? (
+                    <div style={{ background: C.greenLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text }}>
+                      <b>Metformine</b> (1ère intention HAS) : 500 mg ou 850 mg, 1×/j au milieu d'un repas
+                    </div>
+                  ) : (
+                    <div style={{ background: C.amberLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text }}>
+                      Metformine contre-indiquée → alternative transitoire : insuline lente à faible dose (0,1-0,2 UI/kg SC le soir) ou sulfamide, <b>après accord d'un diabétologue</b>
+                      {poidsSimpleValid && doseAltType2Min && <div style={{ marginTop: 4 }}>Soit ≈ <b>{doseAltType2Min}-{doseAltType2Max} UI</b> SC</div>}
+                    </div>
+                  )}
+                  {glycemieVal >= 3 && (
+                    <div style={{ fontSize: 11, color: C.sub, marginTop: 8, fontStyle: "italic" }}>Glycémie ≥ 3 g/L transitoire sans cétose : même alternative envisageable après accord diabétologue.</div>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: C.amber, fontWeight: 700 }}>Glycémie ≥ 3 g/L ou cétonémie non strictement négative → réévaluer la filière (hospitalisation courte/avis spécialisé), le RAD ambulatoire direct n'est pas recommandé en l'état.</div>
+              )}
+            </Card>
+          )}
+
+          {sortiePossible && (
+            <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+              <b>Critères de sortie / RAD :</b><br/>
+              • Cétonémie strictement négative ou &lt; 0,6 mmol/L<br/>
+              • Fonction rénale et kaliémie normales<br/>
+              • Patient informé des signes d'alerte (recherche de cétones si glycémies &gt; 2,5 g/L)<br/>
+              • <b>Consultation de suivi sous 48-72h</b> (médecin traitant/diabétologue) + ordonnance traitement initial + matériel d'autosurveillance
+            </div>
+          )}
+        </>
+      )}
+
+      {step1Done && diagnostic && (
+        <ConduiteCard C={C} color={(diagnostic === "acd" || diagnostic === "acd_suspectee") ? C.red : diagnostic === "simple" ? C.green : C.amber}
+          gravite={<b>{{ acd: "Acidocétose diabétique", acd_suspectee: cetoNd ? "Acidocétose présumée (cétonémie non disponible)" : "Acidocétose suspectée (gaz du sang à faire)", ceto_inconnue: "Cétose non évaluée — cétonurie ou GDS à faire", ceto_sans_acidose: "Cétose sans acidose", ceto_moderee: "Cétonémie modérée", shn: "Hyperglycémie majeure sans cétose — SHN à évoquer", simple: "Hyperglycémie simple" }[diagnostic]}</b>}
+          geste={(diagnostic === "acd" || diagnostic === "acd_suspectee")
+            ? <span><b>Protocole ACD du service</b> : hydratation, insuline IVSE selon glycémie et cétonémie ; kaliémie avant l'insuline, pas de KCl si K &gt; 5</span>
+            : diagnostic === "simple" ? <span>Traitement de la cause et du diabète, voir la prise en charge ci-dessous</span>
+            : diagnostic === "ceto_inconnue" ? <span><b>Cétonurie (bandelette) ou gaz du sang</b> pour trancher ; hydrater en attendant</span>
+            : <span>Surveiller, hydrater, répéter la cétonémie ; compléter par un gaz du sang</span>}
+          examens={cetoNd ? "Cétonurie ou cétonémie labo, gaz du sang (pH, HCO3⁻), ionogramme (K avant insuline), créatinine, facteur déclenchant (5 I)" : "Cétonémie, gaz du sang (pH, HCO3⁻), ionogramme (K avant insuline), créatinine, facteur déclenchant (5 I)"}
+          suite={(diagnostic === "acd" || diagnostic === "acd_suspectee")
+            ? (admissionReaUSC ? "Admission réanimation / USC (critère rempli)" : "Hospitalisation")
+            : diagnostic === "simple" ? (sortiePossible ? "Sortie possible si les critères ci-dessous sont remplis" : "Réévaluer la filière (hospitalisation courte ou avis spécialisé)") : null} />
+      )}
+
+      {/* ── Osmolarité (optionnelle) ── */}
+      {step1Done && (
+        <Card C={C} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Osmolarité calculée (optionnel)</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Natrémie (mmol/L)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 138" value={naGly} onChange={e => setNaGly(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Urée (mmol/L)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 8" value={uree} onChange={e => setUree(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+          </div>
+          {osmoValid && (
+            <div style={{ marginTop: 12, background: osmolarite > 320 ? C.redLight : C.greenLight, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: osmolarite > 320 ? C.red : C.green }}>Osmolarité ≈ {osmolarite.toFixed(0)} mOsm/kg{osmolarite > 320 && " — élevée (évocateur de SHN)"}</div>
+            </div>
+          )}
+          <Comprendre C={C} label="Formule"><div>Osmolarité = 2×Natrémie + Glycémie(mmol/L) + Urée(mmol/L)</div></Comprendre>
+        </Card>
+      )}
+
+      {/* ── Recherche du facteur déclenchant — les "5 I" ── */}
+      {step1Done && (
+        <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+          <b>Recherche systématique du facteur déclenchant — les "5 I" :</b><br/>
+          • <b>Infection</b> (le + fréquent) : pneumopathie, pyélonéphrite, érysipèle, cholécystite → CRP, ECBU, radio thorax<br/>
+          • <b>Infarctus/Ischémie</b> : SCA parfois asymptomatique, AVC, ischémie de membre → ECG, troponine<br/>
+          • <b>Insuline insuffisante</b> : arrêt pompe, erreur de dose, rupture de soins<br/>
+          • <b>Iatrogénie</b> : corticoïdes récents (majeur), neuroleptiques, sérum glucosé<br/>
+          • <b>Initial/Inaugural</b> : découverte de DT1 (enfant/adulte jeune)
+        </div>
+      )}
+
+      {/* ── Bilan biologique minimal ── */}
+      {step1Done && (
+        <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 20, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+          <b>Bilan biologique minimal :</b><br/>
+          • Ionogramme complet — <b>kaliémie impérative avant toute insulinothérapie</b> + trou anionique<br/>
+          • Fonction rénale (urée, créatininémie)<br/>
+          • NFS — une hyperleucocytose modérée est fréquente dans l'ACD par simple stress métabolique, ne signe pas à elle seule une infection
+        </div>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : SFMU/SRLF RFE acidoses métaboliques (Ann Fr Med Urgence 2019;9:387-408), HAS · Protocole ACD CH Aubagne PPS/PT/186 (Dr Parzy, 2023)</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BILAN HÉPATIQUE — VALIDÉ PAR JEREMY (SFMU/SNFGE)
+   Charcot = fièvre + ictère + douleur HCD (Reynolds = Charcot + choc/confusion)
+   → angiocholite. IHC aiguë = TP < 50% ou encéphalopathie → hépatite fulminante.
+   Échographie = juge de paix (voies biliaires dilatées vs fines).
+   ULN ALAT/ASAT générique ≈ 40 UI/L (à ajuster selon le laboratoire local).
+   ════════════════════════════════════════════════════════════════════════ */
+const HEPATOCOLOR = "#B8860B";
+const ULN_TRANSAM = 40;
+
+function BilanHepatiqueAlgo({ pre, onBack, C, noOwnBack, ulnTransam }) {
+  const ULN_TRANSAM = ulnTransam || 40;
+  // Triage
+  const [fievre, setFievre] = useP("hepatique.BilanHepatiqueAlgo.fievre", null);
+  const [instabiliteConfusion, setInstabiliteConfusion] = useP("hepatique.BilanHepatiqueAlgo.instabiliteConfusion", null);
+  const [ictere, setIctere] = useP("hepatique.BilanHepatiqueAlgo.ictere", null);
+  const [douleurHCD, setDouleurHCD] = useP("hepatique.BilanHepatiqueAlgo.douleurHCD", null);
+  const [encephalopathie, setEncephalopathie] = useP("hepatique.BilanHepatiqueAlgo.encephalopathie", null);
+  const [tp, setTp] = useP("hepatique.BilanHepatiqueAlgo.tp", pre?.tp ?? "");
+  const [tpConfirmed, setTpConfirmed] = useP("hepatique.BilanHepatiqueAlgo.tpConfirmed", false);
+  const [tpNd, setTpNd] = useP("hepatique.BilanHepatiqueAlgo.tpNd", false); // TP non disponible
+  const [facteurV, setFacteurV] = useP("hepatique.BilanHepatiqueAlgo.facteurV", "");
+  const [delaiCourt, setDelaiCourt] = useP("hepatique.BilanHepatiqueAlgo.delaiCourt", null); // délai ictère → encéphalopathie < 15 j
+  // Écho
+  const [echo, setEcho] = useP("hepatique.BilanHepatiqueAlgo.echo", null); // 'dilatees' | 'fines' | 'non_faite'
+  const [aegIctereNu, setAegIctereNu] = useP("hepatique.BilanHepatiqueAlgo.aegIctereNu", null);
+  // Cytolyse (voies fines)
+  const [alat, setAlat] = useP("hepatique.BilanHepatiqueAlgo.alat", pre?.alat ?? "");
+  const [ldh, setLdh] = useP("hepatique.BilanHepatiqueAlgo.ldh", ""); const [ggt, setGgt] = useP("hepatique.BilanHepatiqueAlgo.ggt", ""); const [pal, setPal] = useP("hepatique.BilanHepatiqueAlgo.pal", "");
+  const [asat, setAsat] = useP("hepatique.BilanHepatiqueAlgo.asat", "");
+  const [ctxToxique, setCtxToxique] = useP("hepatique.BilanHepatiqueAlgo.ctxToxique", false);
+  const [ctxIschemique, setCtxIschemique] = useP("hepatique.BilanHepatiqueAlgo.ctxIschemique", false);
+  const [ctxVirale, setCtxVirale] = useP("hepatique.BilanHepatiqueAlgo.ctxVirale", false);
+  const [ctxAlcool, setCtxAlcool] = useP("hepatique.BilanHepatiqueAlgo.ctxAlcool", false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [fievre, instabiliteConfusion, encephalopathie, tpConfirmed, facteurV, echo, aegIctereNu, alat, asat, ctxToxique, ctxIschemique, ctxVirale, ctxAlcool]);
+
+  const tpVal = parseFloat((tp || "").replace(",", "."));
+  const tpValid = !isNaN(tpVal);
+  const step1Done = fievre !== null && ictere !== null && douleurHCD !== null && instabiliteConfusion !== null && encephalopathie !== null && ((tpValid && tpConfirmed) || tpNd);
+
+  // Triade de Charcot = fièvre + ictère + douleur de l'hypochondre droit ; pentade de Reynolds = Charcot + choc/confusion
+  const charcot = fievre === true && ictere === true && douleurHCD === true;
+  const reynolds = charcot && instabiliteConfusion === true;
+  const ihcFulminante = tpValid && (tpVal < 50 || encephalopathie === true); // insuffisance hépatique aiguë (sévère et/ou grave)
+  const ihaSevere = tpValid && tpVal < 50;
+  const ihaGrave = encephalopathie === true;
+  const ihaFulminante = iaGraveFulm();
+  function iaGraveFulm() { return encephalopathie === true && delaiCourt === true; }
+  function iaGraveFn() { return encephalopathie === true; }
+
+  const step2Done = step1Done && echo !== null;
+
+  const alatVal = parseFloat((alat || "").replace(",", "."));
+  const asatVal = parseFloat((asat || "").replace(",", "."));
+  const alatValid = !isNaN(alatVal), asatValid = !isNaN(asatVal);
+  const ratioAsatAlat = alatValid && asatValid && alatVal > 0 ? asatVal / alatVal : null;
+  const cytolyseMajeure = alatValid && alatVal > 10 * ULN_TRANSAM;
+  const alatXN = alatValid ? alatVal / ULN_TRANSAM : null;      // multiple de la normale
+  const pf = v => parseFloat((v || "").replace(",", "."));
+  const ldhVal = pf(ldh), ggtVal = pf(ggt), palVal = pf(pal);
+  const ratioAlatLdh = alatValid && !isNaN(ldhVal) && ldhVal > 0 ? alatVal / ldhVal : null;
+  const ratioGgtPal = !isNaN(ggtVal) && !isNaN(palVal) && palVal > 0 ? ggtVal / palVal : null;
+
+  // Voies fines / écho non faite : l'orientation s'affiche sans exiger ALAT/ASAT ni contexte coché
+  const step3Done = step2Done && (echo !== "dilatees" || fievre === true || aegIctereNu !== null);
+
+  const reaDechoc = ihcFulminante || reynolds || (echo === "fines" && ctxToxique);
+  const chirurgieGastro = echo === "dilatees";
+  const radPossible = echo === "fines" && !reaDechoc && !(alatXN !== null && alatXN > 5) && tpValid && tpVal >= 70 && fievre === false && encephalopathie === false;
+
+  function reset() {
+    setFievre(null); setIctere(null); setDouleurHCD(null); setInstabiliteConfusion(null); setEncephalopathie(null); setTp(""); setTpConfirmed(false); setTpNd(false); setFacteurV(""); setDelaiCourt(null);
+    setEcho(null); setAegIctereNu(null); setAlat(""); setAsat(""); setLdh(""); setGgt(""); setPal("");
+    setCtxToxique(false); setCtxIschemique(false); setCtxVirale(false); setCtxAlcool(false);
+  }
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: HEPATOCOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🫘</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Bilan hépatique</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Cytolyse / cholestase — triage et orientation</div>
+        </div>
+      </div>
+
+      {/* ── Étape 1 : Triage ── */}
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Triage — écarter l'urgence vitale</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Fièvre / frissons ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setFievre(true)} color={C.red} outline={fievre !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setFievre(false)} outline={fievre !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Ictère ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setIctere(true)} color={C.red} outline={ictere !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setIctere(false)} outline={ictere !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Douleur de l'hypochondre droit ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setDouleurHCD(true)} color={C.red} outline={douleurHCD !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setDouleurHCD(false)} outline={douleurHCD !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Instabilité hémodynamique ou confusion ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setInstabiliteConfusion(true)} color={C.red} outline={instabiliteConfusion !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setInstabiliteConfusion(false)} outline={instabiliteConfusion !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Encéphalopathie / astérixis (flapping tremor) ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setEncephalopathie(true)} color={C.red} outline={encephalopathie !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setEncephalopathie(false)} outline={encephalopathie !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>TP (%)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 45" value={tp} onChange={e => setTp(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Facteur V (%, optionnel)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 55" value={facteurV} onChange={e => setFacteurV(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <Btn C={C} onClick={() => setTpConfirmed(true)} disabled={!tpValid} style={{ width: "100%" }}>Valider</Btn>
+          <NonDispoBtn C={C} onClick={() => setTpNd(true)}>TP non disponible (en attente)</NonDispoBtn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={ihcFulminante || charcot ? C.red : C.green} title="TRIAGE"
+          value={`${tpNd ? "TP non disponible" : `TP ${tpVal}%`}${facteurV ? ` · FV ${facteurV}%` : ""} — ${reynolds ? "Reynolds évocateur" : charcot ? "Charcot évocateur" : "pas de Charcot"}, ${ihcFulminante ? "IHC" : "pas d'IHC"}`}
+          onEdit={() => { setTpConfirmed(false); setTpNd(false); }} />
+      )}
+
+      {step1Done && tpNd && (
+        <Provisoire C={C}><b>TP en attente.</b> Une insuffisance hépatique aiguë (TP &lt; 50 %) n'est pas écartée : à demander en urgence (± facteur V). Le critère « RAD envisageable » reste désactivé tant que le TP n'est pas connu.</Provisoire>
+      )}
+
+      {step1Done && ihcFulminante && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>
+            🚨 INSUFFISANCE HÉPATIQUE AIGUË — {ihaFulminante ? "FULMINANTE" : iaGraveFn() ? "GRAVE" : "SÉVÈRE"}
+          </div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6, marginBottom: 8 }}>
+            • <b>Sévère</b> : TP &lt; 50 % {ihaSevere ? "✔" : ""}<br/>
+            • <b>Grave</b> : encéphalopathie {iaGraveFn() ? "✔" : ""}<br/>
+            • <b>Fulminante</b> : encéphalopathie avec délai ictère → encéphalopathie &lt; 15 jours {ihaFulminante ? "✔" : ""}
+          </div>
+          {encephalopathie === true && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Délai ictère → encéphalopathie &lt; 15 jours ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setDelaiCourt(true)} color={C.red} outline={delaiCourt !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setDelaiCourt(false)} outline={delaiCourt !== false} style={{ flex: 1 }}>Non / inconnu</Btn>
+              </div>
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            <b>Réanimation / déchoquage sans délai.</b><br/>
+            <b>2. Rechercher une cause fréquente :</b> intoxication au paracétamol (paracétamolémie), foie de choc, hépatite virale A, B, E et HSV, thrombose veineuse sus-hépatique (Budd-Chiari).<br/>
+            <b>3. Traitement symptomatique et surveillance rapprochée (neurologique surtout) :</b><br/>
+            &nbsp;• dépister et corriger <b>hypoglycémie</b> et <b>hyponatrémie</b><br/>
+            &nbsp;• <b>ne pas corriger les anomalies de l'hémostase</b> (pas de plasma frais congelé systématique)<br/>
+            &nbsp;• éviter les médicaments aggravants : <b>sédatifs, paracétamol, AINS</b> (hépato- et néphrotoxiques)<br/>
+            &nbsp;• débuter sans attendre un éventuel <b>traitement étiologique</b><br/>
+            <b>4. Contacter le centre de greffe hépatique</b> : bilan étiologique de 2ᵉ ligne, biopsie hépatique, indication de transplantation.
+          </div>
+          <div style={{ fontSize: 10, color: C.sub, marginTop: 8, fontStyle: "italic" }}>Ne pas se contenter d'un traitement symptomatique ; ne pas hésiter à contacter le centre expert.</div>
+        </div>
+      )}
+
+      {step1Done && tpValid && tpVal < 70 && (
+        <div style={{ background: C.amberLight, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 11, color: C.text, lineHeight: 1.5 }}>
+          ℹ️ Un ictère diminue l'absorption de la vitamine K : un TP bas qui <b>se corrige après vitamine K parentérale</b> oriente vers une cause non hépatocellulaire (cholestase). Le TP (demi-vie ≈ 2 jours) reflète l'insuffisance hépatique aiguë ; l'albumine (≈ 3 semaines) un contexte chronique.
+        </div>
+      )}
+
+      {step1Done && charcot && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 {reynolds ? "PENTADE DE REYNOLDS — angiocholite grave" : "TRIADE DE CHARCOT — angiocholite"}</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            Fièvre + ictère + douleur de l'hypochondre droit{reynolds ? ", avec choc et/ou confusion (pentade de Reynolds) : forme grave, réanimation et drainage en urgence" : ""}. Antibiothérapie probabiliste + drainage des voies biliaires (CPRE) en urgence si confirmé à l'écho.
+          </div>
+        </div>
+      )}
+
+      {step1Done && (
+        <ConduiteCard C={C} color={ihcFulminante || reynolds ? C.red : charcot ? C.amber : C.green}
+          gravite={<b>{ihcFulminante ? "Insuffisance hépatique aiguë" : reynolds ? "Pentade de Reynolds — angiocholite grave" : charcot ? "Triade de Charcot — angiocholite" : "Pas de signe de gravité immédiate"}</b>}
+          geste={ihcFulminante
+            ? <span><b>Réanimation / déchoquage sans délai</b>, rechercher une cause fréquente (paracétamol), contacter le centre de greffe</span>
+            : (reynolds || charcot)
+              ? <span><b>Antibiothérapie probabiliste</b> + drainage des voies biliaires (CPRE) en urgence si confirmé à l'échographie</span>
+              : <span>Échographie abdominale : voies biliaires dilatées ou fines</span>}
+          examens="Échographie, TP/facteur V, ALAT/ASAT, paracétamolémie au moindre doute"
+          suite={null} />
+      )}
+
+      {/* ── Étape 2 : Échographie ── */}
+      {step1Done && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Échographie abdominale</div>
+          <OptionBtn C={C} color={HEPATOCOLOR} label="Voies biliaires dilatées" help="VBP > 6 mm chez le patient non cholécystectomisé" selected={echo === "dilatees"} onSelect={() => setEcho("dilatees")} />
+          <OptionBtn C={C} color={HEPATOCOLOR} label="Voies biliaires fines" help="Atteinte primitivement hépatocytaire" selected={echo === "fines"} onSelect={() => setEcho("fines")} />
+          <OptionBtn C={C} color={HEPATOCOLOR} label="Non réalisée" selected={echo === "non_faite"} onSelect={() => setEcho("non_faite")} />
+        </Card>
+      ) : (
+        <StepSummary C={C} color={HEPATOCOLOR} title="ÉCHOGRAPHIE" value={echo === "dilatees" ? "Voies biliaires dilatées" : echo === "fines" ? "Voies biliaires fines" : "Non réalisée"} onEdit={() => { setEcho(null); setAegIctereNu(null); }} />
+      ))}
+
+      {/* ══ VOIES DILATÉES — profil obstructif ══ */}
+      {step2Done && echo === "dilatees" && (
+        <>
+          {fievre ? (
+            <Card C={C} style={{ border: `2px solid ${C.red}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.red, marginBottom: 6 }}>ÉTIOLOGIE — URGENCE THÉRAPEUTIQUE</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Angiocholite (lithiase VBP fébrile)</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Antibiothérapie probabiliste + drainage des voies biliaires par CPRE en urgence.</div>
+            </Card>
+          ) : aegIctereNu === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Ictère nu, progressif, indolore + AEG ?</div>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 10 }}>± vésicule biliaire palpable (loi de Courvoisier-Terrier)</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setAegIctereNu(true)} outline={aegIctereNu !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setAegIctereNu(false)} outline={aegIctereNu !== false} style={{ flex: 1 }}>Non</Btn>
+              </div>
+            </Card>
+          ) : aegIctereNu ? (
+            <Card C={C} style={{ border: `2px solid ${C.amber}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, marginBottom: 6 }}>ÉTIOLOGIE</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Suspicion d'obstacle tumoral bilio-pancréatique</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Ictère nu progressif indolore, AEG, ± loi de Courvoisier-Terrier. Orientation gastro-entérologie/chirurgie pour bilan d'imagerie complémentaire.</div>
+            </Card>
+          ) : (
+            <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: C.green, marginBottom: 6 }}>ÉTIOLOGIE</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 8 }}>Lithiase de la voie biliaire principale (non fébrile)</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Douleur de l'hypochondre droit, ictère fluctuant. Orientation chirurgie/gastro-entérologie.</div>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ══ VOIES FINES — profil de cytolyse primitive ══ */}
+      {step2Done && (echo === "fines" || echo === "non_faite") && (
+        <>
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Transaminases (optionnel — pour le ratio ASAT/ALAT)</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>ALAT (UI/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 850" value={alat} onChange={e => setAlat(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>ASAT (UI/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 1200" value={asat} onChange={e => setAsat(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+            </div>
+            {ratioAsatAlat !== null && (
+              <div style={{ background: cytolyseMajeure ? C.redLight : C.blueLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text }}>
+                Ratio ASAT/ALAT ≈ <b>{ratioAsatAlat.toFixed(1)}</b>{ratioAsatAlat > 2 ? " (> 2, évocateur d'hépatite alcoolique aiguë)" : ratioAsatAlat > 1 ? " (> 1 : compatible avec une hépatite alcoolique)" : ""}<br/>
+                {cytolyseMajeure && <span style={{ color: C.red, fontWeight: 700 }}>Cytolyse majeure (&gt; 10× N ≈ {10 * ULN_TRANSAM} UI/L)</span>}
+                <Pourquoi C={C}>
+                  L'ALAT est quasi spécifique du foie ; l'ASAT existe aussi dans le muscle, le cœur, les globules rouges — et surtout dans les mitochondries, davantage lésées par l'alcool. Dans l'hépatite alcoolique, l'ASAT monte donc proportionnellement plus que l'ALAT (ratio &gt; 2), alors que dans la plupart des autres causes (virale, toxique), l'ALAT prédomine ou les deux montent de façon plus équilibrée.
+                </Pourquoi>
+              </div>
+            )}
+            {alatXN !== null && (
+              <div style={{ background: alatXN > 75 ? C.redLight : alatXN > 5 ? C.amberLight : C.blueLight, borderRadius: 10, padding: "10px 12px", marginTop: 10, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                <b>ALAT ≈ {alatXN.toFixed(1)} × la normale</b> ({ULN_TRANSAM} UI/L)<br/>
+                {alatXN > 75 ? "> 75 × N : cause ischémique ou toxique dans plus de 90 % des cas." : alatXN > 10 ? "> 10 × N : hépatite ischémique ou toxique, hépatite virale aiguë, obstruction biliaire aiguë (lithiase), hépatite auto-immune, Wilson, Budd-Chiari." : alatXN > 5 ? "5-10 × N : hépatite virale, obstruction biliaire aiguë, hépatite auto-immune, Wilson, Budd-Chiari ; hépatite alcoolique possible (typiquement ≤ 6-7 × N)." : "< 5 × N (élévation légère) : stéatopathie métabolique (en général < 4 × N), alcool, médicaments — rarement une urgence."}
+                {alatXN > 5 && <div style={{ marginTop: 4, fontWeight: 700, color: C.red }}>Transaminases &gt; 5 × N : avis spécialisé rapide et/ou hospitalisation (RAD non adapté).</div>}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: C.sub, marginTop: 12, marginBottom: 6, fontWeight: 700 }}>Ratios d'orientation (optionnel) :</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>LDH (UI/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 1500" value={ldh} onChange={e => setLdh(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>GGT (UI/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 300" value={ggt} onChange={e => setGgt(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>PAL (UI/L)</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 120" value={pal} onChange={e => setPal(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+              </div>
+            </div>
+            {ratioAlatLdh !== null && (
+              <div style={{ fontSize: 12, color: C.text, marginBottom: 4 }}>ALAT/LDH ≈ <b>{ratioAlatLdh.toFixed(2)}</b>{ratioAlatLdh < 1 ? " (< 1 : oriente vers une cause ischémique)" : ""}</div>
+            )}
+            {ratioGgtPal !== null && (
+              <div style={{ fontSize: 12, color: C.text, marginBottom: 4 }}>GGT/PAL ≈ <b>{ratioGgtPal.toFixed(1)}</b>{ratioGgtPal > 2.5 ? " (> 2,5 : évocateur d'hépatite alcoolique)" : ""}</div>
+            )}
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginTop: 12, marginBottom: 8 }}>Contexte évocateur (cocher ce qui s'applique) :</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxToxique} onChange={e => setCtxToxique(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Paracétamol / Augmentin / Érythromycine / AINS / phytothérapie récents</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxIschemique} onChange={e => setCtxIschemique(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Hypotension majeure / ACR / défaillance cardiaque aiguë / coup de chaleur récent</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxVirale} onChange={e => setCtxVirale(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Contexte évocateur viral (voyage, IST, toxicomanie IV, immunodépression)</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxAlcool} onChange={e => setCtxAlcool(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Intoxication alcoolique aiguë ou sevrage</span>
+            </label>
+          </Card>
+
+          {ctxToxique && (
+            <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 Suspicion d'hépatite toxique</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                Dosage de la <b>paracétamolémie</b> au moindre doute.<br/>
+                Si prise de paracétamol confirmée/suspectée : indication de N-acétylcystéine (Hidonac) à poser avec la réanimation/centre antipoison — ne pas retarder si dose supra-thérapeutique ou horaire de prise inconnu.<br/>
+                Schéma RCP (ANSM) : <b>150 mg/kg en 1 h</b>, puis <b>50 mg/kg en 4 h</b>, puis <b>100 mg/kg en 16 h</b>.
+              </div>
+            </div>
+          )}
+          {ctxIschemique && (
+            <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              <b>Hépatite ischémique ("foie de choc")</b> : les transaminases s'effondrent souvent aussi vite qu'elles sont montées. Traiter la cause hémodynamique.
+            </div>
+          )}
+          {ctxVirale && (
+            <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              <b>Hépatite virale aiguë</b> : sérologies VHA (IgM), VHB (Ag HBs + IgM anti-HBc), VHC ; compléter IgM EBV/CMV selon contexte (groupe herpétique chez l'immunodéprimé).
+            </div>
+          )}
+          {ctxAlcool && (
+            <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+              <b>Hépatite alcoolique aiguë</b> : évocateur si ratio ASAT/ALAT &gt; 2 + macrocytose, dans un contexte d'intoxication aiguë ou de sevrage.
+            </div>
+          )}
+
+          <div style={{ background: C.border + "55", borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+            <b>Bilan de 2ᵉ intention :</b><br/>
+            • Paracétamolémie<br/>
+            • Sérologies virales (VHA, VHB, VHC, VHE ± EBV/CMV)<br/>
+            • CK (source musculaire d'ASAT), TSH, NFS, LDH<br/>
+            • Bilan auto-immun, ferritine/saturation de la transferrine, cuivre/céruloplasmine, α1-antitrypsine : <b>hors urgences</b>, à orienter en consultation (hépato-gastro-entérologie / médecine interne) si cause non retrouvée
+          </div>
+
+          <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            ⚠️ <b>Piège :</b> une obstruction biliaire aiguë (lithiase) peut débuter par une élévation des transaminases (5-10 × N) <b>avant</b> la cholestase. Un ictère avec transaminases élevées n'élimine pas une cause obstructive : l'échographie reste l'examen clé. Dans les hépatites virales, les transaminases baissent avant la bilirubine ; dans l'hépatite alcoolique, bilirubine et TP sont plus fiables que les transaminases pour la gravité.
+          </div>
+
+          <details style={{ background: C.border + "55", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+            <summary style={{ cursor: "pointer", fontWeight: 700, color: C.navy }}>Médicaments et toxiques pourvoyeurs (à rechercher à l'interrogatoire)</summary>
+            <div style={{ marginTop: 8 }}>
+              <b>Hépatocellulaire :</b> paracétamol, AINS, amiodarone, statines, valproate, isoniazide, rifampicine, pyrazinamide, méthotrexate, kétoconazole, antirétroviraux, allopurinol, oméprazole, tétracycline.<br/>
+              <b>Mixte :</b> carbamazépine, phénytoïne, phénobarbital, co-trimoxazole, nitrofurantoïne, clindamycine, vérapamil, azathioprine, amitriptyline.<br/>
+              <b>Cholestatique :</b> amoxicilline-acide clavulanique, érythromycine, clopidogrel, contraceptifs oraux/œstrogènes, stéroïdes anabolisants, terbinafine, chlorpromazine, tricycliques.<br/>
+              <b>Phytothérapie :</b> germandrée, kava-kava, éphédra, chaparral, scutellaire, vitamine A à forte dose.<br/>
+              <b>Autres :</b> cocaïne, ecstasy (MDMA), amanite phalloïde, solvants (chloroforme, tétrachlorométhane, trichloréthylène).
+            </div>
+          </details>
+        </>
+      )}
+
+      {/* ── Orientation ── */}
+      {step3Done && (
+        <Card C={C} style={{ border: `2px solid ${reaDechoc ? C.red : chirurgieGastro ? C.amber : C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: reaDechoc ? C.red : chirurgieGastro ? C.amber : C.green, marginBottom: 6 }}>ORIENTATION</div>
+          {reaDechoc && <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Réanimation / déchoquage : IHC, angiocholite avec choc, ou hépatite toxique nécessitant NAC.</div>}
+          {!reaDechoc && chirurgieGastro && <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Chirurgie / gastro-entérologie : obstacle mécanique documenté.</div>}
+          {!reaDechoc && !chirurgieGastro && (
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+              {radPossible
+                ? "RAD envisageable (exceptionnel) : cytolyse/cholestase modérées, patient asymptomatique, TP normal, écho normale — uniquement si filière de consultation rapide (gastro/médecine interne) assurée sous 48-72h."
+                : "Hospitalisation à privilégier — critères de RAD non réunis (RAD reste exceptionnel aux urgences pour ce motif)."}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : SFMU, SNFGE, CEMIR (insuffisance hépatique aiguë), HUG — stratégie d'interprétation des tests hépatiques (2017)</div></Comprendre>
+        <MiseAJour date="20/10/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DYSCALCÉMIE — VALIDÉE PAR JEREMY
+   Seuils usuels (ajustables) : normale 2,20-2,60 mmol/L (Ca corrigé).
+   HyperCa sévère > 3,5 · HypoCa sévère < 1,9 mmol/L (Ca corrigé).
+   PTH utile en 2e intention (résultat différé), pas pour la décision immédiate.
+   ════════════════════════════════════════════════════════════════════════ */
+const CALCCOLOR = "#16A085";
+
+/* ════════════════════════════════════════════════════════════════════════
+   HYPERCALCÉMIE — VALIDÉE PAR JEREMY
+   Seuils usuels (ajustables) : normale ≤ 2,60 · sévère > 3,5 mmol/L (Ca corrigé)
+   ════════════════════════════════════════════════════════════════════════ */
+function HypercalcemieAlgo({ pre, onBack, C, noOwnBack, caBasse, caHaute }) {
+  const seuilHaut = caHaute || 2.60;
+  const [ecg, setEcg] = useP("dyscalcemie.HypercalcemieAlgo.ecg", null); // 'qt_court' | 'trouble_rythme' | 'normal'
+  const [confusion, setConfusion] = useP("dyscalcemie.HypercalcemieAlgo.confusion", false);
+  const [convulsions, setConvulsions] = useP("dyscalcemie.HypercalcemieAlgo.convulsions", false);
+  const [vomissements, setVomissements] = useP("dyscalcemie.HypercalcemieAlgo.vomissements", false);
+  const [symptomesAutres, setSymptomesAutres] = useP("dyscalcemie.HypercalcemieAlgo.symptomesAutres", false); // asthénie, anorexie, nausées, polyuro-polydipsie, constipation, douleurs osseuses
+  const [ecgTriageDone, setEcgTriageDone] = useP("dyscalcemie.HypercalcemieAlgo.ecgTriageDone", false);
+  const [calcium, setCalcium] = useP("dyscalcemie.HypercalcemieAlgo.calcium", pre?.ca ?? "");
+  const [calciumConfirmed, setCalciumConfirmed] = useP("dyscalcemie.HypercalcemieAlgo.calciumConfirmed", false);
+  const [ctxNeoplasie, setCtxNeoplasie] = useP("dyscalcemie.HypercalcemieAlgo.ctxNeoplasie", false);
+  const [ctxIrc, setCtxIrc] = useP("dyscalcemie.HypercalcemieAlgo.ctxIrc", false);
+  const [ctxImmobDeshydrat, setCtxImmobDeshydrat] = useP("dyscalcemie.HypercalcemieAlgo.ctxImmobDeshydrat", false);
+  const [ctxMedicHyper, setCtxMedicHyper] = useP("dyscalcemie.HypercalcemieAlgo.ctxMedicHyper", false);
+  const [poidsCalc, setPoidsCalc] = useP("dyscalcemie.HypercalcemieAlgo.poidsCalc", "");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [ecgTriageDone, calciumConfirmed, ctxNeoplasie, ctxIrc, ctxImmobDeshydrat, ctxMedicHyper, poidsCalc]);
+
+  const gravite = confusion || convulsions || vomissements || ecg === "trouble_rythme";
+  const calciumVal = parseFloat((calcium || "").replace(",", "."));
+  const calciumValid = !isNaN(calciumVal);
+  const step2Done = ecgTriageDone && calciumValid && calciumConfirmed;
+  const hyperConfirmee = calciumValid && calciumVal > seuilHaut;
+  const severe = calciumValid && calciumVal >= 3.5;
+  const palier3 = calciumValid && calciumVal >= 3.0;       // ≥ 3,0 mmol/L : traitement à débuter
+  const crise = calciumValid && calciumVal > 3.7;
+  const dialyse = calciumValid && calciumVal >= 4.5;
+  const symptomatique = gravite || symptomesAutres;
+  const symptomatiqueOuSevere = symptomatique || severe;
+  const etiologieUrgente = ctxNeoplasie || ctxIrc;
+  const hospitalisation = step2Done && hyperConfirmee && (symptomatiqueOuSevere || etiologieUrgente || palier3);
+  const bisphosphonateIndique = hyperConfirmee && (calciumVal > 3.0 || gravite);
+  // Pamidronate selon la calcémie (protocole validé par Jeremy)
+  const pamidronateDose = !calciumValid ? null : calciumVal >= 4 ? "90 mg" : calciumVal >= 3.5 ? "70 mg" : "50 mg";
+  // Orientation (Adnet 2024) : Box si < 3,5 ; SAUV si ≥ 3,5 ou signes cliniques ; réanimation si ≥ 3,5 symptomatique
+  const orientationHyperCa = calciumValid ? (calciumVal >= 3.5 && symptomatique ? "Réanimation" : (calciumVal >= 3.5 || symptomatique) ? "SAUV" : "Box") : null;
+
+  const poidsCalcVal = parseFloat((poidsCalc || "").replace(",", "."));
+  const poidsCalcValid = !isNaN(poidsCalcVal);
+  const doseCalcitonineMin = poidsCalcValid ? (4 * poidsCalcVal).toFixed(0) : null;
+  const doseCalcitonineMax = poidsCalcValid ? (8 * poidsCalcVal).toFixed(0) : null;
+
+  function reset() {
+    setEcg(null); setConfusion(false); setConvulsions(false); setVomissements(false); setSymptomesAutres(false); setEcgTriageDone(false);
+    setCalcium(""); setCalciumConfirmed(false);
+    setCtxNeoplasie(false); setCtxIrc(false); setCtxImmobDeshydrat(false); setCtxMedicHyper(false); setPoidsCalc("");
+  }
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: CALCCOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🦴</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hypercalcémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Triage, quantification et orientation</div>
+        </div>
+      </div>
+
+      {!ecgTriageDone ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. ECG immédiat</div>
+          <OptionBtn C={C} color={CALCCOLOR} label="QT court" help="Évocateur d'hypercalcémie" selected={ecg === "qt_court"} onSelect={() => setEcg("qt_court")} />
+          <OptionBtn C={C} color={CALCCOLOR} label="Trouble du rythme" selected={ecg === "trouble_rythme"} onSelect={() => setEcg("trouble_rythme")} />
+          <OptionBtn C={C} color={CALCCOLOR} label="Normal" selected={ecg === "normal"} onSelect={() => setEcg("normal")} />
+          <NonDispoBtn C={C} selected={ecg === "nonfait"} onClick={() => setEcg("nonfait")}>ECG pas encore fait</NonDispoBtn>
+          {ecg && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginTop: 12, marginBottom: 8 }}>Signes de gravité :</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={confusion} onChange={e => setConfusion(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Confusion / coma</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={convulsions} onChange={e => setConvulsions(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Convulsions</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={vomissements} onChange={e => setVomissements(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Vomissements incoercibles</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={symptomesAutres} onChange={e => setSymptomesAutres(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Autres symptômes : asthénie, anorexie, nausées, constipation, polyuro-polydipsie, douleurs osseuses</span>
+              </label>
+              <Btn C={C} onClick={() => setEcgTriageDone(true)} style={{ width: "100%" }}>Valider</Btn>
+            </>
+          )}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={gravite ? C.red : C.green} title="TRIAGE"
+          value={`ECG : ${ecg === "qt_court" ? "QT court" : ecg === "trouble_rythme" ? "trouble du rythme" : ecg === "nonfait" ? "non fait" : "normal"}${gravite ? " · signe(s) de gravité" : " · pas de signe de gravité"}`}
+          onEdit={() => setEcgTriageDone(false)} />
+      )}
+
+      {ecgTriageDone && ecg === "nonfait" && (
+        <Provisoire C={C}><b>ECG à faire immédiatement</b> — un trouble du rythme ou une anomalie du QT change l'urgence du traitement. La suite se base sur la calcémie et les signes cliniques.</Provisoire>
+      )}
+
+      {ecgTriageDone && gravite && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 SYMPTOMATIQUE — traiter en parallèle</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Ne pas attendre le bilan étiologique complet pour débuter le traitement symptomatique.</div>
+        </div>
+      )}
+
+      {ecgTriageDone && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Calcémie totale — mmol/L</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 3,1" value={calcium} onChange={e => setCalcium(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <Btn C={C} onClick={() => setCalciumConfirmed(true)} disabled={!calciumValid} style={{ width: "100%" }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={hyperConfirmee ? (severe || palier3 ? C.red : C.amber) : C.green} title="CALCÉMIE"
+          value={hyperConfirmee ? `${calciumVal} mmol/L — Hypercalcémie ${severe ? "sévère" : palier3 ? "à traiter (3,0-3,5)" : "modérée"}` : `${calciumVal} mmol/L — pas d'hypercalcémie`}
+          onEdit={() => setCalciumConfirmed(false)} />
+      ))}
+
+      {step2Done && !hyperConfirmee && (
+        <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: C.text }}>Calcémie ≤ {seuilHaut} mmol/L — pas d'hypercalcémie confirmée.</div>
+        </Card>
+      )}
+
+      {step2Done && hyperConfirmee && (
+        <>
+          <ConduiteCard C={C} color={severe ? C.red : palier3 ? C.amber : C.blue}
+            gravite={<b>{dialyse ? "Calcémie ≥ 4,5 — urgence vitale" : crise ? "Crise hypercalcémique (> 3,7)" : severe ? "Sévère (≥ 3,5)" : palier3 ? "≥ 3,0 — traitement à débuter" : "Modérée (< 3,0)"}{symptomatique ? " · symptomatique" : ""}</b>}
+            geste={palier3 || symptomatique
+              ? <span><b>NaCl 0,9 %</b> 1 L en 1 h puis 200 mL/h{bisphosphonateIndique ? <span>, puis <b>bisphosphonate IV</b> (calcitonine si baisse rapide nécessaire)</span> : ""}</span>
+              : <span>Hydratation, traiter la cause</span>}
+            examens="ECG, ionogramme (corriger une hypokaliémie), créatinine, calcémie à répéter, phosphore, NFS-plaquettes, PTH — sans retarder le traitement"
+            suite={<span><b>{orientationHyperCa}</b> · puis {ctxNeoplasie ? "oncologie médicale" : "médecine interne"}{hospitalisation ? " — hospitalisation, ne pas renvoyer à domicile" : ""}</span>} />
+          {palier3 && (
+            <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>
+                {dialyse ? "🚨 Calcémie ≥ 4,5 mmol/L — urgence vitale" : crise ? "🚨 Calcémie > 3,7 mmol/L — crise hypercalcémique, urgence vitale" : severe ? "🚨 Calcémie ≥ 3,5 mmol/L — hypercalcémie sévère : traitement immédiat, même sans symptôme" : "⚠️ Calcémie ≥ 3,0 mmol/L — traitement à débuter, ne pas renvoyer à domicile"}
+              </div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                • <b>ECG systématique</b>, scope, hospitalisation{severe ? " (soins critiques si troubles de la vigilance, IRA, signes ECG menaçants)" : ""}<br/>
+                • <b>Réhydratation IV par NaCl 0,9 %</b> d'emblée : 1 L en 1 h puis 200 mL/h<br/>
+                • <b>Bisphosphonate IV</b> indiqué (calcémie &gt; 3 mmol/L)<br/>
+                {dialyse && <span>• Avec troubles neurologiques, défaillance cardiaque ou rénale : <b>épuration extrarénale</b> si disponible, réhydratation, pamidronate 90 mg<br/></span>}
+                • Arrêter digitaliques, thiazidiques, vitamine D/calcium, lithium
+              </div>
+              <div style={{ fontSize: 10, color: C.sub, marginTop: 6, fontStyle: "italic" }}>Sous 3,0 mmol/L asymptomatique : prise en charge ambulatoire possible si le patient peut s'hydrater seul et n'est pas fragile.</div>
+            </div>
+          )}
+
+          <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+            <b>Bilan de débrouillage (sans retarder le traitement) :</b> ionogramme (kaliémie), créatinine, calcémie totale (à répéter), phosphore, magnésium, NFS-plaquettes, PTH, ECG.<br/>
+            <span style={{ fontStyle: "italic" }}>La PTH peut être prélevée mais son résultat est différé — utile pour l'orientation secondaire/spécialiste, pas pour la décision immédiate.</span>
+          </div>
+
+          <Card C={C} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Anamnèse ciblée</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxNeoplasie} onChange={e => setCtxNeoplasie(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Néoplasie connue ou à rechercher (1ère cause aux urgences)</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxIrc} onChange={e => setCtxIrc(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Insuffisance rénale chronique</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxImmobDeshydrat} onChange={e => setCtxImmobDeshydrat(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Immobilisation prolongée / déshydratation</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxMedicHyper} onChange={e => setCtxMedicHyper(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Thiazidiques, lithium, vitamine D/calcium, biphosphonates</span>
+            </label>
+          </Card>
+
+          <Card C={C} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Réhydratation — pilier du traitement</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+              • <b>NaCl 0,9%</b> : 1 L en 1 h, puis 200 mL/h pendant 24 h (adapter au terrain cardiaque/rénal), objectif diurèse 100-150 mL/h<br/>
+              • Corrige l'hémoconcentration et favorise la calciurèse<br/>
+              • <b>Jamais de diurétiques de l'anse en 1ère intention</b> (aggrave la déshydratation) — seulement si surcharge volémique après réhydratation correcte
+            </div>
+          </Card>
+
+          {bisphosphonateIndique && (
+            <Card C={C} style={{ marginBottom: 12, border: `2px solid ${C.red}` }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.red, marginBottom: 10 }}>Bisphosphonate / traitement hypocalcémiant — après début de la réhydratation</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+                • <b>Bisphosphonates IV</b> (Ca &gt; 3) : acide zolédronique 4 mg en 15 min IV dilués dans 500 mL de NaCl 0,9 %, <b>ou pamidronate {pamidronateDose}</b> en 4 h IVSE dans 500 mL de NaCl 0,9 % (surtout si néoplasie ; 50 mg si &lt; 3,5 · 70 mg si &lt; 4 · 90 mg si ≥ 4) — délai d'action 48-72h, effet max J4-7<br/>
+                • <b>Calcitonine</b> 4 UI/kg SC/IM toutes les 12 h, si baisse rapide nécessaire ou calcémie ≥ 3,5 (délai 4-6h), en attendant l'effet des bisphosphonates — effet transitoire (tachyphylaxie en 48h)
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Poids (kg) — pour la calcitonine</div>
+                <input type="number" inputMode="decimal" placeholder="Ex : 70" value={poidsCalc} onChange={e => setPoidsCalc(e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+                {doseCalcitonineMin && <div style={{ fontSize: 12, color: C.text, marginTop: 6 }}>Dose ≈ <b>{doseCalcitonineMin} UI</b> SC/IM par injection (4 UI/kg)</div>}
+              </div>
+              {ctxNeoplasie && (
+                <div style={{ marginTop: 10, fontSize: 12, color: C.text }}>Contexte néoplasique/hématologique coché → discuter <b>corticoïdes</b> si cause granulomateuse (sarcoïdose) ou hématologique (myélome, lymphome).</div>
+              )}
+            </Card>
+          )}
+
+          <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+            <b>Cas particuliers :</b><br/>
+            • IRC sévère ou hyperCa réfractaire → dialyse<br/>
+            • Traiter la cause en parallèle{ctxMedicHyper && " (arrêt vitamine D/calcium/thiazidiques)"}{ctxNeoplasie && " (PEC néoplasie)"}
+          </div>
+
+          <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+            <b>Points de vigilance urgentiste :</b><br/>
+            • Scope/ECG pendant toute correction<br/>
+            • Ne pas corriger trop vite une hypercalcémie chronique bien tolérée<br/>
+            • Réévaluer la calcémie à distance de la correction (pas seulement cliniquement)
+          </div>
+
+          <Card C={C} style={{ border: `2px solid ${hospitalisation ? C.red : C.green}`, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: hospitalisation ? C.red : C.green, marginBottom: 6 }}>DISPOSITION</div>
+            {hospitalisation ? (
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+                Hospitalisation{symptomatiqueOuSevere && " — symptomatique/sévère"}{!symptomatiqueOuSevere && palier3 && " — calcémie ≥ 3,0 mmol/L (ECG + réhydratation IV)"}{etiologieUrgente && !symptomatiqueOuSevere && !palier3 && " — étiologie nécessitant une PEC urgente"}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>Bilan ambulatoire possible (PTH, vitamine D, calciurie) avec avis endocrinologique</div>
+            )}
+          </Card>
+        </>
+      )}
+
+      {ecgTriageDone && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : CUEN (12e éd.), protocole OSCAR, SFMU Urgences 2014 (Pic D.), AFSOS (urgences oncologiques), SFE item 268 et consensus SFE-AFCE-SFMN 2024, Adnet F. (actualisation 31/7/2024) d'après Dickens LT, JAMA Oncol 2023 et Walker MD, JAMA 2022 — seuils vérifiés</div></Comprendre>
+        <MiseAJour date="23/10/2026" C={C} />
+        </>
+      )}
+      {ecgTriageDone && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HYPOCALCÉMIE — VALIDÉE PAR JEREMY
+   Seuils usuels (ajustables) : normale ≥ 2,20 · sévère < 1,9 mmol/L (Ca corrigé)
+   ════════════════════════════════════════════════════════════════════════ */
+function HypocalcemieAlgo({ pre, onBack, C, noOwnBack, caBasse, caHaute }) {
+  const seuilBas = caBasse || 2.20;
+  const [ecg, setEcg] = useP("dyscalcemie.HypocalcemieAlgo.ecg", null); // 'qt_long' | 'trouble_rythme' | 'normal'
+  const [tetanie, setTetanie] = useP("dyscalcemie.HypocalcemieAlgo.tetanie", false);
+  const [laryngospasme, setLaryngospasme] = useP("dyscalcemie.HypocalcemieAlgo.laryngospasme", false);
+  const [chvostekTrousseau, setChvostekTrousseau] = useP("dyscalcemie.HypocalcemieAlgo.chvostekTrousseau", false);
+  const [ecgTriageDone, setEcgTriageDone] = useP("dyscalcemie.HypocalcemieAlgo.ecgTriageDone", false);
+  const [calcium, setCalcium] = useP("dyscalcemie.HypocalcemieAlgo.calcium", pre?.ca ?? "");
+  const [calciumConfirmed, setCalciumConfirmed] = useP("dyscalcemie.HypocalcemieAlgo.calciumConfirmed", false);
+  const [ctxChirurgie, setCtxChirurgie] = useP("dyscalcemie.HypocalcemieAlgo.ctxChirurgie", false);
+  const [ctxIrc, setCtxIrc] = useP("dyscalcemie.HypocalcemieAlgo.ctxIrc", false);
+  const [ctxPancreatiteEtc, setCtxPancreatiteEtc] = useP("dyscalcemie.HypocalcemieAlgo.ctxPancreatiteEtc", false);
+  const [ctxMedicHypo, setCtxMedicHypo] = useP("dyscalcemie.HypocalcemieAlgo.ctxMedicHypo", false);
+  const [magnesemie, setMagnesemie] = useP("dyscalcemie.HypocalcemieAlgo.magnesemie", "");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [ecgTriageDone, calciumConfirmed, ctxChirurgie, ctxIrc, ctxPancreatiteEtc, ctxMedicHypo, magnesemie]);
+
+  const gravite = tetanie || laryngospasme || chvostekTrousseau || ecg === "trouble_rythme" || ecg === "qt_long";
+  const calciumVal = parseFloat((calcium || "").replace(",", "."));
+  const calciumValid = !isNaN(calciumVal);
+  const step2Done = ecgTriageDone && calciumValid && calciumConfirmed;
+  const hypoConfirmee = calciumValid && calciumVal < seuilBas;
+  const severe = calciumValid && calciumVal < 1.9;
+  const symptomatiqueOuSevere = gravite || severe;
+  const etiologieUrgente = ctxChirurgie || ctxIrc;
+  const hospitalisation = step2Done && hypoConfirmee && (symptomatiqueOuSevere || etiologieUrgente);
+
+  const magnesemieVal = parseFloat((magnesemie || "").replace(",", "."));
+  const magnesemieValid = !isNaN(magnesemieVal);
+  const magBas = magnesemieValid && magnesemieVal < 0.7;
+
+  function reset() {
+    setEcg(null); setTetanie(false); setLaryngospasme(false); setChvostekTrousseau(false); setEcgTriageDone(false);
+    setCalcium(""); setCalciumConfirmed(false);
+    setCtxChirurgie(false); setCtxIrc(false); setCtxPancreatiteEtc(false); setCtxMedicHypo(false); setMagnesemie("");
+  }
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: CALCCOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🦴</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Hypocalcémie</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Triage, quantification et orientation</div>
+        </div>
+      </div>
+
+      {!ecgTriageDone ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. ECG immédiat</div>
+          <OptionBtn C={C} color={CALCCOLOR} label="QT long" help="Évocateur d'hypocalcémie" selected={ecg === "qt_long"} onSelect={() => setEcg("qt_long")} />
+          <OptionBtn C={C} color={CALCCOLOR} label="Trouble du rythme" selected={ecg === "trouble_rythme"} onSelect={() => setEcg("trouble_rythme")} />
+          <OptionBtn C={C} color={CALCCOLOR} label="Normal" selected={ecg === "normal"} onSelect={() => setEcg("normal")} />
+          <NonDispoBtn C={C} selected={ecg === "nonfait"} onClick={() => setEcg("nonfait")}>ECG pas encore fait</NonDispoBtn>
+          {ecg && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginTop: 12, marginBottom: 8 }}>Signes de gravité :</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={tetanie} onChange={e => setTetanie(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Spasmes carpo-pédaux / tétanie</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={laryngospasme} onChange={e => setLaryngospasme(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Laryngospasme</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer" }}>
+                <input type="checkbox" checked={chvostekTrousseau} onChange={e => setChvostekTrousseau(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Signe de Chvostek / Trousseau</span>
+              </label>
+              <Btn C={C} onClick={() => setEcgTriageDone(true)} style={{ width: "100%" }}>Valider</Btn>
+            </>
+          )}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={gravite ? C.red : C.green} title="TRIAGE"
+          value={`ECG : ${ecg === "qt_long" ? "QT long" : ecg === "trouble_rythme" ? "trouble du rythme" : ecg === "nonfait" ? "non fait" : "normal"}${gravite ? " · signe(s) de gravité" : " · pas de signe de gravité"}`}
+          onEdit={() => setEcgTriageDone(false)} />
+      )}
+
+      {ecgTriageDone && ecg === "nonfait" && (
+        <Provisoire C={C}><b>ECG à faire immédiatement</b> — un trouble du rythme ou une anomalie du QT change l'urgence du traitement. La suite se base sur la calcémie et les signes cliniques.</Provisoire>
+      )}
+
+      {ecgTriageDone && gravite && (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 SYMPTOMATIQUE — traiter en parallèle</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Ne pas attendre le bilan étiologique complet pour débuter le traitement symptomatique.</div>
+        </div>
+      )}
+
+      {ecgTriageDone && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Calcium corrigé (ou ionisé) — mmol/L</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 1,7" value={calcium} onChange={e => setCalcium(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <Btn C={C} onClick={() => setCalciumConfirmed(true)} disabled={!calciumValid} style={{ width: "100%" }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={hypoConfirmee ? (severe ? C.red : C.amber) : C.green} title="CALCÉMIE"
+          value={hypoConfirmee ? `${calciumVal} mmol/L — Hypocalcémie ${severe ? "sévère" : "modérée"}` : `${calciumVal} mmol/L — pas d'hypocalcémie`}
+          onEdit={() => setCalciumConfirmed(false)} />
+      ))}
+
+      {step2Done && !hypoConfirmee && (
+        <Card C={C} style={{ border: `2px solid ${C.green}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: C.text }}>Calcémie ≥ {seuilBas} mmol/L — pas d'hypocalcémie confirmée.</div>
+        </Card>
+      )}
+
+      {step2Done && hypoConfirmee && (
+        <ConduiteCard C={C} color={severe ? C.red : C.amber}
+          gravite={<b>{severe ? "Sévère (< 1,9)" : "Modérée"}{symptomatiqueOuSevere ? " · symptomatique/sévère" : ""}</b>}
+          geste={symptomatiqueOuSevere
+            ? <span><b>Gluconate de calcium 10 %</b> 1-2 g IV lent (10-20 min) sous scope, puis perfusion continue</span>
+            : <span>Calcium oral + vitamine D selon l'étiologie</span>}
+          examens="ECG/scope, magnésémie (corriger en parallèle), contrôle de la calcémie à distance"
+          suite={hospitalisation ? "Hospitalisation" : "Bilan ambulatoire possible (PTH, vitamine D, calciurie)"} />
+      )}
+
+      {step2Done && hypoConfirmee && (
+        <>
+          <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+            <b>Bilan de débrouillage :</b> ionogramme, créatinine, phosphore, magnésium, Ca corrigé/ionisé, ECG.<br/>
+            <span style={{ fontStyle: "italic" }}>La PTH peut être prélevée mais son résultat est différé — utile pour l'orientation secondaire/spécialiste, pas pour la décision immédiate.</span>
+          </div>
+
+          <Card C={C} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Anamnèse ciblée</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxChirurgie} onChange={e => setCtxChirurgie(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Chirurgie thyroïdienne/parathyroïdienne récente</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxIrc} onChange={e => setCtxIrc(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Insuffisance rénale chronique</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxPancreatiteEtc} onChange={e => setCtxPancreatiteEtc(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Pancréatite aiguë / rhabdomyolyse / transfusion massive</span>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={ctxMedicHypo} onChange={e => setCtxMedicHypo(e.target.checked)} style={{ width: 16, height: 16 }} />
+              <span style={{ fontSize: 12, color: C.text }}>Biphosphonates, chimiothérapie récente, lithium</span>
+            </label>
+          </Card>
+
+          {symptomatiqueOuSevere ? (
+            <Card C={C} style={{ marginBottom: 12, border: `2px solid ${C.red}` }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.red, marginBottom: 10 }}>Forme symptomatique/sévère (tétanie, convulsions, QT long, troubles du rythme)</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+                • <b>Gluconate de calcium 10%</b> : 1-2 g IV lent (10-20 min) sous scope, puis relais en perfusion continue (souvent 6 amp/24h à adapter aux contrôles répétés)<br/>
+                • Éviter l'extravasation (nécrose tissulaire) — <b>jamais de bolus IVD rapide</b> (risque de trouble du rythme, surtout si digitalique)
+              </div>
+            </Card>
+          ) : (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Forme modérée/asymptomatique</div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+                • Supplémentation calcique orale + vitamine D selon étiologie<br/>
+                • Traitement de la cause (vitamine D, hypoparathyroïdie → calcitriol)
+              </div>
+            </Card>
+          )}
+
+          <Card C={C} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Toujours corriger le magnésium en parallèle</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6, marginBottom: 10 }}>Une hypomagnésémie non corrigée rend l'hypocalcémie résistante au traitement. Sulfate de magnésium IV si Mg bas.</div>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Magnésémie (mmol/L, optionnel)</div>
+            <input type="number" inputMode="decimal" placeholder="Ex : 0,6" value={magnesemie} onChange={e => setMagnesemie(e.target.value)}
+              style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            {magnesemieValid && (
+              <div style={{ marginTop: 8, fontWeight: 700, color: magBas ? C.red : C.green, fontSize: 12 }}>
+                {magBas ? "→ Mg bas : sulfate de magnésium IV indiqué" : "→ Mg dans les valeurs usuelles"}
+              </div>
+            )}
+          </Card>
+
+          <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+            <b>Points de vigilance urgentiste :</b><br/>
+            • Scope/ECG pendant toute correction<br/>
+            • Réévaluer la calcémie à distance de la correction (pas seulement cliniquement)
+          </div>
+
+          <Card C={C} style={{ border: `2px solid ${hospitalisation ? C.red : C.green}`, marginBottom: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: hospitalisation ? C.red : C.green, marginBottom: 6 }}>DISPOSITION</div>
+            {hospitalisation ? (
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+                Hospitalisation{symptomatiqueOuSevere && " — symptomatique/sévère"}{etiologieUrgente && !symptomatiqueOuSevere && " — étiologie nécessitant une PEC urgente"}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>Bilan ambulatoire possible (PTH, vitamine D, calciurie) avec avis endocrinologique</div>
+            )}
+          </Card>
+        </>
+      )}
+
+      {ecgTriageDone && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : CUEN (Collège Universitaire des Enseignants de Néphrologie, 12e éd.), fiches protocole OSCAR — seuils vérifiés</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {ecgTriageDone && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   DYSCALCÉMIE — écran avec 2 onglets (Hypo / Hyper)
+   ════════════════════════════════════════════════════════════════════════ */
+function DyscalcemieScreen({ pre, onBack, C, caBasse, caHaute }) {
+  const [tab, setTab] = useP("dyscalcemie.DyscalcemieScreen.tab", () => { if (pre?.tab) return pre.tab; const x = parseFloat(String(pre?.ca ?? "").replace(",", ".")); return !isNaN(x) && x > (caBasse + caHaute) / 2 ? "hyper" : "hypo"; });
+  return (
+    <div>
+      <BackBtn onClick={onBack} C={C} />
+      <div style={{ fontSize: 18, fontWeight: 800, color: C.navy, marginBottom: 14 }}>Dyscalcémie</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        <button onClick={() => setTab("hypo")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${tab === "hypo" ? CALCCOLOR : C.border}`, background: tab === "hypo" ? CALCCOLOR + "18" : C.white, color: tab === "hypo" ? CALCCOLOR : C.sub, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Hypocalcémie</button>
+        <button onClick={() => setTab("hyper")} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${tab === "hyper" ? CALCCOLOR : C.border}`, background: tab === "hyper" ? CALCCOLOR + "18" : C.white, color: tab === "hyper" ? CALCCOLOR : C.sub, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Hypercalcémie</button>
+      </div>
+      {tab === "hypo"
+        ? <HypocalcemieAlgo pre={pre} C={C} onBack={onBack} noOwnBack caBasse={caBasse} caHaute={caHaute} />
+        : <HypercalcemieAlgo pre={pre} C={C} onBack={onBack} noOwnBack caBasse={caBasse} caHaute={caHaute} />
+      }
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   INSUFFISANCE RÉNALE AIGUË (IRA) — VALIDÉE PAR JEREMY
+   Critères KDIGO 2012 (SFAR/SRLF) : Δcréat ≥ 26,5 µmol/L/48h OU créat ≥ 1,5×
+   base/7j OU diurèse < 0,5 mL/kg/h ≥ 6h. MDRD/CKD-EPI/Cockcroft non valides
+   en situation d'IRA (fonction rénale non stable).
+   3 cadres mécanistiques : fonctionnelle (la + fréquente), obstructive,
+   organique (avis néphro).
+   ════════════════════════════════════════════════════════════════════════ */
+const IRACOLOR = "#34495E";
+
+function IRAAlgo({ onBack, C, noOwnBack }) {
+  // Étape 1 — diagnostic KDIGO
+  const [creatActuelle, setCreatActuelle] = useP("ira.IRAAlgo.creatActuelle", "");
+  const [uree, setUree] = useP("ira.IRAAlgo.uree", "");
+  const [creatAnterieureConnue, setCreatAnterieureConnue] = useP("ira.IRAAlgo.creatAnterieureConnue", null);
+  const [creatAnterieure, setCreatAnterieure] = useP("ira.IRAAlgo.creatAnterieure", "");
+  const [deltaCrea48h, setDeltaCrea48h] = useP("ira.IRAAlgo.deltaCrea48h", "");
+  const [diureseBasse, setDiureseBasse] = useP("ira.IRAAlgo.diureseBasse", null);
+  const [step1Confirmed, setStep1Confirmed] = useP("ira.IRAAlgo.step1Confirmed", false);
+  // Étape 2 — IRA vs IRC méconnue
+  const [ctxMaladieRenale, setCtxMaladieRenale] = useP("ira.IRAAlgo.ctxMaladieRenale", false);
+  const [ctxDiabeteHta, setCtxDiabeteHta] = useP("ira.IRAAlgo.ctxDiabeteHta", false);
+  const [ctxAnemie, setCtxAnemie] = useP("ira.IRAAlgo.ctxAnemie", false);
+  const [ctxHypocalcemie, setCtxHypocalcemie] = useP("ira.IRAAlgo.ctxHypocalcemie", false);
+  const [ctxReinsAtrophiques, setCtxReinsAtrophiques] = useP("ira.IRAAlgo.ctxReinsAtrophiques", false);
+  const [ctxReinsPolykystiques, setCtxReinsPolykystiques] = useP("ira.IRAAlgo.ctxReinsPolykystiques", false);
+  const [step2Seen, setStep2Seen] = useP("ira.IRAAlgo.step2Seen", false);
+  // Étape 3 — évaluation initiale (checklist)
+  const [evalGravite, setEvalGravite] = useP("ira.IRAAlgo.evalGravite", false);
+  const [evalGlobe, setEvalGlobe] = useP("ira.IRAAlgo.evalGlobe", false);
+  const [evalArretNephrotox, setEvalArretNephrotox] = useP("ira.IRAAlgo.evalArretNephrotox", false);
+  const [evalEcho, setEvalEcho] = useP("ira.IRAAlgo.evalEcho", false);
+  const [evalBilan, setEvalBilan] = useP("ira.IRAAlgo.evalBilan", false);
+  // Étape 4 — classification mécanistique
+  const [obstacle, setObstacle] = useP("ira.IRAAlgo.obstacle", null); // true/false
+  const [obstacleType, setObstacleType] = useP("ira.IRAAlgo.obstacleType", null); // 'ureterale' | 'vesicale'
+  const [ctxHypovolemie, setCtxHypovolemie] = useP("ira.IRAAlgo.ctxHypovolemie", false);
+  const [ctxCardiaque, setCtxCardiaque] = useP("ira.IRAAlgo.ctxCardiaque", false);
+  const [ctxHepatorenal, setCtxHepatorenal] = useP("ira.IRAAlgo.ctxHepatorenal", false);
+  const [ctxMedicamenteux, setCtxMedicamenteux] = useP("ira.IRAAlgo.ctxMedicamenteux", false);
+  const [ctxVascularite, setCtxVascularite] = useP("ira.IRAAlgo.ctxVascularite", false);
+  const [ctxGna, setCtxGna] = useP("ira.IRAAlgo.ctxGna", false);
+  const [ctxMyelome, setCtxMyelome] = useP("ira.IRAAlgo.ctxMyelome", false);
+  const [ctxPasOriente, setCtxPasOriente] = useP("ira.IRAAlgo.ctxPasOriente", false);
+  // Critères de gravité / dialyse
+  const [critOAP, setCritOAP] = useP("ira.IRAAlgo.critOAP", false);
+  const [critHyperK, setCritHyperK] = useP("ira.IRAAlgo.critHyperK", false);
+  const [critAcidoseSevere, setCritAcidoseSevere] = useP("ira.IRAAlgo.critAcidoseSevere", false);
+  const [critLactiqueMetformine, setCritLactiqueMetformine] = useP("ira.IRAAlgo.critLactiqueMetformine", false);
+  const [critHyperMg, setCritHyperMg] = useP("ira.IRAAlgo.critHyperMg", false);
+  const [critUremique, setCritUremique] = useP("ira.IRAAlgo.critUremique", false);
+  const [graviteSeen, setGraviteSeen] = useP("ira.IRAAlgo.graviteSeen", false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [step1Confirmed, step2Seen, evalGravite, evalGlobe, evalArretNephrotox, evalEcho, evalBilan, obstacle, obstacleType, ctxHypovolemie, ctxCardiaque, ctxHepatorenal, ctxMedicamenteux, ctxVascularite, ctxGna, ctxMyelome, ctxPasOriente]);
+
+  const creatActuelleVal = parseFloat((creatActuelle || "").replace(",", "."));
+  const creatActuelleValid = !isNaN(creatActuelleVal);
+  const ureeVal = parseFloat((uree || "").replace(",", "."));
+  const ureeValid = !isNaN(ureeVal);
+  const rapportUreeCreat = ureeValid && creatActuelleValid && creatActuelleVal > 0 ? (ureeVal * 1000) / creatActuelleVal : null;
+  const creatAnterieureVal = parseFloat((creatAnterieure || "").replace(",", "."));
+  const deltaVal = parseFloat((deltaCrea48h || "").replace(",", "."));
+
+  const critere48h = !isNaN(deltaVal) && deltaVal >= 26.5;
+  const critere15x = creatAnterieureConnue === true && !isNaN(creatAnterieureVal) && creatAnterieureVal > 0 && creatActuelleValid && (creatActuelleVal / creatAnterieureVal) >= 1.5;
+  const critereDiurese = diureseBasse === true;
+  const iraConfirmee = critere48h || critere15x || critereDiurese;
+
+  const step1Done = creatActuelleValid && creatAnterieureConnue !== null && diureseBasse !== null && step1Confirmed;
+
+  function reset() {
+    setCreatActuelle(""); setUree(""); setCreatAnterieureConnue(null); setCreatAnterieure(""); setDeltaCrea48h(""); setDiureseBasse(null); setStep1Confirmed(false);
+    setCtxMaladieRenale(false); setCtxDiabeteHta(false); setCtxAnemie(false); setCtxHypocalcemie(false); setCtxReinsAtrophiques(false); setCtxReinsPolykystiques(false); setStep2Seen(false);
+    setEvalGravite(false); setEvalGlobe(false); setEvalArretNephrotox(false); setEvalEcho(false); setEvalBilan(false);
+    setObstacle(null); setObstacleType(null);
+    setCtxHypovolemie(false); setCtxCardiaque(false); setCtxHepatorenal(false); setCtxMedicamenteux(false);
+    setCtxVascularite(false); setCtxGna(false); setCtxMyelome(false); setCtxPasOriente(false);
+    setCritOAP(false); setCritHyperK(false); setCritAcidoseSevere(false); setCritLactiqueMetformine(false); setCritHyperMg(false); setCritUremique(false); setGraviteSeen(false);
+  }
+
+  const argumentsIrc = [ctxMaladieRenale, ctxDiabeteHta, ctxAnemie, ctxHypocalcemie, ctxReinsAtrophiques, ctxReinsPolykystiques].filter(Boolean).length;
+
+  const step4Done = obstacle === true ? obstacleType !== null : (obstacle === false || obstacle === "nd") ? (ctxHypovolemie || ctxCardiaque || ctxHepatorenal || ctxMedicamenteux || ctxVascularite || ctxGna || ctxMyelome || ctxPasOriente) : false;
+
+  const fonctionnelle = (obstacle === false || obstacle === "nd") && (ctxHypovolemie || ctxCardiaque || ctxHepatorenal || ctxMedicamenteux);
+  const organiqueSuspecte = (obstacle === false || obstacle === "nd") && (ctxVascularite || ctxGna || ctxMyelome || ctxPasOriente) && !fonctionnelle;
+
+  const avisUrologique = obstacle === true;
+  const avisNephro = organiqueSuspecte || ctxPasOriente;
+  const dialyseUrgente = critOAP || critHyperK || critAcidoseSevere || critLactiqueMetformine || critHyperMg || critUremique;
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: IRACOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>💧</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Insuffisance rénale aiguë</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Diagnostic KDIGO et orientation mécanistique</div>
+        </div>
+      </div>
+
+      {/* ── Étape 1 : diagnostic KDIGO ── */}
+      {!step1Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Diagnostic — critères KDIGO 2012</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Créatinine actuelle (µmol/L)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 210" value={creatActuelle} onChange={e => setCreatActuelle(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Créatinine antérieure connue (famille/MT/labo) ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <Btn C={C} onClick={() => setCreatAnterieureConnue(true)} outline={creatAnterieureConnue !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setCreatAnterieureConnue(false)} outline={creatAnterieureConnue !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          {creatAnterieureConnue === true && (
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Créatinine antérieure (µmol/L)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 90" value={creatAnterieure} onChange={e => setCreatAnterieure(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Δ créatinine sur 48h (µmol/L, optionnel)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 40" value={deltaCrea48h} onChange={e => setDeltaCrea48h(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Urée (mmol/L, optionnel — pour le rapport urée/créatinine)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 18" value={uree} onChange={e => setUree(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          {rapportUreeCreat !== null && (
+            <div style={{ background: rapportUreeCreat > 100 ? C.blueLight : C.amberLight, borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: C.text }}>
+              Rapport urée/créatinine ≈ <b>{rapportUreeCreat.toFixed(0)}</b> {rapportUreeCreat > 100 ? "— argument en faveur d'une IRA fonctionnelle" : "— moins en faveur d'une fonctionnelle"} <span style={{ color: C.sub, fontStyle: "italic" }}>(orientation seulement, peu spécifique : catabolisme, corticoïdes, hémorragie digestive et dénutrition le modifient — ne pas conclure sur ce seul rapport)</span>
+              <Pourquoi C={C}>
+                En hypovolémie, l'ADH stimule la réabsorption passive de l'urée avec l'eau au niveau du tube collecteur, alors que la créatinine (non réabsorbée) suit surtout la filtration glomérulaire. L'urée monte donc proportionnellement plus vite que la créatinine → rapport élevé. En cas de nécrose tubulaire aiguë (organique), ce mécanisme de concentration est perdu : les deux augmentent de façon plus parallèle, et le rapport reste bas.
+              </Pourquoi>
+            </div>
+          )}
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Diurèse &lt; 0,5 mL/kg/h depuis ≥ 6h ?</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn C={C} onClick={() => setDiureseBasse(true)} outline={diureseBasse !== true} style={{ flex: 1 }}>Oui</Btn>
+            <Btn C={C} onClick={() => setDiureseBasse(false)} outline={diureseBasse !== false} style={{ flex: 1 }}>Non</Btn>
+          </div>
+          <NonDispoBtn C={C} selected={diureseBasse === "nm"} onClick={() => setDiureseBasse("nm")}>Diurèse non mesurée</NonDispoBtn>
+          <div style={{ height: 10 }} />
+          <div style={{ fontSize: 10, color: C.sub, marginBottom: 12, fontStyle: "italic" }}>Les formules MDRD/CKD-EPI/Cockcroft-Gault ne sont pas valides en situation d'IRA (fonction rénale non stable).</div>
+          <Btn C={C} onClick={() => setStep1Confirmed(true)} disabled={!creatActuelleValid || creatAnterieureConnue === null || diureseBasse === null} style={{ width: "100%" }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={iraConfirmee ? C.red : C.green} title="DIAGNOSTIC KDIGO"
+          value={`Créat ${creatActuelleVal} µmol/L — ${iraConfirmee ? "IRA confirmée" : "critères KDIGO non réunis"}`}
+          onEdit={() => setStep1Confirmed(false)} />
+      )}
+
+      {step1Done && !iraConfirmee && (
+        <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          Aucun des 3 critères KDIGO n'est confirmé avec les éléments saisis (Δ48h ≥ 26,5 µmol/L, ×1,5 base/7j, diurèse &lt; 0,5 mL/kg/h ≥ 6h). Réévaluer si de nouveaux éléments sont disponibles.
+        </div>
+      )}
+
+      {/* ── Critères de gravité et de dialyse — priorité avant tout le reste ── */}
+      {step1Done && iraConfirmee && (!graviteSeen ? (
+        <Card C={C} style={{ marginBottom: 14, border: `2px solid ${C.red}` }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.red, marginBottom: 6 }}>⚠️ Rechercher en urgence — critères de gravité/dialyse</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>La gravité tient au retentissement/complications, pas au chiffre de créatininémie isolé.</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={critOAP} onChange={e => setCritOAP(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>OAP résistant aux diurétiques</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={critHyperK} onChange={e => setCritHyperK(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Hyperkaliémie &gt; 6 mmol/L avec anomalies ECG</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={critAcidoseSevere} onChange={e => setCritAcidoseSevere(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Acidose métabolique grave (pH &lt; 7,15)</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={critLactiqueMetformine} onChange={e => setCritLactiqueMetformine(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Acidose lactique à la Metformine</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={critHyperMg} onChange={e => setCritHyperMg(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Hypermagnésémie &gt; 4 mmol/L avec aréflexie tendineuse</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={critUremique} onChange={e => setCritUremique(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Complication urémique (péricardite, encéphalopathie, hémorragie digestive)</span>
+          </label>
+          {dialyseUrgente && (
+            <div style={{ background: C.redLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.red, fontWeight: 700, marginBottom: 10 }}>
+              🚨 Épuration extrarénale à débuter en urgence — avis néphrologique/réanimateur sans délai.
+            </div>
+          )}
+          <Btn C={C} onClick={() => setGraviteSeen(true)} style={{ width: "100%" }}>Continuer</Btn>
+        </Card>
+      ) : dialyseUrgente ? (
+        <div style={{ background: C.redLight, border: `2px solid ${C.red}`, borderRadius: 14, padding: "14px 16px", marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.red, marginBottom: 6 }}>🚨 CRITÈRE DE DIALYSE EN URGENCE PRÉSENT</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>Avis néphrologique/réanimateur sans délai — ne pas attendre la suite du bilan étiologique.</div>
+        </div>
+      ) : (
+        <StepSummary C={C} color={C.green} title="GRAVITÉ/DIALYSE" value="Aucun critère de dialyse en urgence retrouvé" onEdit={() => setGraviteSeen(false)} />
+      ))}
+
+      {/* ── Étape 2 : IRA vraie vs IRC méconnue (si pas de créat antérieure) ── */}
+      {step1Done && iraConfirmee && graviteSeen && creatAnterieureConnue === false && (
+        <Card C={C} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 6 }}>2. IRA vraie ou IRC méconnue ?</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>Arguments non spécifiques en faveur d'une IRC (à cocher si présents) :</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={ctxMaladieRenale} onChange={e => setCtxMaladieRenale(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Maladie rénale personnelle ou familiale connue</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={ctxDiabeteHta} onChange={e => setCtxDiabeteHta(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Diabète ou HTA connus</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={ctxAnemie} onChange={e => setCtxAnemie(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Anémie normocytaire normochrome arégénérative</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={ctxHypocalcemie} onChange={e => setCtxHypocalcemie(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Hypocalcémie</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={ctxReinsAtrophiques} onChange={e => setCtxReinsAtrophiques(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Reins atrophiques ≤ 7 cm à l'écho/scanner</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, cursor: "pointer" }}>
+            <input type="checkbox" checked={ctxReinsPolykystiques} onChange={e => setCtxReinsPolykystiques(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Reins volumineux polykystiques</span>
+          </label>
+          {argumentsIrc > 0 && (
+            <div style={{ background: C.amberLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.text }}>
+              {argumentsIrc} argument(s) évocateur(s) d'une composante chronique — ne pas éliminer une IRA surajoutée pour autant.
+            </div>
+          )}
+          <Btn C={C} onClick={() => setStep2Seen(true)} style={{ width: "100%", marginTop: 10 }} outline={step2Seen} color={step2Seen ? C.green : C.blue}>
+            {step2Seen ? "✓ Vu" : "Continuer"}
+          </Btn>
+        </Card>
+      )}
+
+      {/* ── Étape 3 : évaluation initiale (checklist) ── */}
+      {step1Done && iraConfirmee && graviteSeen && (creatAnterieureConnue === true || step2Seen) && (
+        <Card C={C} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>3. Évaluation initiale aux urgences</div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={evalGravite} onChange={e => setEvalGravite(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Gravité clinique évaluée (hyperK, surcharge, acidose sévère)</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={evalGlobe} onChange={e => setEvalGlobe(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Globe vésical recherché</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={evalArretNephrotox} onChange={e => setEvalArretNephrotox(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>IEC/ARA2 et néphrotoxiques arrêtés</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
+            <input type="checkbox" checked={evalEcho} onChange={e => setEvalEcho(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Échographie des voies urinaires demandée</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={evalBilan} onChange={e => setEvalBilan(e.target.checked)} style={{ width: 16, height: 16 }} />
+            <span style={{ fontSize: 12, color: C.text }}>Bilan biologique complet + ECG faits</span>
+          </label>
+        </Card>
+      )}
+
+      {/* ── Étape 4 : classification mécanistique ── */}
+      {step1Done && iraConfirmee && graviteSeen && (creatAnterieureConnue === true || step2Seen) && (
+        <>
+          {obstacle === null ? (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>4. Recherche d'un obstacle</div>
+              <div style={{ fontSize: 12, color: C.sub, marginBottom: 10 }}>Touchers pelviens, globe vésical, dilatation des voies urinaires à l'échographie ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setObstacle(true)} color={C.amber} outline={obstacle !== true} style={{ flex: 1 }}>Oui</Btn>
+                <Btn C={C} onClick={() => setObstacle(false)} outline={obstacle !== false} style={{ flex: 1 }}>Non</Btn>
+              </div>
+              <NonDispoBtn C={C} onClick={() => setObstacle("nd")}>Pas encore évalué (écho / globe)</NonDispoBtn>
+            </Card>
+          ) : (
+            <StepSummary C={C} color={IRACOLOR} title="OBSTACLE" value={obstacle === "nd" ? "Non évalué — à faire" : obstacle ? "Suspecté/confirmé" : "Non retrouvé"} onEdit={() => { setObstacle(null); setObstacleType(null); }} />
+          )}
+
+          {obstacle === "nd" && (
+            <Provisoire C={C}><b>Obstacle non évalué.</b> Faire en urgence l'échographie rénale et vésicale (± bladder-scan, toucher rectal) : une IRA obstructive est une urgence urologique à ne pas manquer. La suite est donnée en l'absence d'obstacle retrouvé, à reprendre si l'écho montre une dilatation.</Provisoire>
+          )}
+
+          {obstacle === true && (
+            obstacleType === null ? (
+              <Card C={C} style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Type d'obstacle</div>
+                <OptionBtn C={C} color={IRACOLOR} label="Urétérale" help="Tumeur, lithiase, fibrose rétropéritonéale" selected={obstacleType === "ureterale"} onSelect={() => setObstacleType("ureterale")} />
+                <OptionBtn C={C} color={IRACOLOR} label="Rétention vésicale" help="Pathologie prostatique, cancer pelvien" selected={obstacleType === "vesicale"} onSelect={() => setObstacleType("vesicale")} />
+              </Card>
+            ) : (
+              <Card C={C} style={{ border: `2px solid ${C.amber}`, marginBottom: 20 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: C.amber, marginBottom: 6 }}>ÉTIOLOGIE — IRA OBSTRUCTIVE (postrénale)</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 8 }}>
+                  {obstacleType === "ureterale" ? "Obstruction urétérale" : "Rétention vésicale"}
+                </div>
+                <div style={{ fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+                  {obstacleType === "ureterale"
+                    ? "Rechercher tumeur, lithiase, fibrose rétropéritonéale."
+                    : "Rechercher pathologie prostatique, cancer pelvien."}
+                </div>
+                <div style={{ marginTop: 10, background: C.redLight, borderRadius: 10, padding: "10px 12px", fontSize: 12, color: C.red, fontWeight: 700 }}>
+                  Avis urologique en urgence — obstruction des voies urinaires, complications, pyélonéphrite obstructive, ou obstruction sur rein unique.
+                </div>
+                <div style={{ marginTop: 10, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+                  <b>Dérivation des urines</b> (principe clé) : sonde JJ, sonde urétérale extériorisée, ou néphrostomie selon le niveau de l'obstacle.<br/>
+                  • Si néphrostomie : compléter par un <b>bilan d'hémostase</b> avant le geste<br/>
+                  • Si hyperkaliémie menaçante, acidose importante ou hyponatrémie compliquée : discuter l'<b>hémodialyse avant le drainage</b>
+                </div>
+              </Card>
+            )
+          )}
+
+          {(obstacle === false || obstacle === "nd") && (
+            <Card C={C} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>Pas d'obstacle — orientation fonctionnelle/organique</div>
+              {rapportUreeCreat !== null && (
+                <div style={{ background: rapportUreeCreat > 100 ? C.blueLight : C.amberLight, borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 12, color: C.text }}>
+                  Rapport urée/créatinine ≈ <b>{rapportUreeCreat.toFixed(0)}</b> {rapportUreeCreat > 100 ? "— argument en faveur d'une IRA fonctionnelle" : "— moins en faveur d'une fonctionnelle"} <span style={{ color: C.sub, fontStyle: "italic" }}>(orientation seulement, peu spécifique)</span>
+                </div>
+              )}
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>FONCTIONNELLE (la + fréquente)</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxHypovolemie} onChange={e => setCtxHypovolemie(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Hypovolémie vraie/relative (hémorragie, déshydratation, 3ᵉ secteur)</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxCardiaque} onChange={e => setCtxCardiaque(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Altération des performances cardiaques</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxHepatorenal} onChange={e => setCtxHepatorenal(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Syndrome hépatorénal</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxMedicamenteux} onChange={e => setCtxMedicamenteux(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Médicamenteuse favorisée par l'hypovolémie (AINS, IEC)</span>
+              </label>
+
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.sub, marginBottom: 6 }}>ORGANIQUE — signes d'alerte</div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxVascularite} onChange={e => setCtxVascularite(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Suspicion de vascularite</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxGna} onChange={e => setCtxGna(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Suspicion de glomérulonéphrite</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxMyelome} onChange={e => setCtxMyelome(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Suspicion de myélome</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={ctxPasOriente} onChange={e => setCtxPasOriente(e.target.checked)} style={{ width: 16, height: 16 }} />
+                <span style={{ fontSize: 12, color: C.text }}>Aucune orientation claire</span>
+              </label>
+            </Card>
+          )}
+
+          {step4Done && (obstacle === false || obstacle === "nd") && (
+            <Card C={C} style={{ border: `2px solid ${fonctionnelle && !organiqueSuspecte ? C.green : C.red}`, marginBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: fonctionnelle && !organiqueSuspecte ? C.green : C.red, marginBottom: 6 }}>ORIENTATION</div>
+              {fonctionnelle && !organiqueSuspecte && (
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+                  IRA fonctionnelle — diminution de la perfusion rénale sans lésion du parenchyme. Corriger la cause (remplissage, optimisation hémodynamique, arrêt du facteur médicamenteux).
+                  <div style={{ marginTop: 10, fontSize: 12, fontWeight: 400, color: C.text, lineHeight: 1.7 }}>
+                    • <b>Transfusion</b> si hémorragie, <b>réhydratation</b> en 1ère intention<br/>
+                    • Si déshydratation extracellulaire : compensation initialement <b>volume à volume</b> par solutés IV adaptés au ionogramme — le plus souvent <b>soluté salé isotonique</b> et/ou <b>bicarbonate de sodium isotonique</b><br/>
+                    • Décroissance progressive dans les jours suivants
+                  </div>
+                </div>
+              )}
+              {organiqueSuspecte && (
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+                  IRA organique (parenchymateuse) suspectée — atteinte glomérulaire, tubulaire, interstitielle ou vasculaire.
+                  <div style={{ marginTop: 10, background: C.redLight, borderRadius: 10, padding: "10px 12px", color: C.red, fontWeight: 700 }}>
+                    Avis néphrologique urgent — vascularite, glomérulonéphrite, myélome, ou absence d'orientation claire.
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ── Mesures communes à toutes les IRA ── */}
+      {step1Done && iraConfirmee && graviteSeen && (creatAnterieureConnue === true || step2Seen) && (
+        <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.7 }}>
+          <b>Mesures communes à toutes les IRA :</b><br/>
+          • Arrêt systématique des néphrotoxiques : IEC, ARA2, AINS, <b>Metformine</b> (contre-indiquée en cas d'IR)<br/>
+          • Prévention/traitement des troubles hydroélectrolytiques (eau, Na, Cl, K, Ca, Mg) selon clinique et ionogramme<br/>
+          • Hyperkaliémie non sévère (&lt; 5,5, pas de signe ECG, diurèse conservée) : régime sans potassium, résine échangeuse d'ions, arrêt des hyperkaliémiants<br/>
+          • Après levée d'obstacle : prévenir le syndrome de levée d'obstacle par hydratation IV adaptée à la volémie/ionogramme sanguin-urinaire, et surveiller son apparition
+        </div>
+      )}
+
+      {step1Done && iraConfirmee && graviteSeen && (creatAnterieureConnue === true || step2Seen) && step4Done && (
+        <div style={{ background: C.blueLight, borderRadius: 12, padding: "12px 14px", marginBottom: 20, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          Le traitement étiologique se fait dans un second temps, une fois les mesures symptomatiques et complications vitales prises en charge.<br/>
+          <b>Consultation de contrôle à 3 mois</b> après correction de l'épisode recommandée.
+        </div>
+      )}
+
+      {step1Done && (
+        <>
+        <Comprendre C={C} label="Sources"><div>Sources : KDIGO 2012, La Revue du Praticien, SRLF — critères vérifiés</div></Comprendre>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      {step1Done && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 24 }}>↺ Réinitialiser</Btn>}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ANALYSE DU LCR — VALIDÉE PAR JEREMY
+   Sources : SPILF 9e/17e Conférences de Consensus Anti-Infectieuse
+   ("Prise en charge des méningites bactériennes aiguës communautaires"),
+   Vidal Recos "Méningite aiguë de l'adulte" (SPILF/SFMU), étude Viallon
+   (lactate LCR, VPN 100% sous 3,2 mmol/L, spécificité 89%).
+   Pas de correction PL traumatique, pas d'item Listeria dédié (validé).
+   ════════════════════════════════════════════════════════════════════════ */
+const LCRCOLOR = "#7D3C98";
+
+function LCRAlgo({ onBack, C, noOwnBack }) {
+  const [aspect, setAspect] = useP("lcr.LCRAlgo.aspect", null); // 'clair' | 'trouble' | 'hemorragique'
+  const [leucocytes, setLeucocytes] = useP("lcr.LCRAlgo.leucocytes", "");
+  const [leucoConfirmed, setLeucoConfirmed] = useP("lcr.LCRAlgo.leucoConfirmed", false);
+  const [predominance, setPredominance] = useP("lcr.LCRAlgo.predominance", null); // 'pnn' | 'lympho'
+  const [proteinorachie, setProteinorachie] = useP("lcr.LCRAlgo.proteinorachie", "");
+  const [glycorachie, setGlycorachie] = useP("lcr.LCRAlgo.glycorachie", "");
+  const [glycemie, setGlycemie] = useP("lcr.LCRAlgo.glycemie", "");
+  const [lactate, setLactate] = useP("lcr.LCRAlgo.lactate", "");
+  const [biochimieConfirmed, setBiochimieConfirmed] = useP("lcr.LCRAlgo.biochimieConfirmed", false);
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    // pas de défilement automatique : on reste en haut de l'écran
+  }, [aspect, leucoConfirmed, predominance, biochimieConfirmed]);
+
+  const leucoVal = parseFloat((leucocytes || "").replace(",", "."));
+  const leucoValid = !isNaN(leucoVal);
+  const leucoEleve = leucoValid && leucoVal > 5;
+  const step2Done = leucoValid && leucoConfirmed && (!leucoEleve || predominance !== null);
+
+  const proteinoVal = parseFloat((proteinorachie || "").replace(",", "."));
+  const glycorachieVal = parseFloat((glycorachie || "").replace(",", "."));
+  const glycemieVal = parseFloat((glycemie || "").replace(",", "."));
+  const lactateVal = parseFloat((lactate || "").replace(",", "."));
+  const proteinoValid = !isNaN(proteinoVal);
+  const ratioValid = !isNaN(glycorachieVal) && !isNaN(glycemieVal) && glycemieVal > 0;
+  const ratio = ratioValid ? glycorachieVal / glycemieVal : null;
+  const lactateValid = !isNaN(lactateVal);
+  const bioAny = proteinoValid || ratioValid || lactateValid; // au moins une donnée biochimique suffit
+  const bioPartielle = !lactateValid && !(proteinoValid && ratioValid);
+  const step3Done = aspect !== null && step2Done && bioAny && biochimieConfirmed;
+
+  // Classification
+  let profil = null;
+  if (step3Done) {
+    if (lactateValid) {
+      // le lactate tranche en priorité (VPN 100% sous 3,2 mmol/L)
+      profil = lactateVal >= 3.2 ? "bacterienne" : "non_bacterienne";
+    } else {
+      const argBacterien = (proteinoValid && proteinoVal > 1) || (ratioValid && ratio < 0.3) || (aspect === "trouble" && predominance === "pnn");
+      const argViral = aspect === "clair" && predominance === "lympho" && proteinoValid && proteinoVal <= 1 && (!ratioValid || ratio > 0.5);
+      if (argBacterien) profil = "bacterienne";
+      else if (argViral) profil = "virale";
+      else profil = "atypique";
+    }
+  }
+  // Signal d'alerte "atypique" même si lactate a tranché en "non bactérien", si les autres critères sont discordants
+  const discordance = step3Done && profil !== "bacterienne" && predominance === "lympho" && ((ratioValid && ratio < 0.5) || (proteinoValid && proteinoVal > 1));
+
+  function reset() {
+    setAspect(null); setLeucocytes(""); setLeucoConfirmed(false); setPredominance(null);
+    setProteinorachie(""); setGlycorachie(""); setGlycemie(""); setLactate(""); setBiochimieConfirmed(false);
+  }
+
+  return (
+    <div>
+      {!noOwnBack && <BackBtn onClick={onBack} C={C} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: LCRCOLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🧫</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Analyse du LCR</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Orientation bactérienne vs virale</div>
+        </div>
+      </div>
+
+      {/* ── Étape 1 : aspect macroscopique ── */}
+      {aspect === null ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>1. Aspect macroscopique</div>
+          <OptionBtn C={C} color={LCRCOLOR} label="Clair" selected={aspect === "clair"} onSelect={() => setAspect("clair")} />
+          <OptionBtn C={C} color={LCRCOLOR} label="Trouble / purulent" help="Classiquement ≥ 500 éléments/mm³ à PNN" selected={aspect === "trouble"} onSelect={() => setAspect("trouble")} />
+          <OptionBtn C={C} color={LCRCOLOR} label="Hémorragique" selected={aspect === "hemorragique"} onSelect={() => setAspect("hemorragique")} />
+        </Card>
+      ) : (
+        <StepSummary C={C} color={LCRCOLOR} title="ASPECT" value={aspect === "clair" ? "Clair" : aspect === "trouble" ? "Trouble/purulent" : "Hémorragique"} onEdit={() => setAspect(null)} />
+      )}
+
+      {aspect === "hemorragique" && (
+        <div style={{ background: C.amberLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
+          LCR hémorragique : distinguer une hémorragie méningée d'une ponction traumatique (non géré par cet outil pour l'instant). Interpréter la biochimie ci-dessous avec prudence.
+        </div>
+      )}
+
+      {/* ── Étape 2 : cytologie ── */}
+      {aspect !== null && (!step2Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>2. Cytologie</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Leucocytes (/mm³) — normale &lt; 5</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 850" value={leucocytes} onChange={e => setLeucocytes(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          {!leucoConfirmed ? (
+            <Btn C={C} onClick={() => setLeucoConfirmed(true)} disabled={!leucoValid} style={{ width: "100%" }}>Valider</Btn>
+          ) : leucoEleve && (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Prédominance ?</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn C={C} onClick={() => setPredominance("pnn")} outline={predominance !== "pnn"} style={{ flex: 1 }}>PNN</Btn>
+                <Btn C={C} onClick={() => setPredominance("lympho")} outline={predominance !== "lympho"} style={{ flex: 1 }}>Lymphocytes</Btn>
+              </div>
+              <NonDispoBtn C={C} onClick={() => setPredominance("nd")}>Formule non disponible</NonDispoBtn>
+            </>
+          )}
+        </Card>
+      ) : (
+        <StepSummary C={C} color={LCRCOLOR} title="CYTOLOGIE"
+          value={`${leucoVal}/mm³${leucoEleve ? ` — ${predominance === "pnn" ? "PNN prédominants" : predominance === "nd" ? "formule non disponible" : "lymphocytes prédominants"}` : " — normale"}`}
+          onEdit={() => { setLeucoConfirmed(false); setPredominance(null); }} />
+      ))}
+
+      {/* ── Étape 3 : biochimie ── */}
+      {step2Done && (!step3Done ? (
+        <Card C={C} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 10 }}>3. Biochimie</div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Protéinorachie (g/L) — normale 0,15-0,45</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 1,8" value={proteinorachie} onChange={e => setProteinorachie(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", marginBottom: 10, outline: "none" }} />
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Glycorachie (g/L)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 0,3" value={glycorachie} onChange={e => setGlycorachie(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Glycémie concomitante (g/L)</div>
+              <input type="number" inputMode="decimal" placeholder="Ex : 1,0" value={glycemie} onChange={e => setGlycemie(e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" }} />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Lactate LCR (mmol/L, optionnel — le plus discriminant)</div>
+          <input type="number" inputMode="decimal" placeholder="Ex : 4,1" value={lactate} onChange={e => setLactate(e.target.value)}
+            style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", marginBottom: 12, outline: "none" }} />
+          <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, fontStyle: "italic" }}>Une seule valeur suffit pour une orientation provisoire (protéinorachie, ratio glycorachie/glycémie ou lactate).</div>
+          <Btn C={C} onClick={() => setBiochimieConfirmed(true)} disabled={!bioAny} style={{ width: "100%" }}>Valider</Btn>
+        </Card>
+      ) : (
+        <StepSummary C={C} color={LCRCOLOR} title="BIOCHIMIE"
+          value={`${proteinoValid ? `Protéinorachie ${proteinoVal} g/L` : "Protéinorachie non disponible"}${ratioValid ? ` · ratio glyco/glycémie ${ratio.toFixed(2)}` : ""}${lactateValid ? ` · lactate ${lactateVal}` : ""}`}
+          onEdit={() => setBiochimieConfirmed(false)} />
+      ))}
+
+      {step3Done && bioPartielle && (
+        <Provisoire C={C}><b>Biochimie incomplète.</b> Orientation provisoire : compléter protéinorachie, glycorachie (avec glycémie concomitante) et lactate du LCR. Le lactate est le critère le plus discriminant ; en cas de doute avec signes de gravité, ne pas différer l'antibiothérapie.</Provisoire>
+      )}
+
+      {/* ── Résultat ── */}
+      {step3Done && profil && (
+        <Card C={C} style={{ border: `2px solid ${profil === "bacterienne" ? C.red : profil === "virale" ? C.green : C.amber}`, marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: profil === "bacterienne" ? C.red : profil === "virale" ? C.green : C.amber, marginBottom: 6 }}>ORIENTATION</div>
+          {profil === "bacterienne" && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+              Profil évocateur de méningite bactérienne
+              {lactateValid && <div style={{ fontSize: 12, fontWeight: 400, marginTop: 6 }}>Lactate ≥ 3,2 mmol/L — critère le plus discriminant, spécificité 89%.</div>}
+              <div style={{ fontSize: 12, fontWeight: 400, marginTop: 6 }}>Antibiothérapie probabiliste sans délai si signes de gravité (purpura fulminans, coma, convulsions, choc).</div>
+            </div>
+          )}
+          {profil === "non_bacterienne" && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+              Lactate &lt; 3,2 mmol/L — VPN de 100% pour une méningite bactérienne (spécificité 89%).
+              {discordance && <div style={{ fontSize: 12, fontWeight: 400, color: C.amber, marginTop: 6 }}>⚠️ Les autres critères (protéinorachie/ratio) restent discordants — rester prudent, discuter avec un senior si le contexte clinique est inquiétant.</div>}
+            </div>
+          )}
+          {profil === "virale" && (
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>Profil évocateur de méningite virale</div>
+          )}
+          {profil === "atypique" && (
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.text, lineHeight: 1.6 }}>
+              Profil atypique/intermédiaire — ne pas éliminer une méningite bactérienne (décapitée par antibiothérapie orale préalable, ou germe à profil particulier). Discuter avec un senior, compléter par PCR LCR/antigènes solubles, ne pas différer l'antibiothérapie en cas de doute avec signes de gravité.
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: C.sub, marginTop: 10, fontStyle: "italic" }}>Bilan complémentaire systématique : hémocultures, PCR LCR (méningocoque/pneumocoque/entérovirus), antigènes solubles, PCT sérique.</div>
+        </Card>
+      )}
+
+      {aspect !== null && <Btn C={C} onClick={reset} outline color={C.sub} style={{ width: "100%", marginBottom: 8 }}>↺ Réinitialiser</Btn>}
+      {step3Done && (
+        <>
+        <div style={{ fontSize: 10, color: C.sub, marginBottom: 4, fontStyle: "italic" }}>Sources : SPILF (9e/17e Conférences de Consensus), Vidal Recos, étude Viallon (lactate LCR)</div>
+        <MiseAJour date="07/08/2026" C={C} />
+        </>
+      )}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BILAN RAPIDE — saisie unique du bilan, tri par urgence, accès direct aux modules
+   Seuils = ceux des modules (gravité). Ne remplace pas les algorithmes : il oriente.
+   ════════════════════════════════════════════════════════════════════════ */
+function BilanRapideScreen({ onBack, onOpen, C, normes }) {
+  const [v, setV] = useP("bilan.BilanRapideScreen.v", { na: "", k: "", ca: "", gly: "", hb: "", ph: "", tp: "", alat: "" });
+  const [sexe, setSexe] = useP("bilan.BilanRapideScreen.sexe", null);
+  const set = key => e => setV(p => ({ ...p, [key]: e.target.value }));
+  const n = key => { const x = parseFloat((v[key] || "").replace(",", ".")); return isNaN(x) ? null : x; };
+  const na = n("na"), k = n("k"), ca = n("ca"), gly = n("gly"), hb = n("hb"), ph = n("ph"), tp = n("tp"), alat = n("alat");
+
+  // niveau : 3 = urgent (rouge), 2 = à traiter (orange), 1 = à explorer (jaune)
+  const res = [];
+  if (k !== null) {
+    if (k >= 6.5) res.push({ lvl: 3, mod: "dyskaliemie", t: `Hyperkaliémie sévère — K ${k}`, d: "ECG immédiat, calcium si signes ECG, insuline-glucose + salbutamol" });
+    else if (k >= 6.0) res.push({ lvl: 2, mod: "dyskaliemie", t: `Hyperkaliémie modérée — K ${k}`, d: "ECG, insuline-glucose, éliminer une pseudo-hyperkaliémie" });
+    else if (k > normes.kHaute) res.push({ lvl: 1, mod: "dyskaliemie", t: `Hyperkaliémie légère — K ${k}`, d: "ECG, cause, kayexalate" });
+    else if (k < 2.5) res.push({ lvl: 3, mod: "dyskaliemie", t: `Hypokaliémie sévère — K ${k}`, d: "ECG, scope, correction IV, magnésémie" });
+    else if (k < 3.0) res.push({ lvl: 2, mod: "dyskaliemie", t: `Hypokaliémie modérée — K ${k}`, d: "ECG, correction, magnésémie" });
+    else if (k < normes.kBasse) res.push({ lvl: 1, mod: "dyskaliemie", t: `Hypokaliémie légère — K ${k}`, d: "Cause, supplémentation" });
+  }
+  if (na !== null) {
+    if (na < 120) res.push({ lvl: 3, mod: "dysnatremie", t: `Hyponatrémie sévère — Na ${na}`, d: "Signes neurologiques ? NaCl 3 % si symptômes sévères" });
+    else if (na < 125) res.push({ lvl: 2, mod: "dysnatremie", t: `Hyponatrémie — Na ${na}`, d: "Osmolalité, volémie, limite de correction" });
+    else if (na < normes.naBasse) res.push({ lvl: 1, mod: "dysnatremie", t: `Hyponatrémie légère — Na ${na}`, d: "Osmolalité, volémie" });
+    else if (na >= 160) res.push({ lvl: 3, mod: "dysnatremie", t: `Hypernatrémie sévère — Na ${na}`, d: "Correction lente ≤ 0,5 mmol/L/h" });
+    else if (na >= 150) res.push({ lvl: 2, mod: "dysnatremie", t: `Hypernatrémie — Na ${na}`, d: "Cinétique, volémie, déficit en eau" });
+    else if (na > normes.naHaute) res.push({ lvl: 1, mod: "dysnatremie", t: `Hypernatrémie légère — Na ${na}`, d: "Cinétique, volémie" });
+  }
+  if (ca !== null) {
+    if (ca >= 3.5) res.push({ lvl: 3, mod: "dyscalcemie", t: `Hypercalcémie sévère — Ca ${ca}`, d: "Réhydratation, bisphosphonate, calcitonine" });
+    else if (ca >= 3.0) res.push({ lvl: 2, mod: "dyscalcemie", t: `Hypercalcémie — Ca ${ca}`, d: "Réhydratation + bisphosphonate (Ca > 3), hospitalisation" });
+    else if (ca > normes.caHaute) res.push({ lvl: 1, mod: "dyscalcemie", t: `Hypercalcémie légère — Ca ${ca}`, d: "Cause, réhydratation" });
+    else if (ca < 1.9) res.push({ lvl: 3, mod: "dyscalcemie", t: `Hypocalcémie sévère — Ca ${ca}`, d: "ECG, gluconate de calcium IV, magnésémie" });
+    else if (ca < normes.caBasse) res.push({ lvl: 1, mod: "dyscalcemie", t: `Hypocalcémie — Ca ${ca}`, d: "Calcium ionisé/corrigé, Mg, PTH" });
+  }
+  if (gly !== null) {
+    if (gly > 2.5) res.push({ lvl: 2, mod: "glycemie", t: `Hyperglycémie — ${gly} g/L`, d: "Cétonémie + gaz du sang : acidocétose ou SHN ?" });
+    else if (gly > 1.26) res.push({ lvl: 1, mod: "glycemie", t: `Hyperglycémie modérée — ${gly} g/L`, d: "Cétonémie si diabète connu ou symptômes" });
+  }
+  if (ph !== null) {
+    if (ph < 7.10) res.push({ lvl: 3, mod: "gaz", t: `Acidémie sévère — pH ${ph}`, d: "Gazométrie complète, lactate, cause" });
+    else if (ph < 7.35) res.push({ lvl: 2, mod: "gaz", t: `Acidémie — pH ${ph}`, d: "PaCO2, HCO3⁻, trou anionique" });
+    else if (ph > 7.45) res.push({ lvl: 1, mod: "gaz", t: `Alcalémie — pH ${ph}`, d: "PaCO2, HCO3⁻, cause" });
+  }
+  if (hb !== null && sexe) {
+    const seuilOMS = sexe === "F" ? 12 : 13;
+    if (hb < 7) res.push({ lvl: 3, mod: "anemie", t: `Anémie sévère — Hb ${hb} g/dL`, d: "Tolérance, indication transfusionnelle, bilan avant transfusion" });
+    else if (hb < seuilOMS) res.push({ lvl: 1, mod: "anemie", t: `Anémie — Hb ${hb} g/dL`, d: "VGM, réticulocytes, ferritine" });
+  }
+  if (tp !== null) {
+    if (tp < 50) res.push({ lvl: 3, mod: "hepatique", t: `TP ${tp} % — insuffisance hépatique aiguë ?`, d: "Encéphalopathie ? Réanimation, centre de greffe" });
+    else if (tp < 70) res.push({ lvl: 1, mod: "hepatique", t: `TP ${tp} %`, d: "Vitamine K, bilan hépatique" });
+  }
+  if (alat !== null && alat > normes.ulnTransam) {
+    const xn = alat / normes.ulnTransam;
+    res.push({ lvl: xn > 10 ? 2 : 1, mod: "hepatique", t: `ALAT ${alat} UI/L (× ${xn.toFixed(1)} N)`, d: "Échographie, paracétamolémie, TP" });
+  }
+  res.sort((a, b) => b.lvl - a.lvl);
+  const LVL = { 3: { c: C.red, bg: C.redLight, l: "URGENT" }, 2: { c: C.amber, bg: C.amberLight, l: "À TRAITER" }, 1: { c: C.blue, bg: C.blueLight, l: "À EXPLORER" } };
+  const titre = id => (ITEMS.find(i => i.id === id) || {}).title;
+  const inp = { width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 600, color: C.text, boxSizing: "border-box", outline: "none" };
+  const F = (label, key, ph2) => (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>{label}</div>
+      <input type="number" inputMode="decimal" placeholder={ph2} value={v[key]} onChange={set(key)} style={inp} />
+    </div>
+  );
+  const nSaisis = Object.values(v).filter(x => x !== "").length;
+
+  return (
+    <div>
+      <BackBtn onClick={onBack} C={C} />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ background: "#2E7EAD22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>⚡</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Bilan rapide</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Saisir ce que l'on a — l'essentiel s'affiche par urgence</div>
+        </div>
+      </div>
+
+      <Card C={C} style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{F("Na (mmol/L)", "na", "138")}{F("K (mmol/L)", "k", "4,2")}{F("Ca (mmol/L)", "ca", "2,4")}</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>{F("Glycémie (g/L)", "gly", "1,1")}{F("pH", "ph", "7,40")}{F("TP (%)", "tp", "90")}</div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>{F("Hb (g/dL)", "hb", "13")}{F("ALAT (UI/L)", "alat", "30")}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: C.sub, marginBottom: 4 }}>Sexe (pour Hb)</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn C={C} onClick={() => setSexe("H")} outline={sexe !== "H"} style={{ flex: 1, padding: "10px 0" }}>H</Btn>
+              <Btn C={C} onClick={() => setSexe("F")} outline={sexe !== "F"} style={{ flex: 1, padding: "10px 0" }}>F</Btn>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {nSaisis > 0 && (
+        <button onClick={() => { setV({ na: "", k: "", ca: "", gly: "", hb: "", ph: "", tp: "", alat: "" }); setSexe(null); }}
+          style={{ background: "none", border: "none", padding: 0, marginBottom: 12, cursor: "pointer", color: C.sub, fontSize: 11, fontWeight: 700 }}>↺ Nouveau patient (effacer les valeurs)</button>
+      )}
+
+      {nSaisis > 0 && res.length === 0 && (
+        <div style={{ background: C.greenLight, borderRadius: 12, padding: "12px 14px", marginBottom: 14, fontSize: 12, color: C.text }}>
+          Aucune anomalie parmi les valeurs saisies{hb !== null && !sexe ? " (renseigner le sexe pour interpréter l'Hb)" : ""}.
+        </div>
+      )}
+
+      {res.map((r, i) => (
+        <div key={i} style={{ background: LVL[r.lvl].bg, border: `2px solid ${LVL[r.lvl].c}`, borderRadius: 14, padding: "12px 14px", marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: LVL[r.lvl].c, marginBottom: 2 }}>{LVL[r.lvl].l}</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.text, marginBottom: 2 }}>{r.t}</div>
+          <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5, marginBottom: 8 }}>{r.d}</div>
+          <Btn C={C} color={LVL[r.lvl].c} onClick={() => onOpen(r.mod, { ...v, sexe })} style={{ width: "100%" }}>Ouvrir : {titre(r.mod)} ›</Btn>
+        </div>
+      ))}
+
+      {res.length > 1 && (
+        <div style={{ fontSize: 11, color: C.sub, lineHeight: 1.5, marginBottom: 14, fontStyle: "italic" }}>
+          Plusieurs anomalies : traiter d'abord les « URGENT ». Penser aux liens (Na et glycémie, K et acidose et IRA, Ca et Mg).
+        </div>
+      )}
+      <div style={{ fontSize: 10, color: C.sub, marginBottom: 24, fontStyle: "italic" }}>
+        Tri indicatif d'après les seuils de gravité des modules ; il ne remplace pas l'algorithme détaillé ni le jugement clinique.
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PROTOCOLES CHIFFRÉS — recueil des doses et débits déjà validés dans les modules
+   Aucune valeur nouvelle : tout provient des modules (validés par Jeremy / protocoles du service).
+   ════════════════════════════════════════════════════════════════════════ */
+const PROTOCOLES = [
+  { t: "Hyperkaliémie", mod: "dyskaliemie", color: "#E8A82E", l: [
+    ["Gluconate de calcium (signes ECG)", "10 mL IV sur 10 min · ECG à 5 min · répéter si besoin"],
+    ["Insuline-glucose", "10 UI + G10 % 500 mL en 15-20 min"],
+    ["Salbutamol", "5 mg nébulisé (éviter si tachycardie/coronaropathie)"],
+    ["Kayexalate (K < 6)", "3 cuillères-mesure (~45 g)"],
+    ["Contrôle", "K à 60 min"],
+  ]},
+  { t: "Hypokaliémie", mod: "dyskaliemie", color: "#E8A82E", l: [
+    ["KCl IV", "0,5 à 1 g/h max · jamais > 4 g/L sur VVP"],
+    ["Vecteur", "NaCl 0,9 % (éviter le glucosé)"],
+    ["Voie orale", "à privilégier absolument"],
+  ]},
+  { t: "Hyponatrémie", mod: "dysnatremie", color: "#2E7EAD", l: [
+    ["NaCl 3 % (signes neurologiques sévères)", "150 mL sur 20 min · max 3 bolus (450 mL)"],
+    ["Arrêt", "symptômes améliorés, ou +5 mmol/L, ou Na 120"],
+    ["Limite de correction", "≤ 10 mmol/L/24 h (≤ 8 si risque de myélinolyse)"],
+  ]},
+  { t: "Hypernatrémie", mod: "dysnatremie", color: "#2E7EAD", l: [
+    ["Vitesse de correction", "≤ 0,5 mmol/L/h et ≤ 10 mmol/L/24 h"],
+    ["Ordre", "NaCl 0,9 % si choc, puis eau libre (PO/SNG ou G5 %)"],
+  ]},
+  { t: "Hypercalcémie", mod: "dyscalcemie", color: "#16A085", l: [
+    ["NaCl 0,9 %", "1 L en 1 h, puis 200 mL/h pendant 24 h · diurèse cible 100-150 mL/h"],
+    ["Acide zolédronique (Ca > 3)", "4 mg IV en 15 min dilués dans 500 mL de NaCl 0,9 %"],
+    ["Pamidronate (surtout si néoplasie)", "50 mg si Ca < 3,5 · 70 mg si < 4 · 90 mg si ≥ 4, en 4 h IVSE dans 500 mL de NaCl 0,9 %"],
+    ["Calcitonine", "4 UI/kg SC/IM toutes les 12 h, si baisse rapide nécessaire ou Ca ≥ 3,5 (effet transitoire)"],
+  ]},
+  { t: "Hypocalcémie", mod: "dyscalcemie", color: "#16A085", l: [
+    ["Gluconate de calcium 10 %", "1-2 g IV lent (10-20 min) sous scope, puis perfusion continue (souvent 6 amp/24 h)"],
+  ]},
+  { t: "Intoxication au paracétamol", mod: "hepatique", color: "#B8860B", l: [
+    ["N-acétylcystéine (Hidonac)", "150 mg/kg en 1 h, puis 50 mg/kg en 4 h, puis 100 mg/kg en 16 h"],
+  ]},
+  { t: "Acidocétose", mod: "glycemie", color: "#8E44AD", l: [
+    ["Insuline IVSE", "débit selon glycémie et cétonémie — voir le tableau du protocole CH Aubagne dans le module"],
+    ["KCl", "pas de KCl si K > 5 mmol/L ou anurie"],
+  ]},
+];
+
+function ProtocolesScreen({ onBack, onOpen, C }) {
+  return (
+    <div>
+      <BackBtn onClick={onBack} C={C} />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <div style={{ background: "#C0392B22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>💉</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Protocoles chiffrés</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Doses et débits regroupés</div>
+        </div>
+      </div>
+      {PROTOCOLES.map((p, i) => (
+        <Card key={i} C={C} style={{ marginBottom: 10, borderLeft: `5px solid ${p.color}` }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 8 }}>{p.t}</div>
+          {p.l.map(([a, b], j) => (
+            <div key={j} style={{ fontSize: 12, color: C.text, lineHeight: 1.5, marginBottom: 6 }}>
+              <div style={{ fontWeight: 700 }}>{a}</div>
+              <div style={{ color: C.text }}>{b}</div>
+            </div>
+          ))}
+          <button onClick={() => onOpen(p.mod)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: C.blue, fontSize: 11, fontWeight: 700 }}>Ouvrir le module ›</button>
+        </Card>
+      ))}
+      <div style={{ fontSize: 10, color: C.sub, marginBottom: 24, fontStyle: "italic" }}>
+        Valeurs reprises des modules (protocoles du service et recommandations citées dans chaque module). Vérifier la dose avant administration ; en cas de doute, se référer au protocole du service.
+      </div>
+    </div>
+  );
+}
+
+const REGLAGES_KEY = "sau_anomalies_reglages_v1";
+
+const ITEMS = [
+  { id: "dysnatremie", title: "Dysnatrémie", icon: "🧂", color: "#2E7EAD", ready: true, sub: "Hypo / hypernatrémie" },
+  { id: "ira", title: "Insuffisance rénale aiguë", icon: "💧", color: "#34495E", ready: true, sub: "KDIGO et orientation mécanistique" },
+  { id: "lcr", title: "Analyse du LCR", icon: "🧫", color: "#7D3C98", ready: true, sub: "Orientation bactérienne / virale" },
+  { id: "dyskaliemie", title: "Dyskaliémie", icon: "⚡", color: "#E8A82E", ready: true, sub: "Hypo / hyperkaliémie" },
+  { id: "anemie", title: "Anémie", icon: "🩸", color: "#C0392B", ready: true, sub: "Typage VGM / réticulocytes" },
+  { id: "glycemie", title: "Hyperglycémie", icon: "🍬", color: "#8E44AD", ready: true, sub: "Triage ACD / SHN / simple" },
+  { id: "gaz", title: "Gaz du sang", icon: "🫁", color: "#5B4FA6", ready: true, sub: "Interprétation acido-basique" },
+  { id: "hepatique", title: "Bilan hépatique", icon: "🫘", color: "#B8860B", ready: true, sub: "Cytolyse / cholestase" },
+  { id: "dyscalcemie", title: "Dyscalcémie", icon: "🦴", color: "#16A085", ready: true, sub: "Hyper / hypocalcémie" },
+];
+
+/* ════════════════════════════════════════════════════════════════════════
+   RÉGLAGES LABO LOCAL — valeurs de référence propres au laboratoire du service
+   Persisté en localStorage sur l'appareil (non partagé)
+   ════════════════════════════════════════════════════════════════════════ */
+function ReglagesLaboScreen({ onBack, C, normes, setNormes }) {
+  const [vals, setVals] = useState({
+    ulnTransam: String(normes.ulnTransam),
+    naBasse: String(normes.naBasse), naHaute: String(normes.naHaute),
+    kBasse: String(normes.kBasse), kHaute: String(normes.kHaute),
+    caBasse: String(normes.caBasse), caHaute: String(normes.caHaute),
+  });
+  const [saved, setSaved] = useState(false);
+
+  function setField(key, v) { setVals(prev => ({ ...prev, [key]: v })); }
+
+  async function save() {
+    const parsed = {};
+    for (const k of Object.keys(vals)) {
+      const n = parseFloat(String(vals[k]).replace(",", "."));
+      if (isNaN(n) || n <= 0) return;
+      parsed[k] = n;
+    }
+    setNormes(parsed);
+    setSaved(true);
+    try {
+      localStorage.setItem(REGLAGES_KEY, JSON.stringify(parsed));
+    } catch (e) { /* stockage indisponible, la valeur reste active pour la session */ }
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  function RangeField({ label, help, lowKey, highKey }) {
+    return (
+      <Card C={C} style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 6 }}>{label}</div>
+        {help && <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>{help}</div>}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="number" inputMode="decimal" value={vals[lowKey]} onChange={e => setField(lowKey, e.target.value)}
+            style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", outline: "none" }} />
+          <span style={{ color: C.sub }}>—</span>
+          <input type="number" inputMode="decimal" value={vals[highKey]} onChange={e => setField(highKey, e.target.value)}
+            style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", outline: "none" }} />
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <BackBtn onClick={onBack} C={C} />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+        <div style={{ background: "#7F8C8D22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>⚙️</div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Réglages labo local</div>
+          <div style={{ fontSize: 12, color: C.sub }}>Valeurs de référence propres à ton laboratoire</div>
+        </div>
+      </div>
+
+      <Card C={C} style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: C.navy, marginBottom: 6 }}>Limite haute de la normale — ALAT/ASAT (UI/L)</div>
+        <div style={{ fontSize: 11, color: C.sub, marginBottom: 10 }}>Utilisée dans le module Bilan hépatique pour définir une cytolyse majeure (&gt; 10× N). Valeur usuelle ≈ 40 UI/L.</div>
+        <input type="number" inputMode="decimal" value={vals.ulnTransam} onChange={e => setField("ulnTransam", e.target.value)}
+          style={{ width: "100%", border: `1.5px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", fontSize: 16, fontWeight: 700, color: C.text, boxSizing: "border-box", outline: "none" }} />
+      </Card>
+
+      <RangeField label="Natrémie normale (mmol/L)" help="Rappel affiché dans le module Dysnatrémie. Usuelle ≈ 135-145." lowKey="naBasse" highKey="naHaute" />
+      <RangeField label="Kaliémie normale (mmol/L)" help="Rappel affiché dans le module Dyskaliémie. Usuelle ≈ 3,5-5,0." lowKey="kBasse" highKey="kHaute" />
+      <RangeField label="Calcémie corrigée normale (mmol/L)" help="Utilisée dans le module Dyscalcémie pour confirmer l'hyper/hypocalcémie. Usuelle ≈ 2,20-2,60." lowKey="caBasse" highKey="caHaute" />
+
+      <Btn C={C} onClick={save} style={{ width: "100%", marginBottom: 12 }} color={saved ? C.green : undefined}>
+        {saved ? "✓ Enregistré" : "Enregistrer"}
+      </Btn>
+
+      <div style={{ fontSize: 11, color: C.sub, fontStyle: "italic" }}>D'autres réglages pourront être ajoutés ici au fur et à mesure.</div>
+    </div>
+  );
+
+}
+
+
+/* Entrées de la recherche générale de l'accueil (titre, sous-titre, mots-clés). Navigation : id = module[:onglet] */
+const ANOMALIES_SEARCH = [
+  { id: "bilan", title: "Bilan rapide — anomalies biologiques", sub: "Saisir le bilan, voir l'urgence en premier", kw: "bilan biologique ionogramme tri urgence" },
+  { id: "protocoles", title: "Protocoles chiffrés — anomalies biologiques", sub: "Doses et débits en un coup d'œil", kw: "doses débits insuline glucose gluconate calcium NaCl 3 pamidronate zolédronate NAC Hidonac KCl" },
+  { id: "dyskaliemie:hyper", title: "Hyperkaliémie", sub: "Anomalies biologiques — dyskaliémie", kw: "potassium kaliémie hyperK ecg gluconate calcium insuline glucose salbutamol kayexalate pseudo-hyperkaliémie" },
+  { id: "dyskaliemie:hypo", title: "Hypokaliémie", sub: "Anomalies biologiques — dyskaliémie", kw: "potassium kaliémie hypoK KCl magnésium ecg onde U" },
+  { id: "dysnatremie:hypo", title: "Hyponatrémie", sub: "Anomalies biologiques — dysnatrémie", kw: "sodium natrémie NaCl 3 SIADH osmolalité volémie myélinolyse" },
+  { id: "dysnatremie:hyper", title: "Hypernatrémie", sub: "Anomalies biologiques — dysnatrémie", kw: "sodium natrémie déshydratation eau libre diabète insipide G5" },
+  { id: "dyscalcemie:hyper", title: "Hypercalcémie", sub: "Anomalies biologiques — dyscalcémie", kw: "calcium calcémie bisphosphonate pamidronate zolédronate calcitonine réhydratation néoplasie" },
+  { id: "dyscalcemie:hypo", title: "Hypocalcémie", sub: "Anomalies biologiques — dyscalcémie", kw: "calcium calcémie tétanie gluconate de calcium magnésium QT long" },
+  { id: "gaz", title: "Gaz du sang", sub: "Interprétation acido-basique", kw: "gazométrie pH PaCO2 bicarbonates acidose alcalose trou anionique lactate Winter" },
+  { id: "anemie", title: "Anémie", sub: "Typage VGM / réticulocytes", kw: "hémoglobine Hb VGM réticulocytes ferritine hémolyse transfusion microcytaire macrocytaire" },
+  { id: "glycemie", title: "Hyperglycémie", sub: "Triage ACD / SHN / simple", kw: "glycémie diabète cétonémie acidocétose ACD SHN hyperosmolaire insuline IVSE" },
+  { id: "glycemie", title: "Acidocétose diabétique (ACD)", sub: "Protocole du service", kw: "acidocétose insuline IVSE cétonémie hydratation potassium bolus" },
+  { id: "hepatique", title: "Bilan hépatique", sub: "Cytolyse / cholestase", kw: "transaminases ALAT ASAT TP insuffisance hépatique aiguë IHA NAC Hidonac Charcot angiocholite ictère" },
+  { id: "ira", title: "Insuffisance rénale aiguë", sub: "KDIGO et orientation mécanistique", kw: "IRA créatinine diurèse KDIGO obstacle fonctionnelle organique dialyse" },
+  { id: "lcr", title: "Analyse du LCR", sub: "Orientation bactérienne / virale", kw: "méningite ponction lombaire protéinorachie glycorachie lactate leucocytes" },
+  { id: "reglages", title: "Réglages laboratoire — valeurs normales", sub: "Anomalies biologiques", kw: "normes seuils laboratoire ULN transaminases natrémie kaliémie calcémie" },
+];
+const AB_MODULES = ["bilan", "protocoles", "reglages", "dysnatremie", "dyskaliemie", "dyscalcemie", "gaz", "anemie", "glycemie", "hepatique", "ira", "lcr"];
+
+/* Props : onBack (retour à l'accueil), C (thème de l'appli ; sans C, mode autonome avec thème clair/sombre), deepLinkId (« module » ou « module:hypo|hyper ») */
+function AnomaliesBiologiquesModule({ onBack, C: CProp, deepLinkId } = {}) {
+  const [dark, setDark] = useState(false);
+  const [selected, setSelected] = useP("main.selected", null);
+  const [pre, setPre] = useP("main.pre", null); // valeurs reportées depuis « Bilan rapide »
+  // Valeurs de référence du labo : lues tout de suite (l'écran peut se rouvrir directement sur les réglages)
+  const [normes, setNormes] = useState(() => {
+    const defaut = { ulnTransam: 40, naBasse: 135, naHaute: 145, kBasse: 3.5, kHaute: 5.0, caBasse: 2.20, caHaute: 2.60 };
+    try {
+      const raw = localStorage.getItem(REGLAGES_KEY);
+      return raw ? { ...defaut, ...JSON.parse(raw) } : defaut;
+    } catch (e) { return defaut; }
+  });
+  const embedded = !!CProp;
+  const C = CProp || (dark ? DARK : LIGHT);
+
+  // Ouverture directe depuis la recherche générale
+  useEffect(() => {
+    if (typeof deepLinkId !== "string") return;
+    const [mod, tab] = deepLinkId.split(":");
+    if (!AB_MODULES.includes(mod)) return;
+    abClear(mod + ".");
+    setPre(tab ? { tab } : null);
+    setSelected(mod);
+  }, [deepLinkId]);
+
+  // En quittant l'écran : on efface la saisie (pas de valeurs d'un patient laissées sur un poste partagé)
+  useEffect(() => () => { abClear(); }, []);
+
+  // Écran verrouillé / app en arrière-plan : on enregistre immédiatement
+  useEffect(() => {
+    const onHide = () => { if (document.hidden) abFlush(); };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", abFlush);
+    return () => { document.removeEventListener("visibilitychange", onHide); window.removeEventListener("pagehide", abFlush); };
+  }, []);
+
+
+  return (
+    <div style={embedded
+      ? { boxSizing: "border-box", overflowX: "hidden", touchAction: "manipulation" }
+      : { background: C.bg, minHeight: "100vh", padding: 16, fontFamily: "system-ui, -apple-system, sans-serif", boxSizing: "border-box", overflowX: "hidden", touchAction: "manipulation" }}>
+      <div style={{ maxWidth: 480, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: embedded && onBack && selected === null ? "space-between" : "flex-end", alignItems: "center", gap: 14, marginBottom: 4 }}>
+          {embedded && onBack && selected === null && <BackBtn onClick={onBack} C={C} />}
+          <div style={{ display: "flex", gap: 14 }}>
+            <button onClick={() => setSelected("reglages")} style={embedded
+              ? { background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.sub, padding: "4px 0", marginBottom: 16 }
+              : { background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>{embedded ? "⚙️ Réglages labo" : "⚙️"}</button>
+            {!embedded && (
+              <button onClick={() => setDark(d => !d)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>
+                {dark ? "☀️" : "🌙"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {selected === "reglages" ? (
+          <ReglagesLaboScreen C={C} onBack={() => setSelected(null)} normes={normes} setNormes={setNormes} />
+        ) : selected === "bilan" ? (
+          <BilanRapideScreen C={C} onBack={() => setSelected(null)} onOpen={(mod, vals) => { abClear(mod + "."); setPre(vals); setSelected(mod); }} normes={normes} />
+        ) : selected === "protocoles" ? (
+          <ProtocolesScreen C={C} onBack={() => setSelected(null)} onOpen={m => { abClear(m + "."); setPre(null); setSelected(m); }} />
+        ) : selected === "dysnatremie" ? (
+          <DysnatremieScreen pre={pre} C={C} onBack={() => setSelected(null)} naBasse={normes.naBasse} naHaute={normes.naHaute} />
+        ) : selected === "dyskaliemie" ? (
+          <DyskaliemieScreen pre={pre} C={C} onBack={() => setSelected(null)} kBasse={normes.kBasse} kHaute={normes.kHaute} />
+        ) : selected === "gaz" ? (
+          <GazometrieAlgo pre={pre} C={C} onBack={() => setSelected(null)} />
+        ) : selected === "anemie" ? (
+          <AnemieAlgo pre={pre} C={C} onBack={() => setSelected(null)} />
+        ) : selected === "glycemie" ? (
+          <HyperglycemieAlgo pre={pre} C={C} onBack={() => setSelected(null)} />
+        ) : selected === "hepatique" ? (
+          <BilanHepatiqueAlgo pre={pre} C={C} onBack={() => setSelected(null)} ulnTransam={normes.ulnTransam} />
+        ) : selected === "dyscalcemie" ? (
+          <DyscalcemieScreen pre={pre} C={C} onBack={() => setSelected(null)} caBasse={normes.caBasse} caHaute={normes.caHaute} />
+        ) : selected === "ira" ? (
+          <IRAAlgo C={C} onBack={() => setSelected(null)} />
+        ) : selected === "lcr" ? (
+          <LCRAlgo C={C} onBack={() => setSelected(null)} />
+        ) : (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+              <div style={{ background: COLOR + "22", borderRadius: 12, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🧪</div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: C.navy }}>Anomalies biologiques</div>
+                <div style={{ fontSize: 12, color: C.sub }}>Diagnostic, examens, prise en charge</div>
+              </div>
+            </div>
+
+            <Card C={C} onClick={() => { abClear("bilan."); setPre(null); setSelected("bilan"); }}
+              style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, border: `2px solid #2E7EAD` }}>
+              <div style={{ background: "#2E7EAD22", borderRadius: 10, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>⚡</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Bilan rapide</div>
+                <div style={{ fontSize: 11, color: C.sub }}>Saisir le bilan, voir l'urgence en premier</div>
+              </div>
+              <span style={{ color: C.sub, fontSize: 18 }}>›</span>
+            </Card>
+
+            <Card C={C} onClick={() => { setPre(null); setSelected("protocoles"); }}
+              style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, border: `2px solid #C0392B` }}>
+              <div style={{ background: "#C0392B22", borderRadius: 10, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>💉</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Protocoles chiffrés</div>
+                <div style={{ fontSize: 11, color: C.sub }}>Doses et débits en un coup d'œil</div>
+              </div>
+              <span style={{ color: C.sub, fontSize: 18 }}>›</span>
+            </Card>
+
+            {ITEMS.map(it => (
+              <Card key={it.id} C={C} onClick={it.ready ? () => { abClear(it.id + "."); setPre(null); setSelected(it.id); } : undefined}
+                style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, opacity: it.ready ? 1 : .55 }}>
+                <div style={{ background: it.color + "22", borderRadius: 10, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{it.icon}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{it.title}</div>
+                  <div style={{ fontSize: 11, color: C.sub }}>{it.sub}</div>
+                </div>
+                {it.ready && <span style={{ color: C.sub, fontSize: 18 }}>›</span>}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+  return { Screen: AnomaliesBiologiquesModule, SEARCH: ANOMALIES_SEARCH };
+})();
+const AnomaliesBiologiquesScreen = AnomaliesBio.Screen;
+const ANOMALIES_SEARCH = AnomaliesBio.SEARCH;
+
 export default function App() {
   const [dark, setDark] = useState(()=> window._darkMode || false);
   const theme = dark ? DARK : LIGHT;
@@ -38117,6 +42823,7 @@ const GUIDE_CATEGORIES = [
     modules:[
       { nav:"antibioguide", icon:"🦠", title:"Antibioguide", desc:"L'antibiothérapie probabiliste organe par organe et pathologie par pathologie : la bonne molécule, la bonne dose, la bonne durée, sans rouvrir un protocole PDF de 40 pages." },
       { nav:"scores", icon:"🧮", title:"Scores", desc:"Tous les scores cliniques du quotidien (Glasgow, CHA2DS2-VASc, qSOFA...) avec calcul automatique et interprétation immédiate." },
+      { nav:"anomalies", icon:"🧪", title:"Anomalies biologiques", desc:"Du résultat biologique anormal à la conduite à tenir : dysnatrémie, dyskaliémie, dyscalcémie, gaz du sang, anémie, hyperglycémie, bilan hépatique, IRA, LCR. Un bilan rapide classe les urgences, les protocoles chiffrés rappellent les doses." },
       { nav:"recoflash", icon:"⚡", title:"Reco Flash", desc:"Les recommandations condensées à l'essentiel, pour une réponse en quelques secondes sur une question de pratique courante." },
       { nav:"imagerie", icon:"🩻", title:"Imagerie", desc:"Une bibliothèque de cas d'imagerie commentés, pour affiner l'œil sur les images qui comptent." },
       { nav:"ecg", icon:"❤️", title:"ECG", desc:"Une bibliothèque de tracés ECG à décrypter, pour s'entraîner à la lecture et ne pas passer à côté d'un tracé piégeux." },
@@ -38530,7 +43237,7 @@ function AppInner() {
           // Désactivé sur ECG (gêne le défilement/zoom des tracés) et pendant
           // la visionneuse d'image plein écran (gêne le zoom/déplacement photo).
           if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-            if (dx > 0 && screen !== "home" && screen !== "ecg" && screen !== "antibioguide" && !window.__lightboxOpen) goBack(); // swipe droite = retour
+            if (dx > 0 && screen !== "home" && screen !== "ecg" && screen !== "antibioguide" && screen !== "anomalies" && !window.__lightboxOpen) goBack(); // swipe droite = retour
           }
         }}
       >
@@ -38546,6 +43253,7 @@ function AppInner() {
         {screen==="dilutions"  && <DilutionScreen key={"dilutions-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="divers"     && <DiversScreen key={"divers-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="scores"     && <ScoresScreen key={"scores-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
+        {screen==="anomalies"  && <AnomaliesBiologiquesScreen key={"anomalies-"+navVersion} deepLinkId={deepLink} onBack={goBack} C={theme}/>}
         {screen==="antibioguide" && <AntibioguideScreen key={"antibioguide-"+navVersion} deepLinkData={deepLink} onBack={goBack}/>}
         {screen==="quiz"       && <QuizScreen key={"quiz-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
         {screen==="recoflash"  && <RecoFlashScreen key={"recoflash-"+navVersion} deepLinkId={deepLink} onBack={goBack}/>}
