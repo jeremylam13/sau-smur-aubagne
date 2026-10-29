@@ -8052,7 +8052,7 @@ function DraftBanner({ draft, itemLabel }) {
 
 function AdminScreenInner({ onNewItem, onBack }) {
   const C = useC();
-  const { store, addItem, updateItem, removeItem } = useData();
+  const { store, addItem, updateItem, removeItem, addRetexItem, removeRetexItem, updateRetex } = useData();
   const [tab, setTab] = useState("home");
   const [saved, setSaved] = useState(null);
   const [submittingKey, setSubmittingKey] = useState(null); // anti double-clic sur les boutons "Ajouter"
@@ -30965,6 +30965,7 @@ function PediaScoreCalc({ score, onBack }) {
 // PediaScreen : module pédiatrie (4 sections)
 // ────────────────────────────────────────────────────────────────────────────
 function PediaScreen({ onBack, deepLinkId }) {
+  const { store } = useData();
   const C = useC();
   const [section, setSection] = useState(deepLinkId ? "doses" : "home"); // home | cartes | doses | normes | fiches | scores
   const [scoreSel, setScoreSel] = useState(null);
